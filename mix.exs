@@ -38,7 +38,13 @@ defmodule Mojentic.MixProject do
 
       # Development and testing
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
+      {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
+      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
+
+      # AI Assistant
+      {:igniter, "~> 0.7", only: [:dev]},
+      {:usage_rules, "~> 0.1", only: [:dev]}
     ]
   end
 
