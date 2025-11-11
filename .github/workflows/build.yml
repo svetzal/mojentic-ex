@@ -47,7 +47,7 @@ jobs:
       - name: Install dependencies
         run: mix deps.get
 
-  validate:
+  format-check:
     runs-on: ubuntu-latest
     needs: setup
     # Skip job if actor is github-actions[bot] to ensure agent safety
@@ -80,14 +80,134 @@ jobs:
       - name: Check formatting
         run: mix format --check-formatted
 
+  compile:
+    runs-on: ubuntu-latest
+    needs: setup
+    # Skip job if actor is github-actions[bot] to ensure agent safety
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18'
+          otp-version: '28'
+
+      - name: Restore dependencies cache
+        uses: actions/cache/restore@v3
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Restore build cache
+        uses: actions/cache/restore@v3
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
+
       - name: Compile
         run: mix compile --warnings-as-errors
+
+  credo:
+    runs-on: ubuntu-latest
+    needs: setup
+    # Skip job if actor is github-actions[bot] to ensure agent safety
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18'
+          otp-version: '28'
+
+      - name: Restore dependencies cache
+        uses: actions/cache/restore@v3
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Restore build cache
+        uses: actions/cache/restore@v3
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
 
       - name: Run Credo
         run: mix credo --strict
 
+  test:
+    runs-on: ubuntu-latest
+    needs: setup
+    # Skip job if actor is github-actions[bot] to ensure agent safety
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18'
+          otp-version: '28'
+
+      - name: Restore dependencies cache
+        uses: actions/cache/restore@v3
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Restore build cache
+        uses: actions/cache/restore@v3
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
+
       - name: Run tests with coverage
         run: mix test --cover
+
+  security-audit:
+    runs-on: ubuntu-latest
+    needs: setup
+    # Skip job if actor is github-actions[bot] to ensure agent safety
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18'
+          otp-version: '28'
+
+      - name: Restore dependencies cache
+        uses: actions/cache/restore@v3
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Restore build cache
+        uses: actions/cache/restore@v3
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
 
       - name: Run security checks
         run: |
@@ -96,7 +216,7 @@ jobs:
 
   release-build:
     runs-on: ubuntu-latest
-    needs: validate
+    needs: [format-check, compile, credo, test, security-audit]
     # Only run on release publish events
     if: github.event_name == 'release' && github.event.action == 'published'
     steps:
