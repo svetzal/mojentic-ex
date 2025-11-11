@@ -64,6 +64,28 @@ defmodule Mojentic do
   - Gateway implementations: `Ollama`, `OpenAI` (planned), `Anthropic` (planned)
   - Message models and adapters
   - Tool system via behaviours
+  - `Mojentic.Error` - Standardized error types and helpers
+
+  ### Error Handling
+
+  Mojentic follows Elixir conventions by returning `{:ok, result}` or `{:error, reason}` tuples.
+  The `Mojentic.Error` module provides standardized error types:
+
+      # Simple atom errors
+      {:error, :invalid_response}
+      {:error, :model_not_supported}
+      {:error, :timeout}
+
+      # Tagged tuple errors with context
+      {:error, {:gateway_error, "Connection failed"}}
+      {:error, {:http_error, 404}}
+      {:error, {:tool_error, "Invalid parameters"}}
+
+  Use helper functions for consistent error creation:
+
+      alias Mojentic.Error
+      Error.gateway_error("Connection failed")
+      Error.http_error(404)
 
   ### Layer 2: Agent System (Coming Soon)
 

@@ -42,22 +42,21 @@ defmodule Mojentic.LLM.Broker do
 
   """
 
-  require Logger
-
-  alias Mojentic.LLM.{
-    Gateway,
-    Message,
-    CompletionConfig
-  }
-
+  alias Mojentic.Error
+  alias Mojentic.LLM.CompletionConfig
+  alias Mojentic.LLM.Gateway
+  alias Mojentic.LLM.Message
   alias Mojentic.LLM.Tools.Tool
+
+  require Logger
 
   @type t :: %__MODULE__{
           model: String.t(),
-          gateway: Gateway.gateway()
+          gateway: Gateway.gateway(),
+          correlation_id: String.t() | nil
         }
 
-  defstruct [:model, :gateway]
+  defstruct [:model, :gateway, :correlation_id]
 
   @doc """
   Creates a new LLM broker.
@@ -66,18 +65,27 @@ defmodule Mojentic.LLM.Broker do
 
   - `model`: Model identifier (e.g., "llama3.2", "gpt-4")
   - `gateway`: Gateway module (e.g., `Mojentic.LLM.Gateways.Ollama`)
+  - `correlation_id`: Optional correlation ID for request tracking (default: auto-generated)
 
   ## Examples
 
       iex> Broker.new("llama3.2", Mojentic.LLM.Gateways.Ollama)
-      %Broker{model: "llama3.2", gateway: Mojentic.LLM.Gateways.Ollama}
+      %Broker{model: "llama3.2", gateway: Mojentic.LLM.Gateways.Ollama, correlation_id: ...}
+
+      iex> Broker.new("llama3.2", Mojentic.LLM.Gateways.Ollama, "custom-id-123")
+      %Broker{model: "llama3.2", gateway: Mojentic.LLM.Gateways.Ollama, correlation_id: "custom-id-123"}
 
   """
-  def new(model, gateway) do
+  def new(model, gateway, correlation_id \\ nil) do
     %__MODULE__{
       model: model,
-      gateway: gateway
+      gateway: gateway,
+      correlation_id: correlation_id || generate_correlation_id()
     }
+  end
+
+  defp generate_correlation_id do
+    UUID.uuid4()
   end
 
   @doc """
@@ -186,7 +194,7 @@ defmodule Mojentic.LLM.Broker do
              config
            ) do
       case response.object do
-        nil -> {:error, :no_object_in_response}
+        nil -> Error.invalid_response()
         object -> {:ok, object}
       end
     end
@@ -219,9 +227,11 @@ defmodule Mojentic.LLM.Broker do
         # Add tool result messages
         final_messages =
           Enum.reduce(tool_results, new_messages, fn
-            {:ok, tool_message}, acc -> acc ++ [tool_message]
+            {:ok, tool_message}, acc ->
+              acc ++ [tool_message]
+
             {:error, reason}, acc ->
-              Logger.error("Tool execution failed: #{inspect(reason)}")
+              Logger.error("Tool execution failed: #{Error.format_error(reason)}")
               acc
           end)
 
@@ -242,7 +252,7 @@ defmodule Mojentic.LLM.Broker do
     case find_tool(tools, tool_call.name) do
       nil ->
         Logger.warning("Tool not found: #{tool_call.name}")
-        {:error, {:tool_not_found, tool_call.name}}
+        Error.tool_error("Tool not found: #{tool_call.name}")
 
       tool ->
         Logger.info("Executing tool: #{tool_call.name}")
@@ -257,8 +267,8 @@ defmodule Mojentic.LLM.Broker do
              }}
 
           {:error, reason} ->
-            Logger.error("Tool execution failed: #{inspect(reason)}")
-            {:error, reason}
+            Logger.error("Tool execution failed: #{Error.format_error(reason)}")
+            Error.tool_error("Tool execution failed: #{Error.format_error(reason)}")
         end
     end
   end

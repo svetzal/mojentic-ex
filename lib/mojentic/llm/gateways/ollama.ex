@@ -39,7 +39,8 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   }
 
   @default_host "http://localhost:11434"
-  @default_timeout 300_000  # 5 minutes for larger models
+  # 5 minutes for larger models
+  @default_timeout 300_000
 
   @impl Gateway
   def complete(model, messages, tools, config) do
@@ -210,7 +211,9 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
   defp get_timeout do
     case System.get_env("OLLAMA_TIMEOUT") do
-      nil -> @default_timeout
+      nil ->
+        @default_timeout
+
       timeout_str ->
         case Integer.parse(timeout_str) do
           {timeout, _} -> timeout

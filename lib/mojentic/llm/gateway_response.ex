@@ -23,9 +23,7 @@ defmodule Mojentic.LLM.GatewayResponse do
           tool_calls: [ToolCall.t()]
         }
 
-  defstruct [
-    content: nil,
-    object: nil,
-    tool_calls: []
-  ]
+  defstruct content: nil,
+            object: nil,
+            tool_calls: []
 end

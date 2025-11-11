@@ -21,12 +21,10 @@ defmodule Mojentic.LLM.CompletionConfig do
           num_predict: integer() | nil
         }
 
-  defstruct [
-    temperature: 1.0,
-    num_ctx: 32768,
-    max_tokens: 16384,
-    num_predict: nil
-  ]
+  defstruct temperature: 1.0,
+            num_ctx: 32768,
+            max_tokens: 16384,
+            num_predict: nil
 
   @doc """
   Creates a new configuration with optional overrides.
