@@ -21,7 +21,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
       alias Mojentic.LLM.{Broker, Message}
       alias Mojentic.LLM.Gateways.Ollama
 
-      broker = Broker.new("llama3.2", Ollama)
+      broker = Broker.new("qwen3:32b", Ollama)
       messages = [Message.user("Hello!")]
       {:ok, response} = Broker.generate(broker, messages)
 
@@ -175,7 +175,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
   ## Examples
 
-      iex> Ollama.pull_model("llama3.2")
+      iex> Ollama.pull_model("qwen3:32b")
       :ok
 
   """

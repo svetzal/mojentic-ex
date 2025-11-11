@@ -19,17 +19,17 @@ alias Mojentic.LLM.Broker
 alias Mojentic.LLM.Gateways.Ollama
 
 # Basic broker
-broker = Broker.new("llama3.2", Ollama)
+broker = Broker.new("qwen3:14b", Ollama)
 
 # With correlation ID for request tracking
-broker = Broker.new("llama3.2", Ollama, "request-abc-123")
+broker = Broker.new("qwen3:14b", Ollama, "request-abc-123")
 ```
 
 ### Broker Structure
 
 ```elixir
 %Broker{
-  model: "llama3.2",           # Model identifier
+  model: "qwen3:14b",          # Model identifier
   gateway: Ollama,             # Gateway module
   correlation_id: "request-123" # Optional tracking ID
 }
@@ -227,7 +227,7 @@ Track requests across your system:
 ```elixir
 # Generate unique ID
 correlation_id = UUID.uuid4()
-broker = Broker.new("llama3.2", Ollama, correlation_id)
+broker = Broker.new("gpt-oss:20b", Ollama, correlation_id)
 
 # ID flows through all operations
 {:ok, response} = Broker.generate(broker, messages)
@@ -324,8 +324,8 @@ System.put_env("OLLAMA_TIMEOUT", "600000")  # 10 minutes
 
 ```elixir
 # Use different models for different tasks
-fast_broker = Broker.new("llama3.2:1b", Ollama)
-smart_broker = Broker.new("llama3.2:70b", Ollama)
+fast_broker = Broker.new("phi4:14b", Ollama)
+smart_broker = Broker.new("gpt-oss:20b", Ollama)
 
 # Quick classification
 {:ok, category} = Broker.generate(fast_broker, classify_messages)

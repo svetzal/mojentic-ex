@@ -50,8 +50,8 @@ defmodule WeatherTool do
   end
 end
 
-# Create Ollama gateway and broker
-broker = Broker.new("qwen3:32b", Ollama)
+# Create broker with tool
+broker = Broker.new("qwen3:14b", Ollama)
 
 # Create tools list
 tools = [WeatherTool]

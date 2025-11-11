@@ -12,7 +12,7 @@ defmodule Mojentic.LLM.Broker do
       alias Mojentic.LLM.{Broker, Message}
       alias Mojentic.LLM.Gateways.Ollama
 
-      broker = Broker.new("llama3.2", Ollama)
+      broker = Broker.new("qwen3:32b", Ollama)
 
       # Generate a simple response
       messages = [Message.user("What is 2+2?")]
@@ -63,17 +63,17 @@ defmodule Mojentic.LLM.Broker do
 
   ## Parameters
 
-  - `model`: Model identifier (e.g., "llama3.2", "gpt-4")
+  - `model`: Model identifier (e.g., "qwen3:32b", "gpt-4")
   - `gateway`: Gateway module (e.g., `Mojentic.LLM.Gateways.Ollama`)
   - `correlation_id`: Optional correlation ID for request tracking (default: auto-generated)
 
   ## Examples
 
-      iex> Broker.new("llama3.2", Mojentic.LLM.Gateways.Ollama)
-      %Broker{model: "llama3.2", gateway: Mojentic.LLM.Gateways.Ollama, correlation_id: ...}
+      iex> Broker.new("qwen3:32b", Mojentic.LLM.Gateways.Ollama)
+      %Broker{model: "qwen3:32b", gateway: Mojentic.LLM.Gateways.Ollama, correlation_id: ...}
 
-      iex> Broker.new("llama3.2", Mojentic.LLM.Gateways.Ollama, "custom-id-123")
-      %Broker{model: "llama3.2", gateway: Mojentic.LLM.Gateways.Ollama, correlation_id: "custom-id-123"}
+      iex> Broker.new("qwen3:32b", Mojentic.LLM.Gateways.Ollama, "custom-id-123")
+      %Broker{model: "qwen3:32b", gateway: Mojentic.LLM.Gateways.Ollama, correlation_id: "custom-id-123"}
 
   """
   def new(model, gateway, correlation_id \\ nil) do
@@ -109,7 +109,7 @@ defmodule Mojentic.LLM.Broker do
 
   ## Examples
 
-      broker = Broker.new("llama3.2", Ollama)
+      broker = Broker.new("qwen3:32b", Ollama)
       messages = [Message.user("What is the capital of France?")]
 
       {:ok, response} = Broker.generate(broker, messages)
@@ -167,7 +167,7 @@ defmodule Mojentic.LLM.Broker do
 
   ## Examples
 
-      broker = Broker.new("llama3.2", Ollama)
+      broker = Broker.new("qwen3:32b", Ollama)
 
       schema = %{
         type: "object",

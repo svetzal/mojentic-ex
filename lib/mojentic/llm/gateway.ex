@@ -48,7 +48,7 @@ defmodule Mojentic.LLM.Gateway do
 
   ## Parameters
 
-  - `model`: Model identifier (e.g., "gpt-4", "llama3.2")
+  - `model`: Model identifier (e.g., "gpt-4", "qwen3:32b")
   - `messages`: List of conversation messages
   - `tools`: Optional list of available tool modules
   - `config`: Completion configuration

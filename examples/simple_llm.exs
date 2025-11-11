@@ -10,7 +10,7 @@ alias Mojentic.LLM.{Broker, Message}
 alias Mojentic.LLM.Gateways.Ollama
 
 # Create Ollama gateway and broker
-broker = Broker.new("qwen3:32b", Ollama)
+broker = Broker.new("phi4:14b", Ollama)
 
 # Create a simple message
 messages = [

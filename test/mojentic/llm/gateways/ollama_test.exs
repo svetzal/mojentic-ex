@@ -13,7 +13,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       config = CompletionConfig.new()
 
       # This will fail since Ollama is likely not running in test environment
-      result = Ollama.complete("llama3.2", messages, [], config)
+      result = Ollama.complete("qwen3:32b", messages, [], config)
 
       # Should return an error tuple, not crash
       assert match?({:error, _}, result)
@@ -23,7 +23,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       messages = []
       config = CompletionConfig.new()
 
-      result = Ollama.complete("llama3.2", messages, [], config)
+      result = Ollama.complete("qwen3:32b", messages, [], config)
 
       # Should return an error, not crash
       assert match?({:error, _}, result)
@@ -34,7 +34,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
 
       # This should fail since config is required
       assert_raise KeyError, fn ->
-        Ollama.complete("llama3.2", messages, [], nil)
+        Ollama.complete("qwen3:32b", messages, [], nil)
       end
     end
   end
@@ -45,7 +45,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       schema = %{type: "object", properties: %{name: %{type: "string"}}}
       config = CompletionConfig.new()
 
-      result = Ollama.complete_object("llama3.2", messages, schema, config)
+      result = Ollama.complete_object("qwen3:32b", messages, schema, config)
 
       # Should return an error tuple, not crash
       assert match?({:error, _}, result)
@@ -56,7 +56,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       schema = %{type: "object"}
       config = CompletionConfig.new()
 
-      result = Ollama.complete_object("llama3.2", messages, schema, config)
+      result = Ollama.complete_object("qwen3:32b", messages, schema, config)
 
       # Should return an error, not crash
       assert match?({:error, _}, result)
@@ -74,21 +74,21 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
 
   describe "calculate_embeddings/2" do
     test "returns embeddings or error when Ollama is not reachable" do
-      result = Ollama.calculate_embeddings("llama3.2", "test text")
+      result = Ollama.calculate_embeddings("qwen3:32b", "test text")
 
       # Should return either success or error tuple, not crash
       assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
 
     test "handles empty text" do
-      result = Ollama.calculate_embeddings("llama3.2", "")
+      result = Ollama.calculate_embeddings("qwen3:32b", "")
 
       # Empty text may succeed or fail depending on Ollama behavior
       assert match?({:ok, _}, result) or match?({:error, _}, result)
     end
 
     test "handles nil text gracefully" do
-      result = Ollama.calculate_embeddings("llama3.2", nil)
+      result = Ollama.calculate_embeddings("qwen3:32b", nil)
 
       # Nil text may succeed or fail depending on Ollama behavior
       assert match?({:ok, _}, result) or match?({:error, _}, result)
@@ -102,7 +102,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       messages = [Message.user("Hello")]
       config = CompletionConfig.new()
 
-      result = Ollama.complete("llama3.2", messages, [], config)
+      result = Ollama.complete("qwen3:32b", messages, [], config)
 
       # Should attempt the request with some host
       assert match?({:error, _}, result)
@@ -113,7 +113,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       messages = [Message.user("Hello")]
       config = CompletionConfig.new()
 
-      result = Ollama.complete("llama3.2", messages, [], config)
+      result = Ollama.complete("qwen3:32b", messages, [], config)
 
       # Should handle timeout configuration
       assert match?({:error, _}, result)
@@ -125,7 +125,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       messages = [Message.user("Hello")]
       config = CompletionConfig.new()
 
-      result = Ollama.complete("llama3.2", messages, [], config)
+      result = Ollama.complete("qwen3:32b", messages, [], config)
 
       # Should process user messages without crashing
       assert match?({:error, _}, result)
@@ -135,7 +135,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       messages = [Message.system("You are helpful"), Message.user("Hello")]
       config = CompletionConfig.new()
 
-      result = Ollama.complete("llama3.2", messages, [], config)
+      result = Ollama.complete("qwen3:32b", messages, [], config)
 
       # Should process system messages without crashing
       assert match?({:error, _}, result)
@@ -150,7 +150,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
 
       config = CompletionConfig.new()
 
-      result = Ollama.complete("llama3.2", messages, [], config)
+      result = Ollama.complete("qwen3:32b", messages, [], config)
 
       # Should process assistant messages without crashing
       assert match?({:error, _}, result)
@@ -166,7 +166,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
 
       config = CompletionConfig.new()
 
-      result = Ollama.complete("llama3.2", messages, [], config)
+      result = Ollama.complete("qwen3:32b", messages, [], config)
 
       # Should process mixed messages without crashing
       assert match?({:error, _}, result)
@@ -201,7 +201,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       config = CompletionConfig.new()
       tools = [MockTool]
 
-      result = Ollama.complete("llama3.2", messages, tools, config)
+      result = Ollama.complete("qwen3:32b", messages, tools, config)
 
       # Should process tools without crashing
       assert match?({:error, _}, result)
@@ -211,7 +211,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       messages = [Message.user("Hello")]
       config = CompletionConfig.new()
 
-      result = Ollama.complete("llama3.2", messages, [], config)
+      result = Ollama.complete("qwen3:32b", messages, [], config)
 
       # Should handle empty tools list
       assert match?({:error, _}, result)
@@ -223,7 +223,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       messages = [Message.user("Hello")]
       config = CompletionConfig.new(temperature: 0.7)
 
-      result = Ollama.complete("llama3.2", messages, [], config)
+      result = Ollama.complete("qwen3:32b", messages, [], config)
 
       # Should use temperature from config
       assert match?({:error, _}, result)
@@ -233,7 +233,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       messages = [Message.user("Hello")]
       config = CompletionConfig.new(num_ctx: 4096)
 
-      result = Ollama.complete("llama3.2", messages, [], config)
+      result = Ollama.complete("qwen3:32b", messages, [], config)
 
       # Should use num_ctx from config
       assert match?({:error, _}, result)
@@ -243,7 +243,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       messages = [Message.user("Hello")]
       config = CompletionConfig.new(num_predict: 512)
 
-      result = Ollama.complete("llama3.2", messages, [], config)
+      result = Ollama.complete("qwen3:32b", messages, [], config)
 
       # Should use num_predict from config
       assert match?({:error, _}, result)
@@ -259,7 +259,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           num_predict: 1024
         )
 
-      result = Ollama.complete("llama3.2", messages, [], config)
+      result = Ollama.complete("qwen3:32b", messages, [], config)
 
       # Should use all config options
       assert match?({:error, _}, result)

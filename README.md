@@ -33,7 +33,7 @@ end
 alias Mojentic.LLM.{Broker, Message}
 alias Mojentic.LLM.Gateways.Ollama
 
-broker = Broker.new("llama3.2", Ollama)
+broker = Broker.new("qwen3:32b", Ollama)
 messages = [Message.user("What is Elixir?")]
 {:ok, response} = Broker.generate(broker, messages)
 IO.puts(response)

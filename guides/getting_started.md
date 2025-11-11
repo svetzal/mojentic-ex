@@ -33,7 +33,7 @@ Mojentic requires:
 2. Pull a model:
 
 ```bash
-ollama pull llama3.2
+ollama pull phi4:14b
 ```
 
 3. Start the Ollama service (runs on `http://localhost:11434` by default)
@@ -55,7 +55,7 @@ alias Mojentic.LLM.{Broker, Message}
 alias Mojentic.LLM.Gateways.Ollama
 
 # Create a broker with your model
-broker = Broker.new("llama3.2", Ollama)
+broker = Broker.new("phi4:14b", Ollama)
 
 # Create a message
 messages = [Message.user("What is the capital of France?")]
@@ -84,7 +84,7 @@ The `Broker` is your main interface to LLMs. It handles:
 
 ```elixir
 # Simple text generation
-broker = Broker.new("llama3.2", Ollama)
+broker = Broker.new("qwen3:14b", Ollama)
 messages = [Message.user("Hello!")]
 {:ok, response} = Broker.generate(broker, messages)
 
@@ -93,7 +93,7 @@ config = CompletionConfig.new(temperature: 0.7, max_tokens: 1000)
 {:ok, response} = Broker.generate(broker, messages, [], config)
 
 # With correlation ID for tracking
-broker = Broker.new("llama3.2", Ollama, "request-123")
+broker = Broker.new("qwen3:14b", Ollama, "request-123")
 ```
 
 ## Working with Messages
