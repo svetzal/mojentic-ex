@@ -54,7 +54,10 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
   describe "run/1 - next day of week" do
     test "resolves 'next Monday' from Sunday" do
       # 2025-11-09 is a Sunday
-      args = %{"relative_date_found" => "next Monday", "reference_date_in_iso8601" => "2025-11-09"}
+      args = %{
+        "relative_date_found" => "next Monday",
+        "reference_date_in_iso8601" => "2025-11-09"
+      }
 
       assert {:ok, result} = DateResolver.run(args)
       assert result.resolved_date == "2025-11-10"
@@ -62,14 +65,20 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
 
     test "resolves 'next Friday' from Monday" do
       # 2025-11-10 is a Monday
-      args = %{"relative_date_found" => "next Friday", "reference_date_in_iso8601" => "2025-11-10"}
+      args = %{
+        "relative_date_found" => "next Friday",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
 
       assert {:ok, result} = DateResolver.run(args)
       assert result.resolved_date == "2025-11-14"
     end
 
     test "resolves 'next Tuesday'" do
-      args = %{"relative_date_found" => "next Tuesday", "reference_date_in_iso8601" => "2025-11-10"}
+      args = %{
+        "relative_date_found" => "next Tuesday",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
 
       assert {:ok, result} = DateResolver.run(args)
       assert result.resolved_date == "2025-11-11"
@@ -106,7 +115,10 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
     end
 
     test "resolves 'next Sunday'" do
-      args = %{"relative_date_found" => "next Sunday", "reference_date_in_iso8601" => "2025-11-10"}
+      args = %{
+        "relative_date_found" => "next Sunday",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
 
       assert {:ok, result} = DateResolver.run(args)
       assert result.resolved_date == "2025-11-16"
@@ -116,7 +128,10 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
   describe "run/1 - this day of week" do
     test "resolves 'this Friday' when today is Monday" do
       # 2025-11-10 is a Monday
-      args = %{"relative_date_found" => "this Friday", "reference_date_in_iso8601" => "2025-11-10"}
+      args = %{
+        "relative_date_found" => "this Friday",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
 
       assert {:ok, result} = DateResolver.run(args)
       assert result.resolved_date == "2025-11-14"
@@ -124,7 +139,10 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
 
     test "resolves 'this Friday' when today is Friday" do
       # 2025-11-14 is a Friday
-      args = %{"relative_date_found" => "this Friday", "reference_date_in_iso8601" => "2025-11-14"}
+      args = %{
+        "relative_date_found" => "this Friday",
+        "reference_date_in_iso8601" => "2025-11-14"
+      }
 
       assert {:ok, result} = DateResolver.run(args)
       assert result.resolved_date == "2025-11-14"
@@ -170,7 +188,10 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
     end
 
     test "handles mixed case 'Next Friday'" do
-      args = %{"relative_date_found" => "Next Friday", "reference_date_in_iso8601" => "2025-11-10"}
+      args = %{
+        "relative_date_found" => "Next Friday",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
 
       assert {:ok, result} = DateResolver.run(args)
       assert result.resolved_date == "2025-11-14"

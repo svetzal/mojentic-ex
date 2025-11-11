@@ -74,11 +74,11 @@ defmodule Mojentic.MixProject do
         "AGENTS.md": [title: "AI Assistant Guidelines"]
       ],
       groups_for_extras: [
-        "Guides": ~r/guides\//,
+        Guides: ~r/guides\//,
         "Project Info": ["README.md", "AGENTS.md"]
       ],
       groups_for_modules: [
-        "Core": [
+        Core: [
           Mojentic,
           Mojentic.Error
         ],
@@ -90,10 +90,10 @@ defmodule Mojentic.MixProject do
           Mojentic.LLM.ToolCall,
           Mojentic.LLM.CompletionConfig
         ],
-        "Gateways": [
+        Gateways: [
           Mojentic.LLM.Gateways.Ollama
         ],
-        "Tools": [
+        Tools: [
           Mojentic.LLM.Tools.Tool,
           Mojentic.LLM.Tools.DateResolver,
           Mojentic.LLM.Tools.CurrentDateTime
