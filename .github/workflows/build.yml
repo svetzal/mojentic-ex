@@ -15,7 +15,7 @@ permissions:
   pages: write
 
 jobs:
-  validate:
+  setup:
     runs-on: ubuntu-latest
     # Skip job if actor is github-actions[bot] to ensure agent safety
     if: ${{ github.actor != 'github-actions[bot]' }}
@@ -25,10 +25,10 @@ jobs:
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: '1.15'
-          otp-version: '26'
+          elixir-version: '1.18'
+          otp-version: '28'
 
-      - name: Restore dependencies cache
+      - name: Cache dependencies
         uses: actions/cache@v3
         with:
           path: deps
@@ -36,7 +36,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-mix-
 
-      - name: Restore build cache
+      - name: Cache build
         uses: actions/cache@v3
         with:
           path: _build
@@ -46,6 +46,36 @@ jobs:
 
       - name: Install dependencies
         run: mix deps.get
+
+  validate:
+    runs-on: ubuntu-latest
+    needs: setup
+    # Skip job if actor is github-actions[bot] to ensure agent safety
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18'
+          otp-version: '28'
+
+      - name: Restore dependencies cache
+        uses: actions/cache/restore@v3
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Restore build cache
+        uses: actions/cache/restore@v3
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
 
       - name: Check formatting
         run: mix format --check-formatted
@@ -75,11 +105,11 @@ jobs:
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
-          elixir-version: '1.15'
-          otp-version: '26'
+          elixir-version: '1.18'
+          otp-version: '28'
 
       - name: Restore dependencies cache
-        uses: actions/cache@v3
+        uses: actions/cache/restore@v3
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
@@ -87,15 +117,12 @@ jobs:
             ${{ runner.os }}-mix-
 
       - name: Restore build cache
-        uses: actions/cache@v3
+        uses: actions/cache/restore@v3
         with:
           path: _build
           key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
           restore-keys: |
             ${{ runner.os }}-build-
-
-      - name: Install dependencies
-        run: mix deps.get
 
       - name: Build documentation
         run: mix docs
