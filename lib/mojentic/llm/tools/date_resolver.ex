@@ -87,42 +87,61 @@ defmodule Mojentic.LLM.Tools.DateResolver do
       String.contains?(text_lower, "yesterday") ->
         {:ok, Date.add(reference_date, -1)}
 
-      # Match "next <day of week>"
-      String.contains?(text_lower, "next") and String.contains?(text_lower, "monday") ->
-        {:ok, next_day_of_week(reference_date, 1)}
+      String.contains?(text_lower, "next") ->
+        parse_next_day(text_lower, reference_date)
 
-      String.contains?(text_lower, "next") and String.contains?(text_lower, "tuesday") ->
-        {:ok, next_day_of_week(reference_date, 2)}
+      String.contains?(text_lower, "this") ->
+        parse_this_day(text_lower, reference_date)
 
-      String.contains?(text_lower, "next") and String.contains?(text_lower, "wednesday") ->
-        {:ok, next_day_of_week(reference_date, 3)}
-
-      String.contains?(text_lower, "next") and String.contains?(text_lower, "thursday") ->
-        {:ok, next_day_of_week(reference_date, 4)}
-
-      String.contains?(text_lower, "next") and String.contains?(text_lower, "friday") ->
-        {:ok, next_day_of_week(reference_date, 5)}
-
-      String.contains?(text_lower, "next") and String.contains?(text_lower, "saturday") ->
-        {:ok, next_day_of_week(reference_date, 6)}
-
-      String.contains?(text_lower, "next") and String.contains?(text_lower, "sunday") ->
-        {:ok, next_day_of_week(reference_date, 7)}
-
-      # Match "this <day of week>"
-      String.contains?(text_lower, "this") and String.contains?(text_lower, "friday") ->
-        {:ok, this_day_of_week(reference_date, 5)}
-
-      # Match "in X days"
       true ->
-        case Regex.run(~r/in (\d+) days?/, text_lower) do
-          [_, days_str] ->
-            days = String.to_integer(days_str)
-            {:ok, Date.add(reference_date, days)}
+        parse_in_days(text_lower, reference_date)
+    end
+  end
 
-          _ ->
-            {:error, :unable_to_parse_date}
-        end
+  defp parse_next_day(text_lower, reference_date) do
+    day_map = %{
+      "monday" => 1,
+      "tuesday" => 2,
+      "wednesday" => 3,
+      "thursday" => 4,
+      "friday" => 5,
+      "saturday" => 6,
+      "sunday" => 7
+    }
+
+    Enum.find_value(day_map, {:error, :unable_to_parse_date}, fn {day_name, day_num} ->
+      if String.contains?(text_lower, day_name) do
+        {:ok, next_day_of_week(reference_date, day_num)}
+      end
+    end)
+  end
+
+  defp parse_this_day(text_lower, reference_date) do
+    day_map = %{
+      "monday" => 1,
+      "tuesday" => 2,
+      "wednesday" => 3,
+      "thursday" => 4,
+      "friday" => 5,
+      "saturday" => 6,
+      "sunday" => 7
+    }
+
+    Enum.find_value(day_map, {:error, :unable_to_parse_date}, fn {day_name, day_num} ->
+      if String.contains?(text_lower, day_name) do
+        {:ok, this_day_of_week(reference_date, day_num)}
+      end
+    end)
+  end
+
+  defp parse_in_days(text_lower, reference_date) do
+    case Regex.run(~r/in (\d+) days?/, text_lower) do
+      [_, days_str] ->
+        days = String.to_integer(days_str)
+        {:ok, Date.add(reference_date, days)}
+
+      _ ->
+        {:error, :unable_to_parse_date}
     end
   end
 

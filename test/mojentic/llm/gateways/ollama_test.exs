@@ -1,8 +1,9 @@
 defmodule Mojentic.LLM.Gateways.OllamaTest do
   use ExUnit.Case, async: false
 
+  alias Mojentic.LLM.CompletionConfig
   alias Mojentic.LLM.Gateways.Ollama
-  alias Mojentic.LLM.{Message, CompletionConfig}
+  alias Mojentic.LLM.Message
 
   # Note: These are integration-style tests that verify the module's structure
   # and error handling. Full integration testing would require a running Ollama instance.

@@ -22,8 +22,8 @@ defmodule Mojentic.LLM.CompletionConfig do
         }
 
   defstruct temperature: 1.0,
-            num_ctx: 32768,
-            max_tokens: 16384,
+            num_ctx: 32_768,
+            max_tokens: 16_384,
             num_predict: nil
 
   @doc """

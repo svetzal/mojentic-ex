@@ -29,14 +29,12 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
   @behaviour Mojentic.LLM.Gateway
 
-  require Logger
+  alias Mojentic.LLM.Gateway
+  alias Mojentic.LLM.GatewayResponse
+  alias Mojentic.LLM.Message
+  alias Mojentic.LLM.ToolCall
 
-  alias Mojentic.LLM.{
-    Gateway,
-    Message,
-    GatewayResponse,
-    ToolCall
-  }
+  require Logger
 
   @default_host "http://localhost:11434"
   # 5 minutes for larger models

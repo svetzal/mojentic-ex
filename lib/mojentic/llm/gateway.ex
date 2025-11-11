@@ -38,7 +38,9 @@ defmodule Mojentic.LLM.Gateway do
 
   """
 
-  alias Mojentic.LLM.{Message, GatewayResponse, CompletionConfig}
+  alias Mojentic.LLM.CompletionConfig
+  alias Mojentic.LLM.GatewayResponse
+  alias Mojentic.LLM.Message
 
   @type gateway :: module()
   @type error :: {:error, atom() | String.t() | {atom(), term()}}
