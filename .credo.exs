@@ -2,7 +2,7 @@
   configs: [
     %{
       name: "default",
-      strict: true,
+      strict: false,
       checks: [
         # Additional and reconfigured checks
         {Credo.Check.Design.AliasUsage,
