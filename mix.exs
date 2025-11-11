@@ -15,7 +15,8 @@ defmodule Mojentic.MixProject do
       package: package(),
       name: "Mojentic",
       source_url: @source_url,
-      docs: docs()
+      docs: docs(),
+      test_coverage: [summary: [threshold: 80]]
     ]
   end
 

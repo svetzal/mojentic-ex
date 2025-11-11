@@ -40,6 +40,10 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   # 5 minutes for larger models
   @default_timeout 300_000
 
+  defp http_client do
+    Application.get_env(:mojentic, :http_client, HTTPoison)
+  end
+
   @impl Gateway
   def complete(model, messages, tools, config) do
     host = get_host()
@@ -57,7 +61,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
     body = maybe_add_tools(body, tools)
 
-    case HTTPoison.post(
+    case http_client().post(
            "#{host}/api/chat",
            Jason.encode!(body),
            [{"Content-Type", "application/json"}],
@@ -91,7 +95,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
       stream: false
     }
 
-    case HTTPoison.post(
+    case http_client().post(
            "#{host}/api/chat",
            Jason.encode!(body),
            [{"Content-Type", "application/json"}],
@@ -114,7 +118,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
     host = get_host()
     timeout = get_timeout()
 
-    case HTTPoison.get("#{host}/api/tags", [], recv_timeout: timeout, timeout: timeout) do
+    case http_client().get("#{host}/api/tags", [], recv_timeout: timeout, timeout: timeout) do
       {:ok, %{status_code: 200, body: body}} ->
         case Jason.decode(body) do
           {:ok, %{"models" => models}} ->
@@ -144,7 +148,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
       prompt: text
     }
 
-    case HTTPoison.post(
+    case http_client().post(
            "#{host}/api/embeddings",
            Jason.encode!(body),
            [{"Content-Type", "application/json"}],
@@ -183,7 +187,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
     body = %{name: model}
 
-    case HTTPoison.post(
+    case http_client().post(
            "#{host}/api/pull",
            Jason.encode!(body),
            [{"Content-Type", "application/json"}],
