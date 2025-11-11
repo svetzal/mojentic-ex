@@ -61,9 +61,71 @@ defmodule Mojentic.MixProject do
 
   defp docs do
     [
-      main: "readme",
-      extras: ["README.md"],
-      source_ref: "v#{@version}"
+      main: "introduction",
+      source_ref: "v#{@version}",
+      source_url: @source_url,
+      extras: [
+        "README.md": [title: "Overview"],
+        "guides/introduction.md": [title: "Introduction"],
+        "guides/getting_started.md": [title: "Getting Started"],
+        "guides/broker.md": [title: "Broker Guide"],
+        "guides/tool_usage.md": [title: "Tool Usage"],
+        "guides/structured_output.md": [title: "Structured Output"],
+        "AGENTS.md": [title: "AI Assistant Guidelines"]
+      ],
+      groups_for_extras: [
+        "Guides": ~r/guides\//,
+        "Project Info": ["README.md", "AGENTS.md"]
+      ],
+      groups_for_modules: [
+        "Core": [
+          Mojentic,
+          Mojentic.Error
+        ],
+        "LLM Integration": [
+          Mojentic.LLM.Broker,
+          Mojentic.LLM.Gateway,
+          Mojentic.LLM.GatewayResponse,
+          Mojentic.LLM.Message,
+          Mojentic.LLM.ToolCall,
+          Mojentic.LLM.CompletionConfig
+        ],
+        "Gateways": [
+          Mojentic.LLM.Gateways.Ollama
+        ],
+        "Tools": [
+          Mojentic.LLM.Tools.Tool,
+          Mojentic.LLM.Tools.DateResolver,
+          Mojentic.LLM.Tools.CurrentDateTime
+        ]
+      ],
+      before_closing_body_tag: &before_closing_body_tag/1
     ]
   end
+
+  defp before_closing_body_tag(:html) do
+    """
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.2.0/dist/mermaid.min.js"></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", function () {
+        mermaid.initialize({ startOnLoad: false });
+        let id = 0;
+        for (const codeEl of document.querySelectorAll("pre code.mermaid")) {
+          const preEl = codeEl.parentElement;
+          const graphDefinition = codeEl.textContent;
+          const graphEl = document.createElement("div");
+          const graphId = "mermaid-graph-" + id++;
+          mermaid.render(graphId, graphDefinition).then(({svg, bindFunctions}) => {
+            graphEl.innerHTML = svg;
+            bindFunctions?.(graphEl);
+            preEl.insertAdjacentElement("afterend", graphEl);
+            preEl.remove();
+          });
+        }
+      });
+    </script>
+    """
+  end
+
+  defp before_closing_body_tag(_), do: ""
 end
