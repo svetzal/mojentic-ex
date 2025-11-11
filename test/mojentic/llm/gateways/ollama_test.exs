@@ -15,7 +15,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
 
       # Test that function exists and returns appropriate type
       result = Ollama.complete("qwen2.5:3b", messages, [], config)
-      
+
       # Should return tuple (either ok or error)
       assert is_tuple(result)
       assert tuple_size(result) >= 2
@@ -29,7 +29,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       config = CompletionConfig.new()
 
       result = Ollama.complete_object("qwen2.5:3b", messages, schema, config)
-      
+
       # Should return tuple
       assert is_tuple(result)
       assert tuple_size(result) >= 2
@@ -65,7 +65,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       tools = [MockTool]
 
       result = Ollama.complete("qwen2.5:3b", messages, tools, config)
-      
+
       # Should not crash with tools
       assert is_tuple(result)
     end
