@@ -26,14 +26,14 @@ Tools implement the `Mojentic.LLM.Tools.Tool` behaviour:
 ```elixir
 defmodule MyApp.Tools.Calculator do
   @behaviour Mojentic.LLM.Tools.Tool
-  
+
   @impl true
   def run(arguments) do
     # Extract arguments
     operation = Map.get(arguments, "operation")
     a = Map.get(arguments, "a")
     b = Map.get(arguments, "b")
-    
+
     # Perform calculation
     result = case operation do
       "add" -> a + b
@@ -43,14 +43,14 @@ defmodule MyApp.Tools.Calculator do
       "divide" -> {:error, {:tool_error, "Division by zero"}}
       _ -> {:error, {:tool_error, "Unknown operation"}}
     end
-    
+
     # Return result
     case result do
       {:error, _} = error -> error
       value -> {:ok, %{result: value}}
     end
   end
-  
+
   @impl true
   def descriptor do
     %{
@@ -80,7 +80,7 @@ defmodule MyApp.Tools.Calculator do
       }
     }
   end
-  
+
   def matches?("calculator"), do: true
   def matches?(_), do: false
 end
@@ -216,13 +216,13 @@ messages = [Message.user("What time is it?")]
 ```elixir
 defmodule MyApp.Tools.Weather do
   @behaviour Mojentic.LLM.Tools.Tool
-  
+
   require Logger
-  
+
   @impl true
   def run(%{"location" => location}) do
     Logger.info("Fetching weather for: #{location}")
-    
+
     case fetch_weather(location) do
       {:ok, weather} ->
         {:ok, %{
@@ -231,14 +231,14 @@ defmodule MyApp.Tools.Weather do
           condition: weather.condition,
           humidity: weather.humidity
         }}
-        
+
       {:error, reason} ->
         {:error, {:tool_error, "Weather unavailable: #{reason}"}}
     end
   end
-  
+
   def run(_), do: {:error, {:tool_error, "Missing location parameter"}}
-  
+
   @impl true
   def descriptor do
     %{
@@ -259,10 +259,10 @@ defmodule MyApp.Tools.Weather do
       }
     }
   end
-  
+
   def matches?("get_weather"), do: true
   def matches?(_), do: false
-  
+
   # Private helper
   defp fetch_weather(location) do
     # Call weather API
@@ -276,23 +276,23 @@ end
 ```elixir
 defmodule MyApp.Tools.QueryUsers do
   @behaviour Mojentic.LLM.Tools.Tool
-  
+
   alias MyApp.Repo
   alias MyApp.User
-  
+
   @impl true
   def run(%{"name" => name}) do
-    users = 
+    users =
       User
       |> where([u], ilike(u.name, ^"%#{name}%"))
       |> Repo.all()
-      
+
     {:ok, %{
       count: length(users),
       users: Enum.map(users, &user_to_map/1)
     }}
   end
-  
+
   @impl true
   def descriptor do
     %{
@@ -313,10 +313,10 @@ defmodule MyApp.Tools.QueryUsers do
       }
     }
   end
-  
+
   def matches?("search_users"), do: true
   def matches?(_), do: false
-  
+
   defp user_to_map(user) do
     %{
       id: user.id,
@@ -332,7 +332,7 @@ end
 ```elixir
 defmodule MyApp.Tools.FileReader do
   @behaviour Mojentic.LLM.Tools.Tool
-  
+
   @impl true
   def run(%{"path" => path}) do
     # Validate path for security
@@ -345,16 +345,16 @@ defmodule MyApp.Tools.FileReader do
               content: content,
               size: byte_size(content)
             }}
-            
+
           {:error, reason} ->
             {:error, {:tool_error, "Cannot read file: #{reason}"}}
         end
-        
+
       {:error, reason} ->
         {:error, {:tool_error, reason}}
     end
   end
-  
+
   @impl true
   def descriptor do
     %{
@@ -375,14 +375,14 @@ defmodule MyApp.Tools.FileReader do
       }
     }
   end
-  
+
   def matches?("read_file"), do: true
   def matches?(_), do: false
-  
+
   defp validate_path(path) do
     # Security: Only allow certain directories
     allowed_dirs = ["/tmp", "/data", "/uploads"]
-    
+
     if Enum.any?(allowed_dirs, &String.starts_with?(path, &1)) do
       :ok
     else
@@ -402,10 +402,10 @@ def run(arguments) do
     %{"required_field" => value} when is_binary(value) ->
       # Process the value
       process(value)
-      
+
     %{"required_field" => _} ->
       {:error, {:tool_error, "required_field must be a string"}}
-      
+
     _ ->
       {:error, {:tool_error, "Missing required_field parameter"}}
   end
@@ -430,27 +430,27 @@ Tools are easy to unit test:
 ```elixir
 defmodule MyApp.Tools.CalculatorTest do
   use ExUnit.Case, async: true
-  
+
   alias MyApp.Tools.Calculator
-  
+
   describe "run/1" do
     test "adds two numbers" do
       args = %{"operation" => "add", "a" => 5, "b" => 3}
-      
+
       assert {:ok, %{result: 8}} = Calculator.run(args)
     end
-    
+
     test "handles division by zero" do
       args = %{"operation" => "divide", "a" => 10, "b" => 0}
-      
+
       assert {:error, {:tool_error, _}} = Calculator.run(args)
     end
   end
-  
+
   describe "descriptor/0" do
     test "returns valid tool descriptor" do
       descriptor = Calculator.descriptor()
-      
+
       assert descriptor.type == "function"
       assert descriptor.function.name == "calculator"
       assert is_list(descriptor.function.parameters.required)
@@ -538,7 +538,7 @@ tools = [
 
 messages = [
   Message.user("""
-  What's the date in 5 days, and what will the 
+  What's the date in 5 days, and what will the
   weather be like in Paris?
   """)
 ]

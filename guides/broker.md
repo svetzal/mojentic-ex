@@ -46,7 +46,7 @@ case Broker.generate(broker, messages) do
   {:ok, response} ->
     IO.puts(response)
     # "Elixir is a functional, concurrent programming language..."
-    
+
   {:error, reason} ->
     Logger.error("Generation failed: #{inspect(reason)}")
 end
@@ -98,7 +98,7 @@ case Broker.generate_object(broker, messages, schema) do
     #   "summary" => "Functional programming language...",
     #   "keywords" => ["functional", "concurrent", "BEAM"]
     # }
-    
+
   {:error, :invalid_response} ->
     Logger.error("LLM didn't return valid JSON")
 end
@@ -180,22 +180,22 @@ The Broker returns standardized error tuples:
 case Broker.generate(broker, messages) do
   {:ok, response} ->
     # Success
-    
+
   {:error, :timeout} ->
     # Request timed out
-    
+
   {:error, :invalid_response} ->
     # LLM returned invalid format
-    
+
   {:error, {:http_error, 429}} ->
     # Rate limited
-    
+
   {:error, {:http_error, 500}} ->
     # Server error
-    
+
   {:error, {:gateway_error, message}} ->
     # Gateway-specific error
-    
+
   {:error, {:tool_error, message}} ->
     # Tool execution failed
 end
@@ -208,12 +208,12 @@ def generate_with_retry(broker, messages, max_retries \\ 3) do
   case Broker.generate(broker, messages) do
     {:ok, response} ->
       {:ok, response}
-      
+
     {:error, :timeout} when max_retries > 0 ->
       Logger.warn("Timeout, retrying...")
       Process.sleep(1000)
       generate_with_retry(broker, messages, max_retries - 1)
-      
+
     error ->
       error
   end
@@ -283,7 +283,7 @@ Tools can fail:
 ```elixir
 defmodule MyTool do
   @behaviour Mojentic.LLM.Tools.Tool
-  
+
   def run(args) do
     with {:ok, value} <- validate_args(args),
          {:ok, result} <- process(value) do

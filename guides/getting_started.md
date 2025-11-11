@@ -64,7 +64,7 @@ messages = [Message.user("What is the capital of France?")]
 case Broker.generate(broker, messages) do
   {:ok, response} ->
     IO.puts("AI: #{response}")
-    
+
   {:error, reason} ->
     IO.puts("Error: #{inspect(reason)}")
 end
@@ -139,7 +139,7 @@ case Broker.generate_object(broker, messages, schema) do
   {:ok, person} ->
     IO.inspect(person)
     # %{"name" => "Alice", "age" => 30, "hobbies" => ["reading", "coding"]}
-    
+
   {:error, reason} ->
     IO.puts("Failed: #{inspect(reason)}")
 end
@@ -187,19 +187,19 @@ case Broker.generate(broker, messages) do
   {:ok, response} ->
     # Handle success
     process_response(response)
-    
+
   {:error, :timeout} ->
     # Handle timeout
     Logger.warn("Request timed out")
-    
+
   {:error, {:http_error, status}} ->
     # Handle HTTP errors
     Logger.error("HTTP #{status}")
-    
+
   {:error, {:gateway_error, msg}} ->
     # Handle gateway errors
     Logger.error("Gateway error: #{msg}")
-    
+
   {:error, reason} ->
     # Handle other errors
     Logger.error("Error: #{inspect(reason)}")

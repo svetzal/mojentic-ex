@@ -29,9 +29,9 @@ Mojentic uses idiomatic Elixir error handling:
 
 ```elixir
 case Broker.generate(broker, messages) do
-  {:ok, response} -> 
+  {:ok, response} ->
     IO.puts("Success: #{response}")
-    
+
   {:error, reason} ->
     Logger.error("Failed: #{inspect(reason)}")
 end

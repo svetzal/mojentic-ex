@@ -51,7 +51,7 @@ case Broker.generate_object(broker, messages, schema) do
   {:ok, post} ->
     IO.puts("Title: #{post["title"]}")
     IO.puts("Content: #{post["content"]}")
-    
+
   {:error, :invalid_response} ->
     Logger.error("LLM didn't return valid JSON")
 end
@@ -344,10 +344,10 @@ schema = %{
 case Broker.generate_object(broker, messages, schema) do
   {:ok, %{"sentiment" => "positive", "confidence" => conf}} when conf > 0.8 ->
     # High confidence positive
-    
+
   {:ok, %{"sentiment" => sentiment}} ->
     # Other sentiments
-    
+
   {:error, :invalid_response} ->
     # LLM didn't follow schema
 end
@@ -390,17 +390,17 @@ case Broker.generate_object(broker, messages, schema, config) do
   {:ok, result} ->
     # Success - result matches schema
     process(result)
-    
+
   {:error, :invalid_response} ->
     # LLM didn't return valid JSON matching schema
     Logger.error("Invalid schema response")
     use_fallback()
-    
+
   {:error, {:gateway_error, msg}} ->
     # Gateway/network error
     Logger.error("Gateway error: #{msg}")
     retry()
-    
+
   {:error, reason} ->
     # Other errors
     Logger.error("Error: #{inspect(reason)}")
@@ -475,7 +475,7 @@ Constrain possible values:
 
 ```elixir
 system_msg = Message.system("""
-You are a data extraction assistant. 
+You are a data extraction assistant.
 Always return data in the exact format specified.
 
 Example:
@@ -521,7 +521,7 @@ defmodule SchemaGenerator do
           {:error, reason} ->
             {:error, {:validation_failed, reason}}
         end
-        
+
       error ->
         error
     end
@@ -542,7 +542,7 @@ defmodule Schemas do
       }
     }
   end
-  
+
   def team_schema do
     %{
       type: "object",
