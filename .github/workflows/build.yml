@@ -1,0 +1,132 @@
+---
+name: Validate, Test, and Publish
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  release:
+    types: [ published ]
+
+permissions:
+  contents: read
+  id-token: write
+  pages: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    # Skip job if actor is github-actions[bot] to ensure agent safety
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.15'
+          otp-version: '26'
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v3
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Restore build cache
+        uses: actions/cache@v3
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Check formatting
+        run: mix format --check-formatted
+
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      - name: Run Credo
+        run: mix credo --strict
+
+      - name: Run tests with coverage
+        run: mix test --cover
+
+      - name: Run security checks
+        run: |
+          mix deps.audit
+          mix sobelow --config
+
+  release-build:
+    runs-on: ubuntu-latest
+    needs: validate
+    # Only run on release publish events
+    if: github.event_name == 'release' && github.event.action == 'published'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.15'
+          otp-version: '26'
+
+      - name: Restore dependencies cache
+        uses: actions/cache@v3
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Restore build cache
+        uses: actions/cache@v3
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Build documentation
+        run: mix docs
+
+      - name: Upload documentation site
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation-site
+          path: doc/
+          retention-days: 1
+
+  deploy-docs:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: release-build
+    # Only run on release publish events
+    if: github.event_name == 'release' && github.event.action == 'published'
+    steps:
+      - name: Download documentation site
+        uses: actions/download-artifact@v4
+        with:
+          name: documentation-site
+          path: docs/
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
