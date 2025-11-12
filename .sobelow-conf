@@ -7,7 +7,7 @@
   format: "txt",
   out: "",
   threshold: "low",
-  ignore: [],
+  ignore: ["Traversal.FileModule"],
   ignore_files: [],
   version: false
 ]
