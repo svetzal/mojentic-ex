@@ -316,8 +316,18 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
 
   describe "message adaptation" do
     test "adapts messages with images" do
+      # Create temporary test image files
+      image1_path = Path.join(System.tmp_dir!(), "test_image1.jpg")
+      image2_path = Path.join(System.tmp_dir!(), "test_image2.jpg")
+      File.write!(image1_path, "fake_image_data_1")
+      File.write!(image2_path, "fake_image_data_2")
+
+      # Expected base64 encodings
+      expected_base64_1 = Base.encode64("fake_image_data_1")
+      expected_base64_2 = Base.encode64("fake_image_data_2")
+
       messages = [
-        Message.user("Describe this") |> Message.with_images(["image1.jpg", "image2.jpg"])
+        Message.user("Describe this") |> Message.with_images([image1_path, image2_path])
       ]
 
       config = CompletionConfig.new()
@@ -332,11 +342,16 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
 
       expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
-        assert hd(decoded["messages"])["images"] == ["image1.jpg", "image2.jpg"]
+        images = hd(decoded["messages"])["images"]
+        assert images == [expected_base64_1, expected_base64_2]
         {:ok, %{status_code: 200, body: response_body}}
       end)
 
       assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+
+      # Clean up
+      File.rm(image1_path)
+      File.rm(image2_path)
     end
 
     test "adapts messages with tool calls" do

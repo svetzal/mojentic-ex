@@ -273,7 +273,21 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   defp maybe_add_images(ollama_msg, []), do: ollama_msg
 
   defp maybe_add_images(ollama_msg, image_paths) do
-    Map.put(ollama_msg, :images, image_paths)
+    # Ollama expects base64-encoded images, not file paths
+    encoded_images =
+      Enum.map(image_paths, fn path ->
+        case File.read(path) do
+          {:ok, binary} ->
+            Base.encode64(binary)
+
+          {:error, reason} ->
+            Logger.error("Failed to read image file: #{path}, reason: #{inspect(reason)}")
+            nil
+        end
+      end)
+      |> Enum.reject(&is_nil/1)
+
+    Map.put(ollama_msg, :images, encoded_images)
   end
 
   defp maybe_add_tool_calls(ollama_msg, nil), do: ollama_msg
