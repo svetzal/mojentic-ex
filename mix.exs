@@ -37,6 +37,9 @@ defmodule Mojentic.MixProject do
       # UUID generation
       {:elixir_uuid, "~> 1.2"},
 
+      # Tokenization (Hugging Face tokenizers via Rustler NIF)
+      {:tokenizers, "~> 0.4"},
+
       # Development and testing
       {:mox, "~> 1.0", only: :test},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},
@@ -93,7 +96,8 @@ defmodule Mojentic.MixProject do
           Mojentic.LLM.CompletionConfig
         ],
         Gateways: [
-          Mojentic.LLM.Gateways.Ollama
+          Mojentic.LLM.Gateways.Ollama,
+          Mojentic.LLM.Gateways.TokenizerGateway
         ],
         Tools: [
           Mojentic.LLM.Tools.Tool,
