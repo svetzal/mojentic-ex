@@ -122,4 +122,29 @@ defmodule Mojentic.LLM.Gateway do
               text :: String.t(),
               model :: String.t() | nil
             ) :: {:ok, [float()]} | error()
+
+  @doc """
+  Streams LLM responses chunk by chunk.
+
+  Returns a stream that yields response chunks as they arrive. Tool calls
+  will be accumulated and yielded when complete.
+
+  ## Parameters
+
+  - `model`: Model identifier
+  - `messages`: List of conversation messages
+  - `tools`: Optional list of available tool modules
+  - `config`: Completion configuration
+
+  ## Returns
+
+  A stream of `{:content, chunk}` or `{:tool_calls, calls}` tuples
+
+  """
+  @callback complete_stream(
+              model :: String.t(),
+              messages :: [Message.t()],
+              tools :: [module()] | nil,
+              config :: CompletionConfig.t()
+            ) :: Enumerable.t()
 end

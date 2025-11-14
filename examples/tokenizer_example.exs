@@ -7,10 +7,8 @@
 # - Encode text into tokens
 # - Decode tokens back to text
 # - Count tokens for context window management
-
-Mix.install([
-  {:mojentic, path: "."}
-])
+#
+# Run with: mix run examples/tokenizer_example.exs
 
 alias Mojentic.LLM.Gateways.TokenizerGateway
 

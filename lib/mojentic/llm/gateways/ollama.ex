@@ -172,6 +172,88 @@ defmodule Mojentic.LLM.Gateways.Ollama do
     end
   end
 
+  @impl Gateway
+  def complete_stream(model, messages, tools, config) do
+    host = get_host()
+    timeout = get_timeout()
+
+    ollama_messages = adapt_messages(messages)
+    options = extract_options(config)
+
+    body = %{
+      model: model,
+      messages: ollama_messages,
+      options: options,
+      stream: true
+    }
+
+    body = maybe_add_tools(body, tools)
+
+    Stream.resource(
+      # Start function - initiate the streaming request
+      fn ->
+        case http_client().post(
+               "#{host}/api/chat",
+               Jason.encode!(body),
+               [{"Content-Type", "application/json"}],
+               recv_timeout: timeout,
+               timeout: timeout,
+               stream_to: self(),
+               async: :once
+             ) do
+          {:ok, %HTTPoison.AsyncResponse{id: id}} ->
+            {id, "", []}
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+      end,
+      # Next function - process incoming chunks
+      fn
+        :halt ->
+          {:halt, :halt}
+
+        {:error, _reason} = error ->
+          {[error], :halt}
+
+        {id, buffer, acc_tool_calls} ->
+          receive do
+            %HTTPoison.AsyncStatus{id: ^id} ->
+              http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
+              {[], {id, buffer, acc_tool_calls}}
+
+            %HTTPoison.AsyncHeaders{id: ^id} ->
+              http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
+              {[], {id, buffer, acc_tool_calls}}
+
+            %HTTPoison.AsyncChunk{id: ^id, chunk: chunk} ->
+              http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
+              parse_streaming_chunks(chunk, buffer, acc_tool_calls, id)
+
+            %HTTPoison.AsyncEnd{id: ^id} ->
+              # Stream finished - yield accumulated tool calls if any
+              result =
+                if acc_tool_calls != [] do
+                  [{:tool_calls, Enum.reverse(acc_tool_calls)}]
+                else
+                  []
+                end
+
+              {result, :halt}
+          after
+            timeout ->
+              {[{:error, :timeout}], :halt}
+          end
+      end,
+      # After function - cleanup
+      fn
+        :halt -> :ok
+        {:error, _} -> :ok
+        _ -> :ok
+      end
+    )
+  end
+
   @doc """
   Pulls a model from the Ollama library.
 
@@ -357,4 +439,61 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   end
 
   defp parse_tool_calls(_), do: []
+
+  # Parse streaming chunks from Ollama
+  # Ollama sends newline-delimited JSON objects
+  defp parse_streaming_chunks(chunk, buffer, acc_tool_calls, id) do
+    # Append chunk to buffer
+    new_buffer = buffer <> chunk
+
+    # Split on newlines to process complete JSON objects
+    lines = String.split(new_buffer, "\n", trim: true)
+
+    # The last line might be incomplete, so keep it in the buffer
+    {complete_lines, remaining_buffer} =
+      if String.ends_with?(new_buffer, "\n") do
+        {lines, ""}
+      else
+        case Enum.split(lines, -1) do
+          {complete, [incomplete]} -> {complete, incomplete}
+          {complete, []} -> {complete, ""}
+        end
+      end
+
+    # Process each complete line
+    {results, new_acc_tool_calls} =
+      Enum.reduce(complete_lines, {[], acc_tool_calls}, fn line, {acc_results, acc_tools} ->
+        case Jason.decode(line) do
+          {:ok, %{"message" => message, "done" => false}} ->
+            # Content chunk
+            content = Map.get(message, "content")
+            tool_calls = parse_tool_calls(message)
+
+            new_results =
+              if content && content != "" do
+                [{:content, content} | acc_results]
+              else
+                acc_results
+              end
+
+            new_tools = if tool_calls != [], do: acc_tools ++ tool_calls, else: acc_tools
+
+            {new_results, new_tools}
+
+          {:ok, %{"done" => true}} ->
+            # Final chunk - don't emit anything here, will be handled in AsyncEnd
+            {acc_results, acc_tools}
+
+          {:error, _} ->
+            Logger.warning("Failed to parse streaming chunk: #{line}")
+            {acc_results, acc_tools}
+
+          _ ->
+            {acc_results, acc_tools}
+        end
+      end)
+
+    # Return reversed results (they were prepended) and continue with new state
+    {Enum.reverse(results), {id, remaining_buffer, new_acc_tool_calls}}
+  end
 end

@@ -68,7 +68,7 @@ Demonstrates:
 - Executing tool functions
 - Sending tool results back to the LLM
 
-### Level 2: Advanced LLM Features ⚠️
+### Level 2: Advanced LLM Features
 
 #### `image_analysis.exs` ✅
 Analyze images using vision-capable models.
@@ -84,6 +84,31 @@ Demonstrates:
 - Extracting text from images
 
 **Requirements**: Vision-capable model such as `qwen3-vl:30b`, `gemma3:27b`, or `llava:latest`
+
+#### `streaming.exs` ✅
+Stream responses chunk-by-chunk with tool calling support.
+
+```bash
+mix run examples/streaming.exs
+```
+
+Demonstrates:
+- Streaming text generation in real-time
+- Tool calling during streaming
+- Recursive streaming after tool execution
+- Using a simple Calculator tool for arithmetic
+
+#### `streaming_simple.exs` ✅
+Basic streaming without tool calling.
+
+```bash
+mix run examples/streaming_simple.exs
+```
+
+Demonstrates:
+- Basic streaming text generation
+- Real-time chunk processing
+- Simple story generation
 
 ## Configuration
 
@@ -138,7 +163,6 @@ After running these examples, check out:
 The following examples are planned for future implementation:
 
 ### Level 2: Advanced LLM Features (Remaining)
-- `streaming.exs` - Streaming responses
 - `chat_session.exs` - Interactive chat sessions
 - `broker_examples.exs` - Comprehensive broker feature tests
 

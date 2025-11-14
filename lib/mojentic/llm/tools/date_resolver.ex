@@ -87,14 +87,29 @@ defmodule Mojentic.LLM.Tools.DateResolver do
       String.contains?(text_lower, "yesterday") ->
         {:ok, Date.add(reference_date, -1)}
 
+      String.contains?(text_lower, "last week") ->
+        {:ok, Date.add(reference_date, -7)}
+
+      String.contains?(text_lower, "next week") ->
+        {:ok, Date.add(reference_date, 7)}
+
+      String.contains?(text_lower, "last month") ->
+        {:ok, Date.add(reference_date, -30)}
+
+      String.contains?(text_lower, "next month") ->
+        {:ok, Date.add(reference_date, 30)}
+
       String.contains?(text_lower, "next") ->
         parse_next_day(text_lower, reference_date)
+
+      String.contains?(text_lower, "last") ->
+        parse_last_day(text_lower, reference_date)
 
       String.contains?(text_lower, "this") ->
         parse_this_day(text_lower, reference_date)
 
       true ->
-        parse_in_days(text_lower, reference_date)
+        parse_days_offset(text_lower, reference_date)
     end
   end
 
@@ -134,13 +149,51 @@ defmodule Mojentic.LLM.Tools.DateResolver do
     end)
   end
 
-  defp parse_in_days(text_lower, reference_date) do
-    case Regex.run(~r/in (\d+) days?/, text_lower) do
-      [_, days_str] ->
+  defp parse_last_day(text_lower, reference_date) do
+    day_map = %{
+      "monday" => 1,
+      "tuesday" => 2,
+      "wednesday" => 3,
+      "thursday" => 4,
+      "friday" => 5,
+      "saturday" => 6,
+      "sunday" => 7
+    }
+
+    Enum.find_value(day_map, {:error, :unable_to_parse_date}, fn {day_name, day_num} ->
+      if String.contains?(text_lower, day_name) do
+        {:ok, last_day_of_week(reference_date, day_num)}
+      end
+    end)
+  end
+
+  defp parse_days_offset(text_lower, reference_date) do
+    cond do
+      # Match "in X days" or "X days from now"
+      match = Regex.run(~r/(?:in\s+)?(\d+)\s+days?(?:\s+from\s+now)?/, text_lower) ->
+        [_, days_str] = match
         days = String.to_integer(days_str)
         {:ok, Date.add(reference_date, days)}
 
-      _ ->
+      # Match "X days ago"
+      match = Regex.run(~r/(\d+)\s+days?\s+ago/, text_lower) ->
+        [_, days_str] = match
+        days = String.to_integer(days_str)
+        {:ok, Date.add(reference_date, -days)}
+
+      # Match "in X weeks"
+      match = Regex.run(~r/(?:in\s+)?(\d+)\s+weeks?/, text_lower) ->
+        [_, weeks_str] = match
+        weeks = String.to_integer(weeks_str)
+        {:ok, Date.add(reference_date, weeks * 7)}
+
+      # Match "in X months"
+      match = Regex.run(~r/(?:in\s+)?(\d+)\s+months?/, text_lower) ->
+        [_, months_str] = match
+        months = String.to_integer(months_str)
+        {:ok, Date.add(reference_date, months * 30)}
+
+      true ->
         {:error, :unable_to_parse_date}
     end
   end
@@ -161,5 +214,12 @@ defmodule Mojentic.LLM.Tools.DateResolver do
       days_until = rem(target_day - current_day + 7, 7)
       Date.add(reference_date, days_until)
     end
+  end
+
+  defp last_day_of_week(reference_date, target_day) do
+    current_day = Date.day_of_week(reference_date)
+    days_back = rem(current_day - target_day + 7, 7)
+    days_back = if days_back == 0, do: 7, else: days_back
+    Date.add(reference_date, -days_back)
   end
 end

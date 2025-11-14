@@ -45,6 +45,7 @@ defmodule Mojentic.LLM.Broker do
   alias Mojentic.Error
   alias Mojentic.LLM.CompletionConfig
   alias Mojentic.LLM.Gateway
+  alias Mojentic.LLM.GatewayResponse
   alias Mojentic.LLM.Message
   alias Mojentic.LLM.Tools.Tool
 
@@ -198,6 +199,146 @@ defmodule Mojentic.LLM.Broker do
         object -> {:ok, object}
       end
     end
+  end
+
+  @doc """
+  Generates streaming text response from the LLM.
+
+  Yields content chunks as they arrive, and handles tool calls automatically
+  through recursion. When tool calls are detected, the broker executes them
+  and recursively streams the LLM's follow-up response.
+
+  ## Parameters
+
+  - `broker`: Broker instance
+  - `messages`: List of conversation messages
+  - `tools`: Optional list of tool modules (default: nil)
+  - `config`: Optional completion configuration (default: default config)
+
+  ## Returns
+
+  A stream that yields content strings as they arrive.
+
+  ## Examples
+
+      broker = Broker.new("qwen3:32b", Ollama)
+      messages = [Message.user("Tell me a story")]
+
+      broker
+      |> Broker.generate_stream(messages)
+      |> Stream.each(&IO.write/1)
+      |> Stream.run()
+
+      # With tools
+      tools = [DateTool]
+      messages = [Message.user("What's the date tomorrow?")]
+
+      broker
+      |> Broker.generate_stream(messages, tools)
+      |> Stream.each(&IO.write/1)
+      |> Stream.run()
+
+  """
+  # credo:disable-for-next-line Credo.Check.Refactor.ABCSize
+  def generate_stream(broker, messages, tools \\ nil, config \\ nil) do
+    config = config || %CompletionConfig{}
+
+    # Use a wrapper stream to handle the lazy evaluation properly
+    Stream.resource(
+      fn ->
+        # Initialize: start streaming from gateway
+        stream = broker.gateway.complete_stream(broker.model, messages, tools, config)
+        {stream, [], ""}
+      end,
+      fn
+        {stream, acc_tool_calls, acc_content} ->
+          # Try to get next element from stream
+          case Enum.take(stream, 1) do
+            [{:content, chunk}] ->
+              # Got a content chunk - yield it and continue
+              remaining_stream = Stream.drop(stream, 1)
+              {[chunk], {remaining_stream, acc_tool_calls, acc_content <> chunk}}
+
+            [{:tool_calls, tool_calls}] ->
+              # Got tool calls - accumulate them and continue
+              remaining_stream = Stream.drop(stream, 1)
+              {[], {remaining_stream, acc_tool_calls ++ tool_calls, acc_content}}
+
+            [{:error, reason}] ->
+              # Got error - log and halt
+              Logger.error("Streaming error: #{inspect(reason)}")
+              {:halt, nil}
+
+            [] ->
+              # Stream ended - handle tool calls if any
+              handle_stream_end(broker, messages, acc_tool_calls, acc_content, tools, config)
+          end
+
+        :halt ->
+          {:halt, nil}
+
+        {:recursive, recursive_stream} ->
+          # Yield from recursive stream
+          case Enum.take(recursive_stream, 1) do
+            [chunk] ->
+              remaining = Stream.drop(recursive_stream, 1)
+              {[chunk], {:recursive, remaining}}
+
+            [] ->
+              # Recursive stream done
+              {:halt, nil}
+          end
+      end,
+      fn _ -> :ok end
+    )
+  end
+
+  defp handle_stream_end(_broker, _messages, [], _acc_content, _tools, _config) do
+    # No tool calls, stream is done
+    {:halt, nil}
+  end
+
+  defp handle_stream_end(_broker, _messages, _tool_calls, _acc_content, nil, _config) do
+    Logger.warning("LLM requested tool calls but no tools provided")
+    {:halt, nil}
+  end
+
+  defp handle_stream_end(_broker, _messages, _tool_calls, _acc_content, [], _config) do
+    Logger.warning("LLM requested tool calls but no tools provided")
+    {:halt, nil}
+  end
+
+  defp handle_stream_end(broker, messages, tool_calls, acc_content, tools, config) do
+    Logger.info("Processing #{length(tool_calls)} tool call(s) in stream")
+
+    # Build response with accumulated content and tool calls
+    response = %GatewayResponse{
+      content: acc_content,
+      tool_calls: tool_calls,
+      object: nil
+    }
+
+    # Build new messages with tool results
+    new_messages = messages ++ [build_assistant_message(response)]
+
+    tool_results =
+      Enum.map(tool_calls, fn tool_call ->
+        execute_tool(tool_call, tools)
+      end)
+
+    final_messages =
+      Enum.reduce(tool_results, new_messages, fn
+        {:ok, tool_message}, acc ->
+          acc ++ [tool_message]
+
+        {:error, reason}, acc ->
+          Logger.error("Tool execution failed: #{Error.format_error(reason)}")
+          acc
+      end)
+
+    # Recursively stream with updated messages
+    recursive_stream = generate_stream(broker, final_messages, tools, config)
+    {[], {:recursive, recursive_stream}}
   end
 
   # Private functions

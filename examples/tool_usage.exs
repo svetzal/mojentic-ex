@@ -51,7 +51,7 @@ defmodule WeatherTool do
 end
 
 # Create broker with tool
-broker = Broker.new("qwen3:14b", Ollama)
+broker = Broker.new("qwen3:32b", Ollama)
 
 # Create tools list
 tools = [WeatherTool]
