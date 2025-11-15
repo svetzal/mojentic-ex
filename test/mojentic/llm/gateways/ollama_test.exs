@@ -272,7 +272,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       @behaviour Mojentic.LLM.Tools.Tool
 
       @impl true
-      def run(_args), do: {:ok, %{result: "test"}}
+      def run(_tool, _args), do: {:ok, %{result: "test"}}
 
       @impl true
       def descriptor do

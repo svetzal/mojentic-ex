@@ -63,7 +63,7 @@ defmodule Mojentic.LLM.ChatSessionTest do
     @behaviour Mojentic.LLM.Tools.Tool
 
     @impl true
-    def run(args) do
+    def run(_tool, args) do
       case Map.get(args, "fail") do
         true -> {:error, {:tool_error, "Tool failed"}}
         _ -> {:ok, %{result: "tool executed", input: args}}
