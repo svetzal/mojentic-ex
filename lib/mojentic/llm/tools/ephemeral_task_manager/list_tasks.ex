@@ -5,7 +5,8 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManager.ListTasks do
 
   @behaviour Mojentic.LLM.Tools.Tool
 
-  alias Mojentic.LLM.Tools.EphemeralTaskManager.{Task, TaskList}
+  alias Mojentic.LLM.Tools.EphemeralTaskManager.Task
+  alias Mojentic.LLM.Tools.EphemeralTaskManager.TaskList
 
   defstruct [:agent]
 
@@ -49,10 +50,8 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManager.ListTasks do
   end
 
   defp format_tasks(tasks) do
-    tasks
-    |> Enum.map(fn task ->
+    Enum.map_join(tasks, "\n", fn task ->
       "#{task.id}. #{task.description} (#{Task.status_to_string(task.status)})"
     end)
-    |> Enum.join("\n")
   end
 end

@@ -14,7 +14,8 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManager.AppendTask do
 
   @behaviour Mojentic.LLM.Tools.Tool
 
-  alias Mojentic.LLM.Tools.EphemeralTaskManager.{Task, TaskList}
+  alias Mojentic.LLM.Tools.EphemeralTaskManager.Task
+  alias Mojentic.LLM.Tools.EphemeralTaskManager.TaskList
 
   defstruct [:agent]
 

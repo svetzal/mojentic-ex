@@ -198,6 +198,113 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
     end
   end
 
+  describe "run/1 - last day of week" do
+    test "resolves 'last Monday'" do
+      # 2025-11-14 is Friday, last Monday would be 2025-11-10
+      args = %{
+        "relative_date_found" => "last Monday",
+        "reference_date_in_iso8601" => "2025-11-14"
+      }
+
+      assert {:ok, result} = DateResolver.run(args)
+      assert result.resolved_date == "2025-11-10"
+    end
+
+    test "resolves 'last Friday'" do
+      # 2025-11-10 is Monday, last Friday would be 2025-11-07
+      args = %{
+        "relative_date_found" => "last Friday",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
+
+      assert {:ok, result} = DateResolver.run(args)
+      assert result.resolved_date == "2025-11-07"
+    end
+
+    test "resolves 'last Sunday'" do
+      args = %{
+        "relative_date_found" => "last Sunday",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
+
+      assert {:ok, result} = DateResolver.run(args)
+      assert result.resolved_date == "2025-11-09"
+    end
+  end
+
+  describe "run/1 - weeks and months" do
+    test "resolves 'next week'" do
+      args = %{
+        "relative_date_found" => "next week",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
+
+      assert {:ok, result} = DateResolver.run(args)
+      assert result.resolved_date == "2025-11-17"
+    end
+
+    test "resolves 'last week'" do
+      args = %{
+        "relative_date_found" => "last week",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
+
+      assert {:ok, result} = DateResolver.run(args)
+      assert result.resolved_date == "2025-11-03"
+    end
+
+    test "resolves 'next month'" do
+      args = %{
+        "relative_date_found" => "next month",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
+
+      assert {:ok, result} = DateResolver.run(args)
+      assert result.resolved_date == "2025-12-10"
+    end
+
+    test "resolves 'last month'" do
+      args = %{
+        "relative_date_found" => "last month",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
+
+      assert {:ok, result} = DateResolver.run(args)
+      assert result.resolved_date == "2025-10-11"
+    end
+
+    test "resolves 'in 2 weeks'" do
+      args = %{
+        "relative_date_found" => "in 2 weeks",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
+
+      assert {:ok, result} = DateResolver.run(args)
+      assert result.resolved_date == "2025-11-24"
+    end
+
+    test "resolves 'in 3 months'" do
+      args = %{
+        "relative_date_found" => "in 3 months",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
+
+      assert {:ok, result} = DateResolver.run(args)
+      # 3 months * 30 days = 90 days
+      assert result.resolved_date == "2026-02-08"
+    end
+
+    test "resolves '10 days from now'" do
+      args = %{
+        "relative_date_found" => "10 days from now",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
+
+      assert {:ok, result} = DateResolver.run(args)
+      assert result.resolved_date == "2025-11-20"
+    end
+  end
+
   describe "run/1 - error handling" do
     test "returns error for unparseable date" do
       args = %{
@@ -224,5 +331,33 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
 
       assert {:error, :unable_to_parse_date} = DateResolver.run(args)
     end
+
+    test "returns error for unparseable 'last' without day" do
+      args = %{
+        "relative_date_found" => "last something",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
+
+      assert {:error, :unable_to_parse_date} = DateResolver.run(args)
+    end
+
+    test "returns error for unparseable 'next' without day" do
+      args = %{
+        "relative_date_found" => "next something",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
+
+      assert {:error, :unable_to_parse_date} = DateResolver.run(args)
+    end
+
+    test "returns error for unparseable 'this' without day" do
+      args = %{
+        "relative_date_found" => "this something",
+        "reference_date_in_iso8601" => "2025-11-10"
+      }
+
+      assert {:error, :unable_to_parse_date} = DateResolver.run(args)
+    end
   end
+
 end

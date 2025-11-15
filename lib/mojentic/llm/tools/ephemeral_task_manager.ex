@@ -56,6 +56,15 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManager do
 
   alias Mojentic.LLM.Tools.EphemeralTaskManager.TaskList
 
+  # Module aliases for internal use
+  alias Mojentic.LLM.Tools.EphemeralTaskManager.AppendTask
+  alias Mojentic.LLM.Tools.EphemeralTaskManager.ClearTasks
+  alias Mojentic.LLM.Tools.EphemeralTaskManager.CompleteTask
+  alias Mojentic.LLM.Tools.EphemeralTaskManager.InsertTaskAfter
+  alias Mojentic.LLM.Tools.EphemeralTaskManager.ListTasks
+  alias Mojentic.LLM.Tools.EphemeralTaskManager.PrependTask
+  alias Mojentic.LLM.Tools.EphemeralTaskManager.StartTask
+
   @doc """
   Creates all task manager tools with a shared agent.
 
@@ -80,13 +89,4 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManager do
       ClearTasks.new(agent)
     ]
   end
-
-  # Aliases for convenience
-  alias Mojentic.LLM.Tools.EphemeralTaskManager.AppendTask
-  alias Mojentic.LLM.Tools.EphemeralTaskManager.ClearTasks
-  alias Mojentic.LLM.Tools.EphemeralTaskManager.CompleteTask
-  alias Mojentic.LLM.Tools.EphemeralTaskManager.InsertTaskAfter
-  alias Mojentic.LLM.Tools.EphemeralTaskManager.ListTasks
-  alias Mojentic.LLM.Tools.EphemeralTaskManager.PrependTask
-  alias Mojentic.LLM.Tools.EphemeralTaskManager.StartTask
 end

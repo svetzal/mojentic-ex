@@ -440,5 +440,276 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
 
       assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
     end
+
+    test "omits num_predict when max_tokens is zero and num_predict is nil" do
+      messages = [Message.user("Test")]
+
+      config = %CompletionConfig{
+        temperature: 0.5,
+        max_tokens: 0,
+        num_ctx: 1024,
+        num_predict: nil
+      }
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        refute Map.has_key?(decoded["options"], "num_predict")
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+  end
+
+  describe "complete_stream/4" do
+    test "handles request failure during streaming" do
+      messages = [Message.user("Hello")]
+      config = CompletionConfig.new()
+
+      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+        {:error, :connection_refused}
+      end)
+
+      stream = Ollama.complete_stream("qwen2.5:3b", messages, [], config)
+
+      results = Enum.to_list(stream)
+      assert [{:error, :connection_refused}] = results
+    end
+
+    test "stream includes tools in request when provided" do
+      defmodule MockStreamTool do
+        @behaviour Mojentic.LLM.Tools.Tool
+
+        @impl true
+        def run(_args), do: {:ok, %{result: "test"}}
+
+        @impl true
+        def descriptor do
+          %{
+            type: "function",
+            function: %{
+              name: "mock_stream_tool",
+              description: "A mock streaming tool",
+              parameters: %{type: "object", properties: %{}}
+            }
+          }
+        end
+
+        def matches?("mock_stream_tool"), do: true
+        def matches?(_), do: false
+      end
+
+      messages = [Message.user("Use a tool")]
+      config = CompletionConfig.new()
+      tools = [MockStreamTool]
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        assert is_list(decoded["tools"])
+        assert length(decoded["tools"]) == 1
+        assert decoded["stream"] == true
+        {:error, :test_abort}
+      end)
+
+      stream = Ollama.complete_stream("qwen2.5:3b", messages, tools, config)
+      _results = Enum.to_list(stream)
+    end
+  end
+
+  describe "edge cases" do
+    test "handles empty tool_calls in message" do
+      messages = [%Message{role: :assistant, content: "test", tool_calls: []}]
+      config = CompletionConfig.new()
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        msg = hd(decoded["messages"])
+        refute Map.has_key?(msg, "tool_calls")
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "handles nil tool_calls in message" do
+      messages = [%Message{role: :assistant, content: "test", tool_calls: nil}]
+      config = CompletionConfig.new()
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        msg = hd(decoded["messages"])
+        refute Map.has_key?(msg, "tool_calls")
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "handles empty image_paths in message" do
+      messages = [%Message{role: :user, content: "test", image_paths: []}]
+      config = CompletionConfig.new()
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        msg = hd(decoded["messages"])
+        refute Map.has_key?(msg, "images")
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "handles nil image_paths in message" do
+      messages = [%Message{role: :user, content: "test", image_paths: nil}]
+      config = CompletionConfig.new()
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        msg = hd(decoded["messages"])
+        refute Map.has_key?(msg, "images")
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "handles file read error for images" do
+      messages = [
+        Message.user("Describe this") |> Message.with_images(["/nonexistent/path.jpg"])
+      ]
+
+      config = CompletionConfig.new()
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        msg = hd(decoded["messages"])
+        # Should have images key but empty list due to read error
+        images = Map.get(msg, "images", [])
+        assert images == []
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "handles response with nil content" do
+      messages = [Message.user("Hello")]
+      config = CompletionConfig.new()
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, %GatewayResponse{content: nil, tool_calls: []}} =
+               Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "handles message with nil content" do
+      messages = [%Message{role: :user, content: nil, tool_calls: nil, image_paths: nil}]
+      config = CompletionConfig.new()
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        msg = hd(decoded["messages"])
+        assert msg["content"] == ""
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "handles tool_calls without arguments" do
+      messages = [Message.user("Use tool")]
+      config = CompletionConfig.new()
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "",
+            "role" => "assistant",
+            "tool_calls" => [
+              %{
+                "id" => "call_123",
+                "function" => %{
+                  "name" => "test_tool"
+                  # No arguments field
+                }
+              }
+            ]
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, %GatewayResponse{content: "", tool_calls: [tool_call]}} =
+               Ollama.complete("qwen2.5:3b", messages, [], config)
+
+      assert tool_call.arguments == %{}
+    end
   end
 end
