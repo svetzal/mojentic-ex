@@ -79,14 +79,20 @@ defmodule Mojentic.LLM.Tools.Tool do
   @doc """
   Returns the tool's name from its descriptor.
 
+  Supports both module-based tools and struct-based tools with instance descriptors.
+
   ## Examples
 
       iex> Tool.name(WeatherTool)
       "get_weather"
 
+      iex> tool_instance = ToolWrapper.new(agent: agent, name: "custom", description: "desc")
+      iex> Tool.name(tool_instance)
+      "custom"
+
   """
   def name(tool) do
-    tool.descriptor().function.name
+    descriptor(tool).function.name
   end
 
   @doc """
@@ -99,7 +105,7 @@ defmodule Mojentic.LLM.Tools.Tool do
 
   """
   def description(tool) do
-    tool.descriptor().function.description
+    descriptor(tool).function.description
   end
 
   @doc """
@@ -121,15 +127,56 @@ defmodule Mojentic.LLM.Tools.Tool do
   @doc """
   Runs a tool with the given arguments.
 
-  Delegates to the tool's run/1 callback.
+  Supports both module-based tools and struct-based tools.
 
   ## Examples
 
       iex> Tool.run(WeatherTool, %{"location" => "SF"})
       {:ok, %{location: "SF", temperature: 22, condition: "sunny"}}
 
+      iex> tool = ToolWrapper.new(...)
+      iex> Tool.run(tool, %{"input" => "test"})
+      {:ok, "response"}
+
   """
-  def run(tool, arguments) do
-    tool.run(arguments)
+  def run(tool, arguments) when is_atom(tool) do
+    # Module-based tool: call run/2 with nil/module as first arg
+    # (most tools ignore the first argument or expect the module)
+    tool.run(tool, arguments)
+  end
+
+  def run(%module{} = tool, arguments) do
+    # Struct-based tool: call run/2 with the struct instance
+    module.run(tool, arguments)
+  end
+
+  @doc """
+  Returns the descriptor for a tool.
+
+  Handles both module-based tools (with descriptor/0) and
+  struct-based tools (with descriptor/1).
+
+  ## Examples
+
+      iex> Tool.descriptor(WeatherTool)
+      %{type: "function", function: %{name: "get_weather", ...}}
+
+      iex> tool = ToolWrapper.new(...)
+      iex> Tool.descriptor(tool)
+      %{type: "function", function: %{name: "custom_name", ...}}
+
+  """
+  def descriptor(tool) when is_atom(tool) do
+    # Module-based tool: call descriptor/0
+    tool.descriptor()
+  end
+
+  def descriptor(%module{} = tool) do
+    # Struct-based tool: try descriptor/1, fall back to descriptor/0
+    if function_exported?(module, :descriptor, 1) do
+      module.descriptor(tool)
+    else
+      module.descriptor()
+    end
   end
 end

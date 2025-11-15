@@ -33,6 +33,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   alias Mojentic.LLM.GatewayResponse
   alias Mojentic.LLM.Message
   alias Mojentic.LLM.ToolCall
+  alias Mojentic.LLM.Tools.Tool
 
   require Logger
 
@@ -328,7 +329,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   defp maybe_add_tools(body, []), do: body
 
   defp maybe_add_tools(body, tools) do
-    tool_descriptors = Enum.map(tools, & &1.descriptor())
+    tool_descriptors = Enum.map(tools, &Tool.descriptor/1)
     Map.put(body, :tools, tool_descriptors)
   end
 
