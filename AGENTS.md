@@ -149,6 +149,28 @@ _A code generation and project patching framework_
 
 ## Quality Guidelines
 
+### MANDATORY Pre-Commit Quality Gates
+
+**STOP**: Before considering ANY work complete or committing code, you MUST run ALL quality checks:
+
+```bash
+# Complete quality gate check (run this EVERY TIME)
+mix format --check-formatted && \
+mix credo --strict && \
+mix test && \
+mix audit
+```
+
+**Why this matters**: Examples and tests must pass compilation and linting. When examples fail, users cannot learn from them. Always validate the entire project, not just the code you changed.
+
+**If any check fails**:
+- STOP immediately
+- Fix the root cause (don't suppress warnings)
+- Re-run all checks
+- Only proceed when all pass
+
+### Additional Quality Practices
+
 - Write unit tests for new functions
 - Ensure existing tests pass when updating code
 - Run `mix test` after writing/updating tests
