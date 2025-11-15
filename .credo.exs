@@ -14,7 +14,8 @@
         {Credo.Check.Readability.SeparateAliasRequire, []},
         {Credo.Check.Readability.StrictModuleLayout, []},
         {Credo.Check.Readability.WithCustomTaggedTuple, []},
-        {Credo.Check.Refactor.ABCSize, []},
+        {Credo.Check.Refactor.ABCSize, [max_size: 75]},
+        {Credo.Check.Refactor.CyclomaticComplexity, [max_complexity: 15]},
         {Credo.Check.Warning.UnsafeToAtom, []},
 
         # Disabled checks
