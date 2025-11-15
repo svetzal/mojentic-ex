@@ -56,6 +56,7 @@ defmodule Mojentic.LLM.Tools.Tool do
 
   ## Parameters
 
+  - `tool`: The tool struct instance
   - `arguments`: Map of argument name to value
 
   ## Returns
@@ -64,7 +65,7 @@ defmodule Mojentic.LLM.Tools.Tool do
   - `{:error, reason}` on failure
 
   """
-  @callback run(arguments :: map()) :: {:ok, term()} | {:error, term()}
+  @callback run(tool :: struct(), arguments :: map()) :: {:ok, term()} | {:error, term()}
 
   @doc """
   Returns the tool descriptor for the LLM.

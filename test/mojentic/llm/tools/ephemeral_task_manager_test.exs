@@ -2,6 +2,7 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManagerTest do
   use ExUnit.Case, async: true
 
   alias Mojentic.LLM.Tools.EphemeralTaskManager
+
   alias Mojentic.LLM.Tools.EphemeralTaskManager.{
     AppendTask,
     ClearTasks,
@@ -170,7 +171,8 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManagerTest do
 
       assert count == 2
       assert empty_list.tasks == []
-      assert empty_list.next_id == 3  # next_id should be preserved
+      # next_id should be preserved
+      assert empty_list.next_id == 3
     end
   end
 
@@ -267,10 +269,11 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManagerTest do
     end
 
     test "inserts task after existing task", %{tool: tool, agent: agent, task1_id: task1_id} do
-      assert {:ok, result} = InsertTaskAfter.run(tool, %{
-        "existing_task_id" => task1_id,
-        "description" => "Task 1.5"
-      })
+      assert {:ok, result} =
+               InsertTaskAfter.run(tool, %{
+                 "existing_task_id" => task1_id,
+                 "description" => "Task 1.5"
+               })
 
       assert result[:description] == "Task 1.5"
       assert result[:summary] =~ "inserted after"
@@ -280,17 +283,19 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManagerTest do
     end
 
     test "handles string task_id", %{tool: tool, task1_id: task1_id} do
-      assert {:ok, _result} = InsertTaskAfter.run(tool, %{
-        "existing_task_id" => "#{task1_id}",
-        "description" => "Task X"
-      })
+      assert {:ok, _result} =
+               InsertTaskAfter.run(tool, %{
+                 "existing_task_id" => "#{task1_id}",
+                 "description" => "Task X"
+               })
     end
 
     test "returns error for nonexistent task", %{tool: tool} do
-      assert {:error, result} = InsertTaskAfter.run(tool, %{
-        "existing_task_id" => 999,
-        "description" => "Task X"
-      })
+      assert {:error, result} =
+               InsertTaskAfter.run(tool, %{
+                 "existing_task_id" => 999,
+                 "description" => "Task X"
+               })
 
       assert result[:error] =~ "No task with ID '999'"
       assert result[:summary] =~ "Failed to insert"
@@ -475,7 +480,7 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManagerTest do
 
       assert length(tools) == 7
 
-      tool_structs = Enum.map(tools, &(&1.__struct__))
+      tool_structs = Enum.map(tools, & &1.__struct__)
       assert AppendTask in tool_structs
       assert PrependTask in tool_structs
       assert InsertTaskAfter in tool_structs
@@ -504,10 +509,13 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManagerTest do
       # Create tasks
       {:ok, task1} = AppendTask.run(append_tool, %{"description" => "Write code"})
       {:ok, task3} = AppendTask.run(append_tool, %{"description" => "Deploy"})
-      {:ok, _task2} = InsertTaskAfter.run(insert_tool, %{
-        "existing_task_id" => task1[:id],
-        "description" => "Write tests"
-      })
+
+      {:ok, _task2} =
+        InsertTaskAfter.run(insert_tool, %{
+          "existing_task_id" => task1[:id],
+          "description" => "Write tests"
+        })
+
       {:ok, _task0} = PrependTask.run(prepend_tool, %{"description" => "Design"})
 
       # List tasks

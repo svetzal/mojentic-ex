@@ -89,7 +89,11 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManager.TaskList do
       "Task 2"
 
   """
-  def insert_task_after(%__MODULE__{tasks: tasks, next_id: next_id} = _list, existing_task_id, description) do
+  def insert_task_after(
+        %__MODULE__{tasks: tasks, next_id: next_id} = _list,
+        existing_task_id,
+        description
+      ) do
     case find_task_index(tasks, existing_task_id) do
       nil ->
         {:error, "No task with ID '#{existing_task_id}' exists"}
@@ -158,7 +162,8 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManager.TaskList do
 
       task ->
         if task.status != :in_progress do
-          {:error, "Task '#{task_id}' cannot be completed because it is not in IN_PROGRESS status"}
+          {:error,
+           "Task '#{task_id}' cannot be completed because it is not in IN_PROGRESS status"}
         else
           updated_task = %{task | status: :completed}
           updated_tasks = update_task_in_list(tasks, updated_task)

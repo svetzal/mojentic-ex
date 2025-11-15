@@ -54,8 +54,6 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManager do
 
   """
 
-  alias Mojentic.LLM.Tools.EphemeralTaskManager.TaskList
-
   # Module aliases for internal use
   alias Mojentic.LLM.Tools.EphemeralTaskManager.AppendTask
   alias Mojentic.LLM.Tools.EphemeralTaskManager.ClearTasks

@@ -102,7 +102,7 @@ IO.puts("Testing tool usage with DateResolver...")
 
 messages = [Message.user("What day of the week is Christmas 2025?")]
 
-case Broker.generate(text_broker, messages, [DateResolver]) do
+case Broker.generate(text_broker, messages, [DateResolver.new()]) do
   {:ok, response} ->
     print_result.("Tool usage", {:ok, response})
   {:error, reason} ->

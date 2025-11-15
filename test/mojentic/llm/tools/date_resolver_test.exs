@@ -20,7 +20,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
     test "resolves 'today' to current date" do
       args = %{"relative_date_found" => "today", "reference_date_in_iso8601" => "2025-11-10"}
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.relative_date == "today"
       assert result.resolved_date == "2025-11-10"
       assert result.summary =~ "today"
@@ -30,7 +30,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
     test "resolves 'tomorrow'" do
       args = %{"relative_date_found" => "tomorrow", "reference_date_in_iso8601" => "2025-11-10"}
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.relative_date == "tomorrow"
       assert result.resolved_date == "2025-11-11"
     end
@@ -38,7 +38,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
     test "resolves 'yesterday'" do
       args = %{"relative_date_found" => "yesterday", "reference_date_in_iso8601" => "2025-11-10"}
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.relative_date == "yesterday"
       assert result.resolved_date == "2025-11-09"
     end
@@ -46,7 +46,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
     test "uses today as default reference date" do
       args = %{"relative_date_found" => "today"}
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == Date.to_iso8601(Date.utc_today())
     end
   end
@@ -59,7 +59,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-09"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-10"
     end
 
@@ -70,7 +70,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-14"
     end
 
@@ -80,7 +80,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-11"
     end
 
@@ -90,7 +90,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-12"
     end
 
@@ -100,7 +100,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-13"
     end
 
@@ -110,7 +110,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-15"
     end
 
@@ -120,7 +120,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-16"
     end
   end
@@ -133,7 +133,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-14"
     end
 
@@ -144,7 +144,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-14"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-14"
     end
   end
@@ -153,28 +153,28 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
     test "resolves 'in 3 days'" do
       args = %{"relative_date_found" => "in 3 days", "reference_date_in_iso8601" => "2025-11-10"}
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-13"
     end
 
     test "resolves 'in 1 day'" do
       args = %{"relative_date_found" => "in 1 day", "reference_date_in_iso8601" => "2025-11-10"}
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-11"
     end
 
     test "resolves 'in 7 days'" do
       args = %{"relative_date_found" => "in 7 days", "reference_date_in_iso8601" => "2025-11-10"}
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-17"
     end
 
     test "resolves 'in 10 days'" do
       args = %{"relative_date_found" => "in 10 days", "reference_date_in_iso8601" => "2025-11-10"}
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-20"
     end
   end
@@ -183,7 +183,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
     test "handles uppercase 'TOMORROW'" do
       args = %{"relative_date_found" => "TOMORROW", "reference_date_in_iso8601" => "2025-11-10"}
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-11"
     end
 
@@ -193,7 +193,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-14"
     end
   end
@@ -206,7 +206,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-14"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-10"
     end
 
@@ -217,7 +217,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-07"
     end
 
@@ -227,7 +227,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-09"
     end
   end
@@ -239,7 +239,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-17"
     end
 
@@ -249,7 +249,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-03"
     end
 
@@ -259,7 +259,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-12-10"
     end
 
@@ -269,7 +269,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-10-11"
     end
 
@@ -279,7 +279,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-24"
     end
 
@@ -289,7 +289,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       # 3 months * 30 days = 90 days
       assert result.resolved_date == "2026-02-08"
     end
@@ -300,7 +300,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert result.resolved_date == "2025-11-20"
     end
   end
@@ -312,7 +312,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:error, :unable_to_parse_date} = DateResolver.run(args)
+      assert {:error, :unable_to_parse_date} = DateResolver.run(DateResolver.new(), args)
     end
 
     test "handles invalid reference date gracefully" do
@@ -322,14 +322,14 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
       }
 
       # Should fall back to today's date
-      assert {:ok, result} = DateResolver.run(args)
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
       assert is_binary(result.resolved_date)
     end
 
     test "handles nil relative_date" do
       args = %{"reference_date_in_iso8601" => "2025-11-10"}
 
-      assert {:error, :unable_to_parse_date} = DateResolver.run(args)
+      assert {:error, :unable_to_parse_date} = DateResolver.run(DateResolver.new(), args)
     end
 
     test "returns error for unparseable 'last' without day" do
@@ -338,7 +338,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:error, :unable_to_parse_date} = DateResolver.run(args)
+      assert {:error, :unable_to_parse_date} = DateResolver.run(DateResolver.new(), args)
     end
 
     test "returns error for unparseable 'next' without day" do
@@ -347,7 +347,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:error, :unable_to_parse_date} = DateResolver.run(args)
+      assert {:error, :unable_to_parse_date} = DateResolver.run(DateResolver.new(), args)
     end
 
     test "returns error for unparseable 'this' without day" do
@@ -356,8 +356,7 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
         "reference_date_in_iso8601" => "2025-11-10"
       }
 
-      assert {:error, :unable_to_parse_date} = DateResolver.run(args)
+      assert {:error, :unable_to_parse_date} = DateResolver.run(DateResolver.new(), args)
     end
   end
-
 end

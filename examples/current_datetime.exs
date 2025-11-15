@@ -21,7 +21,7 @@ broker = Broker.new("qwen3:32b", gateway)
 IO.puts("Using model: #{broker.model}\n")
 
 # Create the tool
-tool = CurrentDatetime
+tool = CurrentDatetime.new()
 
 IO.puts("Available tool:")
 descriptor = tool.descriptor()

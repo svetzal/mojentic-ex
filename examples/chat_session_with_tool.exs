@@ -45,6 +45,6 @@ IO.puts("Try asking about dates (e.g., 'What day is tomorrow?')")
 IO.puts("Type your query and press Enter. Empty line to exit.\n")
 
 broker = Broker.new("qwen3:32b", Ollama)
-session = ChatSession.new(broker, tools: [DateResolver])
+session = ChatSession.new(broker, tools: [DateResolver.new()])
 
 ChatLoopWithTools.run(session)

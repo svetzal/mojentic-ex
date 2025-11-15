@@ -528,8 +528,11 @@ defmodule Mojentic.LLM.Tools.FindFilesByGlobTool do
     pattern = Map.get(args, "pattern")
 
     case FilesystemGateway.find_files_by_glob(fs, path, pattern) do
-      {:ok, files} -> {:ok, files}
-      {:error, reason} -> {:error, "Error finding files with pattern '#{pattern}' in '#{path}': #{reason}"}
+      {:ok, files} ->
+        {:ok, files}
+
+      {:error, reason} ->
+        {:error, "Error finding files with pattern '#{pattern}' in '#{path}': #{reason}"}
     end
   end
 end
@@ -587,8 +590,11 @@ defmodule Mojentic.LLM.Tools.FindFilesContainingTool do
     pattern = Map.get(args, "pattern")
 
     case FilesystemGateway.find_files_containing(fs, path, pattern) do
-      {:ok, files} -> {:ok, files}
-      {:error, reason} -> {:error, "Error finding files containing pattern '#{pattern}' in '#{path}': #{reason}"}
+      {:ok, files} ->
+        {:ok, files}
+
+      {:error, reason} ->
+        {:error, "Error finding files containing pattern '#{pattern}' in '#{path}': #{reason}"}
     end
   end
 end
@@ -647,8 +653,11 @@ defmodule Mojentic.LLM.Tools.FindLinesMatchingTool do
     {directory, file_name} = split_path(path)
 
     case FilesystemGateway.find_lines_matching(fs, directory, file_name, pattern) do
-      {:ok, lines} -> {:ok, lines}
-      {:error, reason} -> {:error, "Error finding lines matching pattern '#{pattern}' in file '#{path}': #{reason}"}
+      {:ok, lines} ->
+        {:ok, lines}
+
+      {:error, reason} ->
+        {:error, "Error finding lines matching pattern '#{pattern}' in file '#{path}': #{reason}"}
     end
   end
 

@@ -21,7 +21,7 @@ defmodule Mojentic.LLM.Tools.CurrentDatetimeTest do
     test "returns current datetime with default format" do
       args = %{}
 
-      assert {:ok, result} = CurrentDatetime.run(args)
+      assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
       assert is_binary(result.current_datetime)
       assert is_integer(result.timestamp)
       assert is_binary(result.timezone)
@@ -32,7 +32,7 @@ defmodule Mojentic.LLM.Tools.CurrentDatetimeTest do
     test "returns current datetime with custom format" do
       args = %{"format_string" => "%Y-%m-%d"}
 
-      assert {:ok, result} = CurrentDatetime.run(args)
+      assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
       assert is_binary(result.current_datetime)
       assert result.current_datetime =~ ~r/\d{4}-\d{2}-\d{2}/
       refute result.current_datetime =~ ~r/\d{2}:\d{2}:\d{2}/
@@ -41,7 +41,7 @@ defmodule Mojentic.LLM.Tools.CurrentDatetimeTest do
     test "returns timestamp as unix epoch" do
       args = %{}
 
-      assert {:ok, result} = CurrentDatetime.run(args)
+      assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
       # Timestamp should be a reasonable unix epoch (after 2020, before 2030)
       assert result.timestamp > 1_577_836_800
       assert result.timestamp < 1_893_456_000
@@ -50,14 +50,14 @@ defmodule Mojentic.LLM.Tools.CurrentDatetimeTest do
     test "returns timezone information" do
       args = %{}
 
-      assert {:ok, result} = CurrentDatetime.run(args)
+      assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
       assert result.timezone == "Etc/UTC"
     end
 
     test "handles format with day name" do
       args = %{"format_string" => "%A"}
 
-      assert {:ok, result} = CurrentDatetime.run(args)
+      assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
       # Should be a day name
       assert result.current_datetime in [
                "Monday",
@@ -73,7 +73,7 @@ defmodule Mojentic.LLM.Tools.CurrentDatetimeTest do
     test "handles format with month name" do
       args = %{"format_string" => "%B"}
 
-      assert {:ok, result} = CurrentDatetime.run(args)
+      assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
       # Should be a month name
       assert result.current_datetime in [
                "January",
@@ -94,7 +94,7 @@ defmodule Mojentic.LLM.Tools.CurrentDatetimeTest do
     test "handles format with year only" do
       args = %{"format_string" => "%Y"}
 
-      assert {:ok, result} = CurrentDatetime.run(args)
+      assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
       # Should be a 4-digit year
       assert result.current_datetime =~ ~r/^\d{4}$/
     end
@@ -102,7 +102,7 @@ defmodule Mojentic.LLM.Tools.CurrentDatetimeTest do
     test "handles invalid format gracefully" do
       args = %{"format_string" => "%invalid%"}
 
-      assert {:ok, result} = CurrentDatetime.run(args)
+      assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
       # Should still return something (fallback to ISO format)
       assert is_binary(result.current_datetime)
     end
@@ -110,7 +110,7 @@ defmodule Mojentic.LLM.Tools.CurrentDatetimeTest do
     test "result includes all required fields" do
       args = %{}
 
-      assert {:ok, result} = CurrentDatetime.run(args)
+      assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
       assert Map.has_key?(result, :current_datetime)
       assert Map.has_key?(result, :timestamp)
       assert Map.has_key?(result, :timezone)

@@ -10,7 +10,8 @@ defmodule Mojentic.LLM.Tools.DateResolver do
 
       alias Mojentic.LLM.Tools.DateResolver
 
-      {:ok, result} = DateResolver.run(%{
+      tool = DateResolver.new()
+      {:ok, result} = DateResolver.run(tool, %{
         "relative_date_found" => "tomorrow"
       })
       # => {:ok, %{relative_date: "tomorrow", resolved_date: "2025-11-11", ...}}
@@ -19,8 +20,17 @@ defmodule Mojentic.LLM.Tools.DateResolver do
 
   @behaviour Mojentic.LLM.Tools.Tool
 
+  defstruct []
+
+  @doc """
+  Creates a new DateResolver tool instance.
+  """
+  def new do
+    %__MODULE__{}
+  end
+
   @impl true
-  def run(arguments) do
+  def run(%__MODULE__{}, arguments) do
     relative_date = Map.get(arguments, "relative_date_found")
     reference_date_str = Map.get(arguments, "reference_date_in_iso8601")
 

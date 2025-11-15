@@ -194,19 +194,25 @@ defmodule Mojentic.LLM.Tools.FileManagerTest do
 
       File.write!(Path.join(base_path, "test.txt"), content)
 
-      assert {:ok, matches} = FilesystemGateway.find_lines_matching(fs, ".", "test.txt", "def\\s+")
+      assert {:ok, matches} =
+               FilesystemGateway.find_lines_matching(fs, ".", "test.txt", "def\\s+")
+
       assert length(matches) == 2
     end
 
     test "returns error for invalid regex", %{fs: fs, base_path: base_path} do
       File.write!(Path.join(base_path, "test.txt"), "content")
 
-      assert {:error, msg} = FilesystemGateway.find_lines_matching(fs, ".", "test.txt", "[invalid")
+      assert {:error, msg} =
+               FilesystemGateway.find_lines_matching(fs, ".", "test.txt", "[invalid")
+
       assert String.contains?(msg, "regex")
     end
 
     test "returns error for non-existent file", %{fs: fs} do
-      assert {:error, msg} = FilesystemGateway.find_lines_matching(fs, ".", "nonexistent.txt", "pattern")
+      assert {:error, msg} =
+               FilesystemGateway.find_lines_matching(fs, ".", "nonexistent.txt", "pattern")
+
       assert String.contains?(msg, "Error reading file")
     end
   end
@@ -358,7 +364,9 @@ defmodule Mojentic.LLM.Tools.FileManagerTest do
       File.mkdir_p!(subdir)
 
       tool = WriteFileTool.new(fs)
-      assert {:ok, _msg} = WriteFileTool.run(tool, %{"path" => "subdir/file.txt", "content" => "test"})
+
+      assert {:ok, _msg} =
+               WriteFileTool.run(tool, %{"path" => "subdir/file.txt", "content" => "test"})
 
       assert File.read!(Path.join(subdir, "file.txt")) == "test"
     end
@@ -427,13 +435,19 @@ defmodule Mojentic.LLM.Tools.FileManagerTest do
       File.write!(Path.join(base_path, "nomatch.txt"), "other content")
 
       tool = FindFilesContainingTool.new(fs)
-      assert {:ok, files} = FindFilesContainingTool.run(tool, %{"path" => ".", "pattern" => "target"})
+
+      assert {:ok, files} =
+               FindFilesContainingTool.run(tool, %{"path" => ".", "pattern" => "target"})
+
       assert ["match.txt"] = files
     end
 
     test "returns error for invalid regex", %{fs: fs} do
       tool = FindFilesContainingTool.new(fs)
-      assert {:error, msg} = FindFilesContainingTool.run(tool, %{"path" => ".", "pattern" => "[invalid"})
+
+      assert {:error, msg} =
+               FindFilesContainingTool.run(tool, %{"path" => ".", "pattern" => "[invalid"})
+
       assert String.contains?(msg, "Error finding files")
     end
   end
@@ -451,7 +465,10 @@ defmodule Mojentic.LLM.Tools.FileManagerTest do
       File.write!(Path.join(base_path, "test.txt"), content)
 
       tool = FindLinesMatchingTool.new(fs)
-      assert {:ok, matches} = FindLinesMatchingTool.run(tool, %{"path" => "test.txt", "pattern" => "match"})
+
+      assert {:ok, matches} =
+               FindLinesMatchingTool.run(tool, %{"path" => "test.txt", "pattern" => "match"})
+
       assert length(matches) == 2
     end
   end
