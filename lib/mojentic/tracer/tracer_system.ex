@@ -51,6 +51,7 @@ defmodule Mojentic.Tracer.TracerSystem do
   use GenServer
 
   alias Mojentic.Tracer.EventStore
+
   alias Mojentic.Tracer.TracerEvents.{
     TracerEvent,
     LLMCallTracerEvent,
