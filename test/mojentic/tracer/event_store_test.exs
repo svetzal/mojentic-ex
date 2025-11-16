@@ -179,7 +179,7 @@ defmodule Mojentic.Tracer.EventStoreTest do
           %TracerEvent{
             timestamp: i * 1.0,
             correlation_id: "corr-#{i}",
-            source: Module.concat([:"Mod#{i}"])
+            source: Module.safe_concat([:"Mod#{i}"])
           }
         end
 

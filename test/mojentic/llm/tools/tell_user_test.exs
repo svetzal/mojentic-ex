@@ -1,9 +1,9 @@
 defmodule Mojentic.LLM.Tools.TellUserTest do
   use ExUnit.Case, async: true
 
-  alias Mojentic.LLM.Tools.TellUser
-
   import ExUnit.CaptureIO
+
+  alias Mojentic.LLM.Tools.TellUser
 
   describe "new/0" do
     test "creates a new TellUser instance" do

@@ -49,10 +49,8 @@ defmodule Mojentic.Tracer.TracerSystem do
   """
 
   use GenServer
-  require Logger
 
   alias Mojentic.Tracer.EventStore
-
   alias Mojentic.Tracer.TracerEvents.{
     TracerEvent,
     LLMCallTracerEvent,
@@ -60,6 +58,8 @@ defmodule Mojentic.Tracer.TracerSystem do
     ToolCallTracerEvent,
     AgentInteractionTracerEvent
   }
+
+  require Logger
 
   defmodule State do
     @moduledoc false

@@ -37,9 +37,10 @@ defmodule Mojentic.Tracer.EventStore do
   """
 
   use GenServer
-  require Logger
 
   alias Mojentic.Tracer.TracerEvents.TracerEvent
+
+  require Logger
 
   @type event_type :: module()
   @type filter_func :: (TracerEvent.t() -> boolean())
