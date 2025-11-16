@@ -24,8 +24,8 @@ defmodule Mojentic.Tracer.EventStore do
       llm_events = EventStore.get_events(pid, event_type: LLMCallTracerEvent)
 
       # Get events by time range
-      events = EventStore.get_events(pid, 
-        start_time: start_timestamp, 
+      events = EventStore.get_events(pid,
+        start_time: start_timestamp,
         end_time: end_timestamp
       )
 
@@ -111,13 +111,13 @@ defmodule Mojentic.Tracer.EventStore do
       llm_calls = EventStore.get_events(pid, event_type: LLMCallTracerEvent)
 
       # Filter by time range
-      recent = EventStore.get_events(pid, 
-        start_time: start_timestamp, 
+      recent = EventStore.get_events(pid,
+        start_time: start_timestamp,
         end_time: end_timestamp
       )
 
       # Custom filter
-      events = EventStore.get_events(pid, 
+      events = EventStore.get_events(pid,
         filter_func: fn event -> event.correlation_id == "abc-123" end
       )
   """
@@ -135,7 +135,7 @@ defmodule Mojentic.Tracer.EventStore do
       recent = EventStore.get_last_n_events(pid, 10)
 
       # Get last 5 LLM call events
-      recent_calls = EventStore.get_last_n_events(pid, 5, 
+      recent_calls = EventStore.get_last_n_events(pid, 5,
         event_type: LLMCallTracerEvent
       )
   """
