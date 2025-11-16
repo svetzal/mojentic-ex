@@ -52,6 +52,7 @@ defmodule Mojentic.Tracer.TracerSystem do
   require Logger
 
   alias Mojentic.Tracer.EventStore
+
   alias Mojentic.Tracer.TracerEvents.{
     TracerEvent,
     LLMCallTracerEvent,
@@ -354,79 +355,99 @@ defmodule Mojentic.Tracer.TracerSystem do
 
   @impl true
   def handle_call({:record_llm_call, opts}, _from, state) do
-    if state.enabled do
-      event = %LLMCallTracerEvent{
-        timestamp: current_timestamp(),
-        correlation_id: Keyword.fetch!(opts, :correlation_id),
-        source: Keyword.get(opts, :source, __MODULE__),
-        model: Keyword.fetch!(opts, :model),
-        messages: Keyword.fetch!(opts, :messages),
-        temperature: Keyword.get(opts, :temperature, 1.0),
-        tools: Keyword.get(opts, :tools)
-      }
+    try do
+      if state.enabled do
+        event = %LLMCallTracerEvent{
+          timestamp: current_timestamp(),
+          correlation_id: Keyword.fetch!(opts, :correlation_id),
+          source: Keyword.get(opts, :source, __MODULE__),
+          model: Keyword.fetch!(opts, :model),
+          messages: Keyword.fetch!(opts, :messages),
+          temperature: Keyword.get(opts, :temperature, 1.0),
+          tools: Keyword.get(opts, :tools)
+        }
 
-      EventStore.store(state.event_store, event)
+        EventStore.store(state.event_store, event)
+      end
+
+      {:reply, :ok, state}
+    rescue
+      e in KeyError ->
+        {:reply, {:error, e}, state}
     end
-
-    {:reply, :ok, state}
   end
 
   @impl true
   def handle_call({:record_llm_response, opts}, _from, state) do
-    if state.enabled do
-      event = %LLMResponseTracerEvent{
-        timestamp: current_timestamp(),
-        correlation_id: Keyword.fetch!(opts, :correlation_id),
-        source: Keyword.get(opts, :source, __MODULE__),
-        model: Keyword.fetch!(opts, :model),
-        content: Keyword.fetch!(opts, :content),
-        tool_calls: Keyword.get(opts, :tool_calls),
-        call_duration_ms: Keyword.get(opts, :call_duration_ms)
-      }
+    try do
+      if state.enabled do
+        event = %LLMResponseTracerEvent{
+          timestamp: current_timestamp(),
+          correlation_id: Keyword.fetch!(opts, :correlation_id),
+          source: Keyword.get(opts, :source, __MODULE__),
+          model: Keyword.fetch!(opts, :model),
+          content: Keyword.fetch!(opts, :content),
+          tool_calls: Keyword.get(opts, :tool_calls),
+          call_duration_ms: Keyword.get(opts, :call_duration_ms)
+        }
 
-      EventStore.store(state.event_store, event)
+        EventStore.store(state.event_store, event)
+      end
+
+      {:reply, :ok, state}
+    rescue
+      e in KeyError ->
+        {:reply, {:error, e}, state}
     end
-
-    {:reply, :ok, state}
   end
 
   @impl true
   def handle_call({:record_tool_call, opts}, _from, state) do
-    if state.enabled do
-      event = %ToolCallTracerEvent{
-        timestamp: current_timestamp(),
-        correlation_id: Keyword.fetch!(opts, :correlation_id),
-        source: Keyword.get(opts, :source, __MODULE__),
-        tool_name: Keyword.fetch!(opts, :tool_name),
-        arguments: Keyword.fetch!(opts, :arguments),
-        result: Keyword.fetch!(opts, :result),
-        caller: Keyword.get(opts, :caller),
-        call_duration_ms: Keyword.get(opts, :call_duration_ms)
-      }
+    try do
+      if state.enabled do
+        event = %ToolCallTracerEvent{
+          timestamp: current_timestamp(),
+          correlation_id: Keyword.fetch!(opts, :correlation_id),
+          source: Keyword.get(opts, :source, __MODULE__),
+          tool_name: Keyword.fetch!(opts, :tool_name),
+          arguments: Keyword.fetch!(opts, :arguments),
+          result: Keyword.fetch!(opts, :result),
+          caller: Keyword.get(opts, :caller),
+          call_duration_ms: Keyword.get(opts, :call_duration_ms)
+        }
 
-      EventStore.store(state.event_store, event)
+        EventStore.store(state.event_store, event)
+      end
+
+      {:reply, :ok, state}
+    rescue
+      e in KeyError ->
+        {:reply, {:error, e}, state}
     end
-
-    {:reply, :ok, state}
   end
 
   @impl true
   def handle_call({:record_agent_interaction, opts}, _from, state) do
-    if state.enabled do
-      event = %AgentInteractionTracerEvent{
-        timestamp: current_timestamp(),
-        correlation_id: Keyword.fetch!(opts, :correlation_id),
-        source: Keyword.get(opts, :source, __MODULE__),
-        from_agent: Keyword.fetch!(opts, :from_agent),
-        to_agent: Keyword.fetch!(opts, :to_agent),
-        event_type: Keyword.fetch!(opts, :event_type),
-        event_id: Keyword.get(opts, :event_id)
-      }
+    try do
+      if state.enabled do
+        event = %AgentInteractionTracerEvent{
+          timestamp: current_timestamp(),
+          correlation_id: Keyword.fetch!(opts, :correlation_id),
+          source: Keyword.get(opts, :source, __MODULE__),
+          from_agent: Keyword.fetch!(opts, :from_agent),
+          to_agent: Keyword.fetch!(opts, :to_agent),
+          event_type: Keyword.fetch!(opts, :event_type),
+          event_id: Keyword.get(opts, :event_id)
+        }
 
-      EventStore.store(state.event_store, event)
+        EventStore.store(state.event_store, event)
+      end
+
+      {:reply, :ok, state}
+    rescue
+      e in KeyError ->
+        {:reply, {:error, e}, state}
     end
-
-    {:reply, :ok, state}
   end
 
   @impl true

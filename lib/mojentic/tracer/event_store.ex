@@ -228,6 +228,7 @@ defmodule Mojentic.Tracer.EventStore do
   end
 
   defp filter_by_time_range(events, nil, nil), do: events
+
   defp filter_by_time_range(events, start_time, nil) do
     Enum.filter(events, fn event -> event.timestamp >= start_time end)
   end

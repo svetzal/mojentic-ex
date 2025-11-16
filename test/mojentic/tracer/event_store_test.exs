@@ -2,6 +2,7 @@ defmodule Mojentic.Tracer.EventStoreTest do
   use ExUnit.Case, async: true
 
   alias Mojentic.Tracer.EventStore
+
   alias Mojentic.Tracer.TracerEvents.{
     TracerEvent,
     LLMCallTracerEvent,

@@ -80,19 +80,88 @@ defmodule Mojentic.Tracer do
       )
   """
 
-  # Delegate to TracerSystem for all operations
-  defdelegate start_link(opts \\ []), to: Mojentic.Tracer.TracerSystem
-  defdelegate record_event(server, event), to: Mojentic.Tracer.TracerSystem
-  defdelegate record_llm_call(server, opts), to: Mojentic.Tracer.TracerSystem
-  defdelegate record_llm_response(server, opts), to: Mojentic.Tracer.TracerSystem
-  defdelegate record_tool_call(server, opts), to: Mojentic.Tracer.TracerSystem
-  defdelegate record_agent_interaction(server, opts), to: Mojentic.Tracer.TracerSystem
-  defdelegate get_events(server, opts \\ []), to: Mojentic.Tracer.TracerSystem
-  defdelegate get_last_n_tracer_events(server, n, opts \\ []), to: Mojentic.Tracer.TracerSystem
-  defdelegate clear(server), to: Mojentic.Tracer.TracerSystem
-  defdelegate enable(server), to: Mojentic.Tracer.TracerSystem
-  defdelegate disable(server), to: Mojentic.Tracer.TracerSystem
-  defdelegate enabled?(server), to: Mojentic.Tracer.TracerSystem
+  alias Mojentic.Tracer.TracerSystem
+  alias Mojentic.Tracer.NullTracer
+
+  # Delegate to TracerSystem for start_link
+  defdelegate start_link(opts \\ []), to: TracerSystem
+
+  @doc """
+  Records a generic tracer event.
+  """
+  def record_event(:null_tracer, event), do: NullTracer.record_event(:null_tracer, event)
+  def record_event(server, event), do: TracerSystem.record_event(server, event)
+
+  @doc """
+  Records an LLM call event.
+  """
+  def record_llm_call(:null_tracer, opts), do: NullTracer.record_llm_call(:null_tracer, opts)
+  def record_llm_call(server, opts), do: TracerSystem.record_llm_call(server, opts)
+
+  @doc """
+  Records an LLM response event.
+  """
+  def record_llm_response(:null_tracer, opts),
+    do: NullTracer.record_llm_response(:null_tracer, opts)
+
+  def record_llm_response(server, opts), do: TracerSystem.record_llm_response(server, opts)
+
+  @doc """
+  Records a tool call event.
+  """
+  def record_tool_call(:null_tracer, opts), do: NullTracer.record_tool_call(:null_tracer, opts)
+  def record_tool_call(server, opts), do: TracerSystem.record_tool_call(server, opts)
+
+  @doc """
+  Records an agent interaction event.
+  """
+  def record_agent_interaction(:null_tracer, opts),
+    do: NullTracer.record_agent_interaction(:null_tracer, opts)
+
+  def record_agent_interaction(server, opts),
+    do: TracerSystem.record_agent_interaction(server, opts)
+
+  @doc """
+  Retrieves events from the tracer.
+  """
+  def get_events(server, opts \\ [])
+  def get_events(:null_tracer, opts), do: NullTracer.get_events(:null_tracer, opts)
+  def get_events(server, opts), do: TracerSystem.get_events(server, opts)
+
+  @doc """
+  Gets the last N tracer events.
+  """
+  def get_last_n_tracer_events(server, n, opts \\ [])
+
+  def get_last_n_tracer_events(:null_tracer, n, opts),
+    do: NullTracer.get_last_n_tracer_events(:null_tracer, n, opts)
+
+  def get_last_n_tracer_events(server, n, opts),
+    do: TracerSystem.get_last_n_tracer_events(server, n, opts)
+
+  @doc """
+  Clears all events from the tracer.
+  """
+  def clear(:null_tracer), do: NullTracer.clear(:null_tracer)
+  def clear(server), do: TracerSystem.clear(server)
+
+  @doc """
+  Enables the tracer system.
+  """
+  def enable(:null_tracer), do: NullTracer.enable(:null_tracer)
+  def enable(server), do: TracerSystem.enable(server)
+
+  @doc """
+  Disables the tracer system.
+  """
+  def disable(:null_tracer), do: NullTracer.disable(:null_tracer)
+  def disable(server), do: TracerSystem.disable(server)
+
+  @doc """
+  Checks if the tracer is enabled.
+  """
+  def enabled?(:null_tracer), do: NullTracer.enabled?(:null_tracer)
+  def enabled?(server), do: TracerSystem.enabled?(server)
 
   @doc """
   Returns the singleton null tracer instance.

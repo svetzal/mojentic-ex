@@ -2,6 +2,7 @@ defmodule Mojentic.Tracer.TracerSystemTest do
   use ExUnit.Case, async: true
 
   alias Mojentic.Tracer.TracerSystem
+
   alias Mojentic.Tracer.TracerEvents.{
     TracerEvent,
     LLMCallTracerEvent,
@@ -98,12 +99,13 @@ defmodule Mojentic.Tracer.TracerSystemTest do
     end
 
     test "requires correlation_id", %{tracer: tracer} do
-      assert_raise KeyError, fn ->
+      result =
         TracerSystem.record_llm_call(tracer,
           model: "gpt-4",
           messages: []
         )
-      end
+
+      assert {:error, %KeyError{}} = result
     end
 
     test "does not record when disabled", %{tracer: tracer} do
@@ -143,12 +145,13 @@ defmodule Mojentic.Tracer.TracerSystemTest do
     end
 
     test "requires correlation_id", %{tracer: tracer} do
-      assert_raise KeyError, fn ->
+      result =
         TracerSystem.record_llm_response(tracer,
           model: "gpt-4",
           content: "Hello"
         )
-      end
+
+      assert {:error, %KeyError{}} = result
     end
   end
 
@@ -177,13 +180,14 @@ defmodule Mojentic.Tracer.TracerSystemTest do
     end
 
     test "requires correlation_id", %{tracer: tracer} do
-      assert_raise KeyError, fn ->
+      result =
         TracerSystem.record_tool_call(tracer,
           tool_name: "test",
           arguments: %{},
           result: "ok"
         )
-      end
+
+      assert {:error, %KeyError{}} = result
     end
   end
 
@@ -210,13 +214,14 @@ defmodule Mojentic.Tracer.TracerSystemTest do
     end
 
     test "requires correlation_id", %{tracer: tracer} do
-      assert_raise KeyError, fn ->
+      result =
         TracerSystem.record_agent_interaction(tracer,
           from_agent: "A",
           to_agent: "B",
           event_type: "request"
         )
-      end
+
+      assert {:error, %KeyError{}} = result
     end
   end
 

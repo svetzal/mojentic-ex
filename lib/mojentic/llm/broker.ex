@@ -48,16 +48,18 @@ defmodule Mojentic.LLM.Broker do
   alias Mojentic.LLM.GatewayResponse
   alias Mojentic.LLM.Message
   alias Mojentic.LLM.Tools.Tool
+  alias Mojentic.Tracer
 
   require Logger
 
   @type t :: %__MODULE__{
           model: String.t(),
           gateway: Gateway.gateway(),
-          correlation_id: String.t() | nil
+          correlation_id: String.t() | nil,
+          tracer: pid() | :null_tracer
         }
 
-  defstruct [:model, :gateway, :correlation_id]
+  defstruct [:model, :gateway, :correlation_id, tracer: Tracer.null_tracer()]
 
   @doc """
   Creates a new LLM broker.
@@ -66,22 +68,29 @@ defmodule Mojentic.LLM.Broker do
 
   - `model`: Model identifier (e.g., "qwen3:32b", "gpt-4")
   - `gateway`: Gateway module (e.g., `Mojentic.LLM.Gateways.Ollama`)
-  - `correlation_id`: Optional correlation ID for request tracking (default: auto-generated)
+  - `opts`: Optional keyword list:
+    - `:correlation_id` - Correlation ID for request tracking (default: auto-generated)
+    - `:tracer` - Tracer system for observability (default: null_tracer)
 
   ## Examples
 
       iex> Broker.new("qwen3:32b", Mojentic.LLM.Gateways.Ollama)
-      %Broker{model: "qwen3:32b", gateway: Mojentic.LLM.Gateways.Ollama, correlation_id: ...}
+      %Broker{model: "qwen3:32b", gateway: Mojentic.LLM.Gateways.Ollama, ...}
 
-      iex> Broker.new("qwen3:32b", Mojentic.LLM.Gateways.Ollama, "custom-id-123")
+      iex> Broker.new("qwen3:32b", Mojentic.LLM.Gateways.Ollama, correlation_id: "custom-id-123")
       %Broker{model: "qwen3:32b", gateway: Mojentic.LLM.Gateways.Ollama, correlation_id: "custom-id-123"}
 
+      iex> {:ok, tracer} = TracerSystem.start_link()
+      iex> Broker.new("qwen3:32b", Mojentic.LLM.Gateways.Ollama, tracer: tracer)
+      %Broker{model: "qwen3:32b", gateway: Mojentic.LLM.Gateways.Ollama, tracer: tracer}
+
   """
-  def new(model, gateway, correlation_id \\ nil) do
+  def new(model, gateway, opts \\ []) do
     %__MODULE__{
       model: model,
       gateway: gateway,
-      correlation_id: correlation_id || generate_correlation_id()
+      correlation_id: Keyword.get(opts, :correlation_id) || generate_correlation_id(),
+      tracer: Keyword.get(opts, :tracer, Tracer.null_tracer())
     }
   end
 
@@ -125,6 +134,21 @@ defmodule Mojentic.LLM.Broker do
   def generate(broker, messages, tools \\ nil, config \\ nil) do
     config = config || %CompletionConfig{}
 
+    # Record LLM call in tracer
+    tools_for_tracer = if tools, do: Enum.map(tools, &tool_descriptor/1), else: nil
+
+    Tracer.record_llm_call(broker.tracer,
+      model: broker.model,
+      messages: messages,
+      temperature: config.temperature,
+      tools: tools_for_tracer,
+      source: __MODULE__,
+      correlation_id: broker.correlation_id
+    )
+
+    # Measure call duration
+    start_time = System.monotonic_time(:millisecond)
+
     with {:ok, response} <-
            broker.gateway.complete(
              broker.model,
@@ -132,6 +156,18 @@ defmodule Mojentic.LLM.Broker do
              tools,
              config
            ) do
+      call_duration_ms = System.monotonic_time(:millisecond) - start_time
+
+      # Record LLM response in tracer
+      Tracer.record_llm_response(broker.tracer,
+        model: broker.model,
+        content: response.content || "",
+        tool_calls: response.tool_calls,
+        call_duration_ms: call_duration_ms,
+        source: __MODULE__,
+        correlation_id: broker.correlation_id
+      )
+
       case response.tool_calls do
         [] ->
           {:ok, response.content || ""}
@@ -323,7 +359,7 @@ defmodule Mojentic.LLM.Broker do
 
     tool_results =
       Enum.map(tool_calls, fn tool_call ->
-        execute_tool(tool_call, tools)
+        execute_tool(broker, tool_call, tools)
       end)
 
     final_messages =
@@ -362,7 +398,7 @@ defmodule Mojentic.LLM.Broker do
         # Execute all tool calls
         tool_results =
           Enum.map(response.tool_calls, fn tool_call ->
-            execute_tool(tool_call, tools)
+            execute_tool(broker, tool_call, tools)
           end)
 
         # Add tool result messages
@@ -389,7 +425,7 @@ defmodule Mojentic.LLM.Broker do
     }
   end
 
-  defp execute_tool(tool_call, tools) do
+  defp execute_tool(broker, tool_call, tools) do
     case find_tool(tools, tool_call.name) do
       nil ->
         Logger.warning("Tool not found: #{tool_call.name}")
@@ -398,8 +434,24 @@ defmodule Mojentic.LLM.Broker do
       tool ->
         Logger.info("Executing tool: #{tool_call.name}")
 
+        # Measure tool execution time
+        start_time = System.monotonic_time(:millisecond)
+
         case Tool.run(tool, tool_call.arguments) do
           {:ok, result} ->
+            call_duration_ms = System.monotonic_time(:millisecond) - start_time
+
+            # Record tool call in tracer
+            Tracer.record_tool_call(broker.tracer,
+              tool_name: tool_call.name,
+              arguments: tool_call.arguments,
+              result: result,
+              caller: "Broker",
+              call_duration_ms: call_duration_ms,
+              source: __MODULE__,
+              correlation_id: broker.correlation_id
+            )
+
             {:ok,
              %Message{
                role: :tool,
@@ -408,6 +460,19 @@ defmodule Mojentic.LLM.Broker do
              }}
 
           {:error, reason} ->
+            call_duration_ms = System.monotonic_time(:millisecond) - start_time
+
+            # Record failed tool call in tracer
+            Tracer.record_tool_call(broker.tracer,
+              tool_name: tool_call.name,
+              arguments: tool_call.arguments,
+              result: {:error, reason},
+              caller: "Broker",
+              call_duration_ms: call_duration_ms,
+              source: __MODULE__,
+              correlation_id: broker.correlation_id
+            )
+
             Logger.error("Tool execution failed: #{Error.format_error(reason)}")
             Error.tool_error("Tool execution failed: #{Error.format_error(reason)}")
         end
@@ -418,5 +483,10 @@ defmodule Mojentic.LLM.Broker do
     Enum.find(tools, fn tool ->
       Tool.matches?(tool, name)
     end)
+  end
+
+  defp tool_descriptor(tool) do
+    descriptor = Tool.descriptor(tool)
+    %{"name" => descriptor.function.name, "description" => descriptor.function.description}
   end
 end

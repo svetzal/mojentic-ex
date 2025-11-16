@@ -37,8 +37,7 @@ defmodule Mojentic.LLM.Tools.ToolWrapperIntegrationTest do
           last_message.content =~ "When was Rome founded" and
               (tools == nil or tools == []) ->
             %GatewayResponse{
-              content:
-                "According to tradition, Rome was founded in 753 BCE by Romulus.",
+              content: "According to tradition, Rome was founded in 753 BCE by Romulus.",
               tool_calls: [],
               object: nil
             }
@@ -109,8 +108,7 @@ defmodule Mojentic.LLM.Tools.ToolWrapperIntegrationTest do
       coordinator_agent =
         BaseLLMAgent.new(
           broker: coordinator_broker,
-          behaviour:
-            "You are a coordinator that delegates questions to specialist agents.",
+          behaviour: "You are a coordinator that delegates questions to specialist agents.",
           tools: [historian_tool]
         )
 

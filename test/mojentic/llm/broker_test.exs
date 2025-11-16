@@ -128,7 +128,7 @@ defmodule Mojentic.LLM.BrokerTest do
     end
 
     test "accepts custom correlation_id" do
-      broker = Broker.new("test-model", MockGateway, "custom-123")
+      broker = Broker.new("test-model", MockGateway, correlation_id: "custom-123")
 
       assert broker.correlation_id == "custom-123"
     end

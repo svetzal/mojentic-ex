@@ -19,10 +19,11 @@ defmodule Mojentic.Tracer.TracerEvents do
     # Convert float timestamp (seconds) to integer milliseconds
     timestamp_ms = trunc(timestamp * 1000)
 
-    timestamp_ms
-    |> DateTime.from_unix!(:millisecond)
-    |> Calendar.strftime("%H:%M:%S.%f")
-    |> String.slice(0..-4//1)
+    dt = DateTime.from_unix!(timestamp_ms, :millisecond)
+    time_str = Calendar.strftime(dt, "%H:%M:%S")
+    ms = rem(timestamp_ms, 1000)
+    ms_str = String.pad_leading(Integer.to_string(ms), 3, "0")
+    "#{time_str}.#{ms_str}"
   end
 
   # Helper function to format base summary for all event types - must be public for child modules
@@ -85,10 +86,20 @@ defmodule Mojentic.Tracer.TracerEvents.LLMResponseTracerEvent do
   Records when an LLM responds to a call.
   """
 
-  defstruct [:timestamp, :correlation_id, :source, :model, :content, :tool_calls, :call_duration_ms]
+  defstruct [
+    :timestamp,
+    :correlation_id,
+    :source,
+    :model,
+    :content,
+    :tool_calls,
+    :call_duration_ms
+  ]
 
   def printable_summary(%__MODULE__{} = event) do
-    base_summary = Mojentic.Tracer.TracerEvents.format_base_summary(event, "LLMResponseTracerEvent")
+    base_summary =
+      Mojentic.Tracer.TracerEvents.format_base_summary(event, "LLMResponseTracerEvent")
+
     summary = "#{base_summary}\n   Model: #{event.model}"
 
     summary =
@@ -127,7 +138,16 @@ defmodule Mojentic.Tracer.TracerEvents.ToolCallTracerEvent do
   Records when a tool is called during agent execution.
   """
 
-  defstruct [:timestamp, :correlation_id, :source, :tool_name, :arguments, :result, :caller, :call_duration_ms]
+  defstruct [
+    :timestamp,
+    :correlation_id,
+    :source,
+    :tool_name,
+    :arguments,
+    :result,
+    :caller,
+    :call_duration_ms
+  ]
 
   def printable_summary(%__MODULE__{} = event) do
     base_summary = Mojentic.Tracer.TracerEvents.format_base_summary(event, "ToolCallTracerEvent")
@@ -142,7 +162,8 @@ defmodule Mojentic.Tracer.TracerEvents.ToolCallTracerEvent do
 
     summary =
       if event.result do
-        result_str = inspect(event.result)
+        # Convert result to string representation
+        result_str = if is_binary(event.result), do: event.result, else: inspect(event.result)
 
         result_preview =
           if String.length(result_str) > 100 do
@@ -151,7 +172,11 @@ defmodule Mojentic.Tracer.TracerEvents.ToolCallTracerEvent do
             result_str
           end
 
-        "#{summary}\n   Result: #{result_preview}"
+        # Add quotes around the preview for string results
+        formatted_result =
+          if is_binary(event.result), do: "\"#{result_preview}\"", else: result_preview
+
+        "#{summary}\n   Result: #{formatted_result}"
       else
         summary
       end
@@ -179,7 +204,9 @@ defmodule Mojentic.Tracer.TracerEvents.AgentInteractionTracerEvent do
   defstruct [:timestamp, :correlation_id, :source, :from_agent, :to_agent, :event_type, :event_id]
 
   def printable_summary(%__MODULE__{} = event) do
-    base_summary = Mojentic.Tracer.TracerEvents.format_base_summary(event, "AgentInteractionTracerEvent")
+    base_summary =
+      Mojentic.Tracer.TracerEvents.format_base_summary(event, "AgentInteractionTracerEvent")
+
     summary = "#{base_summary}\n   From: #{event.from_agent} → To: #{event.to_agent}"
     summary = "#{summary}\n   Event Type: #{event.event_type}"
 

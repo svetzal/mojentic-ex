@@ -2,6 +2,7 @@ defmodule Mojentic.Tracer.NullTracerTest do
   use ExUnit.Case, async: true
 
   alias Mojentic.Tracer.NullTracer
+
   alias Mojentic.Tracer.TracerEvents.{
     TracerEvent,
     LLMCallTracerEvent
@@ -64,7 +65,11 @@ defmodule Mojentic.Tracer.NullTracerTest do
 
     test "get_last_n_tracer_events always returns empty list" do
       assert [] = NullTracer.get_last_n_tracer_events(:null_tracer, 10)
-      assert [] = NullTracer.get_last_n_tracer_events(:null_tracer, 5, event_type: LLMCallTracerEvent)
+
+      assert [] =
+               NullTracer.get_last_n_tracer_events(:null_tracer, 5,
+                 event_type: LLMCallTracerEvent
+               )
     end
 
     test "clear does nothing and returns :ok" do
