@@ -487,6 +487,11 @@ defmodule Mojentic.LLM.Broker do
 
   defp tool_descriptor(tool) do
     descriptor = Tool.descriptor(tool)
-    %{"name" => descriptor.function.name, "description" => descriptor.function.description}
+    function = descriptor["function"] || descriptor[:function]
+
+    %{
+      "name" => function["name"] || function[:name],
+      "description" => function["description"] || function[:description]
+    }
   end
 end
