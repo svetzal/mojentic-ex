@@ -275,62 +275,78 @@ defmodule Mojentic.LLM.Broker do
       |> Stream.run()
 
   """
-  # credo:disable-for-next-line Credo.Check.Refactor.ABCSize
   def generate_stream(broker, messages, tools \\ nil, config \\ nil) do
     config = config || %CompletionConfig{}
 
-    # Use a wrapper stream to handle the lazy evaluation properly
     Stream.resource(
-      fn ->
-        # Initialize: start streaming from gateway
-        stream = broker.gateway.complete_stream(broker.model, messages, tools, config)
-        {stream, [], ""}
-      end,
-      fn
-        {stream, acc_tool_calls, acc_content} ->
-          # Try to get next element from stream
-          case Enum.take(stream, 1) do
-            [{:content, chunk}] ->
-              # Got a content chunk - yield it and continue
-              remaining_stream = Stream.drop(stream, 1)
-              {[chunk], {remaining_stream, acc_tool_calls, acc_content <> chunk}}
-
-            [{:tool_calls, tool_calls}] ->
-              # Got tool calls - accumulate them and continue
-              remaining_stream = Stream.drop(stream, 1)
-              {[], {remaining_stream, acc_tool_calls ++ tool_calls, acc_content}}
-
-            [{:error, reason}] ->
-              # Got error - log and halt
-              Logger.error("Streaming error: #{inspect(reason)}")
-              {:halt, nil}
-
-            [] ->
-              # Stream ended - handle tool calls if any
-              handle_stream_end(broker, messages, acc_tool_calls, acc_content, tools, config)
-          end
-
-        :halt ->
-          {:halt, nil}
-
-        {:recursive, recursive_stream} ->
-          # Yield from recursive stream
-          case Enum.take(recursive_stream, 1) do
-            [chunk] ->
-              remaining = Stream.drop(recursive_stream, 1)
-              {[chunk], {:recursive, remaining}}
-
-            [] ->
-              # Recursive stream done
-              {:halt, nil}
-          end
-      end,
+      fn -> initialize_stream(broker, messages, tools, config) end,
+      fn state -> process_stream_element(state, broker, messages, tools, config) end,
       fn _ -> :ok end
     )
   end
 
+  defp initialize_stream(broker, messages, tools, config) do
+    stream = broker.gateway.complete_stream(broker.model, messages, tools, config)
+    {stream, [], ""}
+  end
+
+  defp process_stream_element(
+         {stream, acc_tool_calls, acc_content},
+         broker,
+         messages,
+         tools,
+         config
+       ) do
+    case Enum.take(stream, 1) do
+      [{:content, chunk}] ->
+        handle_content_chunk(chunk, stream, acc_tool_calls, acc_content)
+
+      [{:tool_calls, tool_calls}] ->
+        handle_tool_calls_chunk(tool_calls, stream, acc_tool_calls, acc_content)
+
+      [{:error, reason}] ->
+        handle_stream_error(reason)
+
+      [] ->
+        handle_stream_end(broker, messages, acc_tool_calls, acc_content, tools, config)
+    end
+  end
+
+  defp process_stream_element(:halt, _broker, _messages, _tools, _config) do
+    {:halt, nil}
+  end
+
+  defp process_stream_element({:recursive, recursive_stream}, _broker, _messages, _tools, _config) do
+    handle_recursive_stream(recursive_stream)
+  end
+
+  defp handle_content_chunk(chunk, stream, acc_tool_calls, acc_content) do
+    remaining_stream = Stream.drop(stream, 1)
+    {[chunk], {remaining_stream, acc_tool_calls, acc_content <> chunk}}
+  end
+
+  defp handle_tool_calls_chunk(tool_calls, stream, acc_tool_calls, acc_content) do
+    remaining_stream = Stream.drop(stream, 1)
+    {[], {remaining_stream, acc_tool_calls ++ tool_calls, acc_content}}
+  end
+
+  defp handle_stream_error(reason) do
+    Logger.error("Streaming error: #{inspect(reason)}")
+    {:halt, nil}
+  end
+
+  defp handle_recursive_stream(recursive_stream) do
+    case Enum.take(recursive_stream, 1) do
+      [chunk] ->
+        remaining = Stream.drop(recursive_stream, 1)
+        {[chunk], {:recursive, remaining}}
+
+      [] ->
+        {:halt, nil}
+    end
+  end
+
   defp handle_stream_end(_broker, _messages, [], _acc_content, _tools, _config) do
-    # No tool calls, stream is done
     {:halt, nil}
   end
 
@@ -347,34 +363,33 @@ defmodule Mojentic.LLM.Broker do
   defp handle_stream_end(broker, messages, tool_calls, acc_content, tools, config) do
     Logger.info("Processing #{length(tool_calls)} tool call(s) in stream")
 
-    # Build response with accumulated content and tool calls
-    response = %GatewayResponse{
-      content: acc_content,
+    response = build_gateway_response(acc_content, tool_calls)
+    new_messages = messages ++ [build_assistant_message(response)]
+    final_messages = execute_and_append_tool_results(broker, tool_calls, tools, new_messages)
+
+    recursive_stream = generate_stream(broker, final_messages, tools, config)
+    {[], {:recursive, recursive_stream}}
+  end
+
+  defp build_gateway_response(content, tool_calls) do
+    %GatewayResponse{
+      content: content,
       tool_calls: tool_calls,
       object: nil
     }
+  end
 
-    # Build new messages with tool results
-    new_messages = messages ++ [build_assistant_message(response)]
+  defp execute_and_append_tool_results(broker, tool_calls, tools, messages) do
+    tool_results = Enum.map(tool_calls, &execute_tool(broker, &1, tools))
 
-    tool_results =
-      Enum.map(tool_calls, fn tool_call ->
-        execute_tool(broker, tool_call, tools)
-      end)
+    Enum.reduce(tool_results, messages, fn
+      {:ok, tool_message}, acc ->
+        acc ++ [tool_message]
 
-    final_messages =
-      Enum.reduce(tool_results, new_messages, fn
-        {:ok, tool_message}, acc ->
-          acc ++ [tool_message]
-
-        {:error, reason}, acc ->
-          Logger.error("Tool execution failed: #{Error.format_error(reason)}")
-          acc
-      end)
-
-    # Recursively stream with updated messages
-    recursive_stream = generate_stream(broker, final_messages, tools, config)
-    {[], {:recursive, recursive_stream}}
+      {:error, reason}, acc ->
+        Logger.error("Tool execution failed: #{Error.format_error(reason)}")
+        acc
+    end)
   end
 
   # Private functions
