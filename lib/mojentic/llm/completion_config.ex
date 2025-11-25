@@ -7,24 +7,38 @@ defmodule Mojentic.LLM.CompletionConfig do
   ## Examples
 
       iex> CompletionConfig.new()
-      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384}
+      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: nil, top_k: nil, response_format: nil}
 
       iex> CompletionConfig.new(temperature: 0.7, max_tokens: 1000)
-      %CompletionConfig{temperature: 0.7, num_ctx: 32768, max_tokens: 1000}
+      %CompletionConfig{temperature: 0.7, num_ctx: 32768, max_tokens: 1000, top_p: nil, top_k: nil, response_format: nil}
+
+      iex> CompletionConfig.new(top_p: 0.9, top_k: 40)
+      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: 0.9, top_k: 40, response_format: nil}
 
   """
+
+  @type response_format :: %{
+          type: :json_object | :text,
+          schema: map() | nil
+        }
 
   @type t :: %__MODULE__{
           temperature: float(),
           num_ctx: pos_integer(),
           max_tokens: pos_integer(),
-          num_predict: integer() | nil
+          num_predict: integer() | nil,
+          top_p: float() | nil,
+          top_k: integer() | nil,
+          response_format: response_format() | nil
         }
 
   defstruct temperature: 1.0,
             num_ctx: 32_768,
             max_tokens: 16_384,
-            num_predict: nil
+            num_predict: nil,
+            top_p: nil,
+            top_k: nil,
+            response_format: nil
 
   @doc """
   Creates a new configuration with optional overrides.
@@ -36,7 +50,13 @@ defmodule Mojentic.LLM.CompletionConfig do
   ## Examples
 
       iex> CompletionConfig.new(temperature: 0.5)
-      %CompletionConfig{temperature: 0.5, num_ctx: 32768, max_tokens: 16384}
+      %CompletionConfig{temperature: 0.5, num_ctx: 32768, max_tokens: 16384, top_p: nil, top_k: nil, response_format: nil}
+
+      iex> CompletionConfig.new(top_p: 0.95)
+      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: 0.95, top_k: nil, response_format: nil}
+
+      iex> CompletionConfig.new(response_format: %{type: :json_object, schema: nil})
+      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: nil, top_k: nil, response_format: %{type: :json_object, schema: nil}}
 
   """
   def new(opts \\ []) do

@@ -61,6 +61,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
     }
 
     body = maybe_add_tools(body, tools)
+    body = maybe_add_format(body, config)
 
     case http_client().post(
            "#{host}/api/chat",
@@ -189,6 +190,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
     }
 
     body = maybe_add_tools(body, tools)
+    body = maybe_add_format(body, config)
 
     Stream.resource(
       # Start function - initiate the streaming request
@@ -313,16 +315,33 @@ defmodule Mojentic.LLM.Gateways.Ollama do
       num_ctx: config.num_ctx
     }
 
-    case config.num_predict do
-      nil when config.max_tokens > 0 ->
-        Map.put(options, :num_predict, config.max_tokens)
+    options =
+      case config.num_predict do
+        nil when config.max_tokens > 0 ->
+          Map.put(options, :num_predict, config.max_tokens)
 
-      num when is_integer(num) and num > 0 ->
-        Map.put(options, :num_predict, num)
+        num when is_integer(num) and num > 0 ->
+          Map.put(options, :num_predict, num)
 
-      _ ->
+        _ ->
+          options
+      end
+
+    options =
+      if config.top_p do
+        Map.put(options, :top_p, config.top_p)
+      else
         options
-    end
+      end
+
+    options =
+      if config.top_k do
+        Map.put(options, :top_k, config.top_k)
+      else
+        options
+      end
+
+    options
   end
 
   defp maybe_add_tools(body, nil), do: body
@@ -331,6 +350,19 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   defp maybe_add_tools(body, tools) do
     tool_descriptors = Enum.map(tools, &Tool.descriptor/1)
     Map.put(body, :tools, tool_descriptors)
+  end
+
+  defp maybe_add_format(body, config) do
+    case config.response_format do
+      %{type: :json_object, schema: schema} when not is_nil(schema) ->
+        Map.put(body, :format, schema)
+
+      %{type: :json_object} ->
+        Map.put(body, :format, "json")
+
+      _ ->
+        body
+    end
   end
 
   defp adapt_messages(messages) do

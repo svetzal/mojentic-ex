@@ -467,6 +467,257 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
 
       assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
     end
+
+    test "passes top_p parameter in options" do
+      messages = [Message.user("Test")]
+
+      config = %CompletionConfig{
+        temperature: 0.7,
+        max_tokens: 100,
+        num_ctx: 2048,
+        num_predict: nil,
+        top_p: 0.9
+      }
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        assert decoded["options"]["top_p"] == 0.9
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "passes top_k parameter in options" do
+      messages = [Message.user("Test")]
+
+      config = %CompletionConfig{
+        temperature: 0.7,
+        max_tokens: 100,
+        num_ctx: 2048,
+        num_predict: nil,
+        top_k: 40
+      }
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        assert decoded["options"]["top_k"] == 40
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "passes both top_p and top_k parameters" do
+      messages = [Message.user("Test")]
+
+      config = %CompletionConfig{
+        temperature: 0.7,
+        max_tokens: 100,
+        num_ctx: 2048,
+        num_predict: nil,
+        top_p: 0.95,
+        top_k: 50
+      }
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        assert decoded["options"]["top_p"] == 0.95
+        assert decoded["options"]["top_k"] == 50
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "omits top_p when nil" do
+      messages = [Message.user("Test")]
+
+      config = %CompletionConfig{
+        temperature: 0.5,
+        max_tokens: 50,
+        num_ctx: 1024,
+        num_predict: nil,
+        top_p: nil
+      }
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        refute Map.has_key?(decoded["options"], "top_p")
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "omits top_k when nil" do
+      messages = [Message.user("Test")]
+
+      config = %CompletionConfig{
+        temperature: 0.5,
+        max_tokens: 50,
+        num_ctx: 1024,
+        num_predict: nil,
+        top_k: nil
+      }
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        refute Map.has_key?(decoded["options"], "top_k")
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "passes response_format with json_object type and schema" do
+      messages = [Message.user("Test")]
+      schema = %{"type" => "object", "properties" => %{"name" => %{"type" => "string"}}}
+
+      config = %CompletionConfig{
+        temperature: 0.7,
+        max_tokens: 100,
+        num_ctx: 2048,
+        response_format: %{type: :json_object, schema: schema}
+      }
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        assert decoded["format"] == schema
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "passes response_format with json_object type without schema" do
+      messages = [Message.user("Test")]
+
+      config = %CompletionConfig{
+        temperature: 0.7,
+        max_tokens: 100,
+        num_ctx: 2048,
+        response_format: %{type: :json_object, schema: nil}
+      }
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        assert decoded["format"] == "json"
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "omits format when response_format is nil" do
+      messages = [Message.user("Test")]
+
+      config = %CompletionConfig{
+        temperature: 0.7,
+        max_tokens: 100,
+        num_ctx: 2048,
+        response_format: nil
+      }
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        refute Map.has_key?(decoded, "format")
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
+
+    test "omits format when response_format type is text" do
+      messages = [Message.user("Test")]
+
+      config = %CompletionConfig{
+        temperature: 0.7,
+        max_tokens: 100,
+        num_ctx: 2048,
+        response_format: %{type: :text, schema: nil}
+      }
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        refute Map.has_key?(decoded, "format")
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
   end
 
   describe "complete_stream/4" do
