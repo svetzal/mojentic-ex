@@ -223,6 +223,19 @@ defmodule Mojentic.LLM.Broker do
   def generate_object(broker, messages, schema, config \\ nil) do
     config = config || %CompletionConfig{}
 
+    # Record LLM call in tracer
+    Tracer.record_llm_call(broker.tracer,
+      model: broker.model,
+      messages: messages,
+      temperature: config.temperature,
+      tools: nil,
+      source: __MODULE__,
+      correlation_id: broker.correlation_id
+    )
+
+    # Measure call duration
+    start_time = System.monotonic_time(:millisecond)
+
     with {:ok, response} <-
            broker.gateway.complete_object(
              broker.model,
@@ -230,6 +243,18 @@ defmodule Mojentic.LLM.Broker do
              schema,
              config
            ) do
+      call_duration_ms = System.monotonic_time(:millisecond) - start_time
+
+      # Record LLM response in tracer with object representation
+      Tracer.record_llm_response(broker.tracer,
+        model: broker.model,
+        content: inspect(response.object),
+        tool_calls: [],
+        call_duration_ms: call_duration_ms,
+        source: __MODULE__,
+        correlation_id: broker.correlation_id
+      )
+
       case response.object do
         nil -> Error.invalid_response()
         object -> {:ok, object}

@@ -29,7 +29,7 @@ jobs:
           otp-version: '28'
 
       - name: Cache dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
@@ -37,7 +37,7 @@ jobs:
             ${{ runner.os }}-mix-
 
       - name: Cache build
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: _build
           key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
@@ -62,7 +62,7 @@ jobs:
           otp-version: '28'
 
       - name: Restore dependencies cache
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
@@ -70,7 +70,7 @@ jobs:
             ${{ runner.os }}-mix-
 
       - name: Restore build cache
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: _build
           key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
@@ -95,7 +95,7 @@ jobs:
           otp-version: '28'
 
       - name: Restore dependencies cache
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
@@ -103,7 +103,7 @@ jobs:
             ${{ runner.os }}-mix-
 
       - name: Restore build cache
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: _build
           key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
@@ -128,7 +128,7 @@ jobs:
           otp-version: '28'
 
       - name: Restore dependencies cache
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
@@ -136,7 +136,7 @@ jobs:
             ${{ runner.os }}-mix-
 
       - name: Restore build cache
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: _build
           key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
@@ -161,7 +161,7 @@ jobs:
           otp-version: '28'
 
       - name: Restore dependencies cache
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
@@ -169,7 +169,7 @@ jobs:
             ${{ runner.os }}-mix-
 
       - name: Restore build cache
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: _build
           key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
@@ -194,7 +194,7 @@ jobs:
           otp-version: '28'
 
       - name: Restore dependencies cache
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
@@ -202,7 +202,7 @@ jobs:
             ${{ runner.os }}-mix-
 
       - name: Restore build cache
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: _build
           key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
@@ -229,7 +229,7 @@ jobs:
           otp-version: '28'
 
       - name: Restore dependencies cache
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: deps
           key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
@@ -237,7 +237,7 @@ jobs:
             ${{ runner.os }}-mix-
 
       - name: Restore build cache
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         with:
           path: _build
           key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
