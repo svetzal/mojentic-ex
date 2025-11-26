@@ -211,6 +211,25 @@ messages = [Message.user("What time is it?")]
 {:ok, response} = Broker.generate(broker, messages, [CurrentDateTime])
 ```
 
+### WebSearchTool
+
+Searches the web using DuckDuckGo (no API key required):
+
+```elixir
+alias Mojentic.LLM.Tools.WebSearchTool
+
+tool = WebSearchTool.new()
+messages = [Message.user("What is Elixir programming language?")]
+
+{:ok, response} = Broker.generate(broker, messages, [tool])
+# Returns organic search results with titles, URLs, and snippets
+```
+
+The tool returns up to 10 search results, each containing:
+- `title`: The page title
+- `url`: The direct URL
+- `snippet`: A brief description of the page
+
 ## Example: Weather Tool
 
 ```elixir

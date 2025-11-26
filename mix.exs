@@ -102,7 +102,8 @@ defmodule Mojentic.MixProject do
         Tools: [
           Mojentic.LLM.Tools.Tool,
           Mojentic.LLM.Tools.DateResolver,
-          Mojentic.LLM.Tools.CurrentDateTime
+          Mojentic.LLM.Tools.CurrentDateTime,
+          Mojentic.LLM.Tools.WebSearchTool
         ]
       ],
       before_closing_body_tag: &before_closing_body_tag/1

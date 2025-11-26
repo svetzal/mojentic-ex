@@ -258,36 +258,139 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   end
 
   @doc """
-  Pulls a model from the Ollama library.
+  Pulls a model from the Ollama library with progress tracking.
+
+  This function streams the model download progress, calling the optional
+  progress callback function with status updates.
+
+  ## Parameters
+
+    * `model` - The name of the model to pull (e.g., "qwen3:32b")
+    * `progress_callback` - Optional function that receives progress updates.
+      The callback is called with a map containing:
+      * `:status` - Status message (e.g., "downloading", "verifying", "success")
+      * `:completed` - Bytes downloaded (if available)
+      * `:total` - Total bytes to download (if available)
+      * `:digest` - Layer digest being processed (if available)
+
+  ## Returns
+
+    * `{:ok, model_name}` - Model successfully pulled
+    * `{:error, reason}` - Pull failed
 
   ## Examples
 
+      # Pull without progress tracking
       iex> Ollama.pull_model("qwen3:32b")
-      :ok
+      {:ok, "qwen3:32b"}
+
+      # Pull with progress tracking
+      iex> callback = fn status -> IO.puts("Status: \#{status.status}") end
+      iex> Ollama.pull_model("qwen3:32b", callback)
+      {:ok, "qwen3:32b"}
 
   """
-  def pull_model(model) do
+  def pull_model(model, progress_callback \\ nil) do
     host = get_host()
     timeout = get_timeout()
 
-    body = %{name: model}
+    body = %{name: model, stream: true}
 
     case http_client().post(
            "#{host}/api/pull",
            Jason.encode!(body),
            [{"Content-Type", "application/json"}],
            recv_timeout: timeout,
-           timeout: timeout
+           timeout: timeout,
+           stream_to: self(),
+           async: :once
          ) do
-      {:ok, %{status_code: 200}} ->
-        :ok
-
-      {:ok, %{status_code: status}} ->
-        {:error, {:http_error, status}}
+      {:ok, %HTTPoison.AsyncResponse{id: id}} ->
+        process_pull_stream(id, model, progress_callback, "", timeout)
 
       {:error, reason} ->
         {:error, {:request_failed, reason}}
     end
+  end
+
+  # Process the streaming response from the pull endpoint
+  defp process_pull_stream(id, model, progress_callback, buffer, timeout) do
+    receive do
+      %HTTPoison.AsyncStatus{id: ^id, code: 200} ->
+        http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
+        process_pull_stream(id, model, progress_callback, buffer, timeout)
+
+      %HTTPoison.AsyncStatus{id: ^id, code: status} ->
+        {:error, {:http_error, status}}
+
+      %HTTPoison.AsyncHeaders{id: ^id} ->
+        http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
+        process_pull_stream(id, model, progress_callback, buffer, timeout)
+
+      %HTTPoison.AsyncChunk{id: ^id, chunk: chunk} ->
+        http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
+        new_buffer = buffer <> chunk
+        {remaining_buffer, continue?} = parse_pull_chunks(new_buffer, progress_callback)
+
+        if continue? do
+          process_pull_stream(id, model, progress_callback, remaining_buffer, timeout)
+        else
+          {:ok, model}
+        end
+
+      %HTTPoison.AsyncEnd{id: ^id} ->
+        {:ok, model}
+    after
+      timeout ->
+        {:error, :timeout}
+    end
+  end
+
+  # Parse streaming chunks from pull endpoint
+  # Returns {remaining_buffer, continue?}
+  defp parse_pull_chunks(buffer, progress_callback) do
+    lines = String.split(buffer, "\n", trim: true)
+
+    {complete_lines, remaining_buffer} =
+      if String.ends_with?(buffer, "\n") do
+        {lines, ""}
+      else
+        case Enum.split(lines, -1) do
+          {complete, [incomplete]} -> {complete, incomplete}
+          {complete, []} -> {complete, ""}
+        end
+      end
+
+    continue? =
+      Enum.reduce_while(complete_lines, true, fn line, _acc ->
+        case Jason.decode(line) do
+          {:ok, status_map} ->
+            # Call progress callback if provided
+            if progress_callback do
+              progress_info = %{
+                status: Map.get(status_map, "status"),
+                completed: Map.get(status_map, "completed"),
+                total: Map.get(status_map, "total"),
+                digest: Map.get(status_map, "digest")
+              }
+
+              progress_callback.(progress_info)
+            end
+
+            # Check if this is the final status
+            if Map.get(status_map, "status") == "success" do
+              {:halt, false}
+            else
+              {:cont, true}
+            end
+
+          {:error, _} ->
+            Logger.warning("Failed to parse pull status chunk: #{line}")
+            {:cont, true}
+        end
+      end)
+
+    {remaining_buffer, continue?}
   end
 
   # Private functions
