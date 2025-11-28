@@ -16,7 +16,31 @@ defmodule Mojentic.MixProject do
       name: "Mojentic",
       source_url: @source_url,
       docs: docs(),
-      test_coverage: [summary: [threshold: 80]]
+      test_coverage: [
+        summary: [threshold: 80],
+        ignore_modules: [
+          # Example modules don't need test coverage
+          Mojentic.Examples.React.DecisioningAgent,
+          Mojentic.Examples.React.SummarizationAgent,
+          Mojentic.Examples.React.ThinkingAgent,
+          Mojentic.Examples.React.ToolCallAgent,
+          Mojentic.Examples.React.OutputAgent,
+          Mojentic.Examples.React.Events,
+          Mojentic.Examples.React.Events.FailureOccurred,
+          Mojentic.Examples.React.Events.FinishAndSummarize,
+          Mojentic.Examples.React.Events.InvokeDecisioning,
+          Mojentic.Examples.React.Events.InvokeThinking,
+          Mojentic.Examples.React.Events.InvokeToolCall,
+          Mojentic.Examples.React.Models,
+          Mojentic.Examples.React.Models.CurrentContext,
+          Mojentic.Examples.React.Models.NextAction,
+          Mojentic.Examples.React.Models.Plan,
+          Mojentic.Examples.React.Models.ThoughtActionObservation,
+          # OpenAI gateway not yet fully implemented
+          Mojentic.LLM.Gateways.OpenAI,
+          Mojentic.LLM.Gateways.OpenAIMessagesAdapter
+        ]
+      ]
     ]
   end
 
