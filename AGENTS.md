@@ -183,4 +183,90 @@ mix audit
 - Run `mix hex.outdated` to check outdated dependencies
 - Run `mix sobelow --config` on task completion and fix issues
 
+## Release Process
+
+### Versioning
+- Follow semantic versioning (semver): MAJOR.MINOR.PATCH
+- Update version in `mix.exs`
+- Update `CHANGELOG.md` with release notes
+
+### Release Workflow
+
+```bash
+# 1. Update version in mix.exs
+
+# 2. Update CHANGELOG.md
+#    - Move [Unreleased] changes to new version section
+#    - Add release date: [X.Y.Z] - YYYY-MM-DD
+
+# 3. Commit and push
+git add -A && git commit -m "chore: prepare vX.Y.Z release"
+git push origin main
+
+# 4. Create GitHub release
+gh release create vX.Y.Z --title "vX.Y.Z" --notes "Release notes here"
+```
+
+The CI/CD pipeline will automatically:
+- Run quality checks (format, credo, test, audit)
+- Build the package
+- Deploy documentation to GitHub Pages
+- Publish to Hex.pm (when configured)
+
+### CI/CD Pipeline
+
+The GitHub Actions workflow (`.github/workflows/build.yml`) runs:
+
+| Trigger | Quality Checks | Docs Deploy | Hex Publish |
+|---------|---------------|-------------|-------------|
+| Push to main | ✅ | ❌ | ❌ |
+| Pull request | ✅ | ❌ | ❌ |
+| Release published | ✅ | ✅ | ✅ (when configured) |
+
+### Pre-Release Checklist
+
+Before creating a release:
+- [ ] All tests pass: `mix test`
+- [ ] Format check passes: `mix format --check-formatted`
+- [ ] Credo passes: `mix credo --strict`
+- [ ] Security audit clean: `mix audit`
+- [ ] Docs build: `mix docs`
+- [ ] Version updated in `mix.exs`
+- [ ] CHANGELOG.md updated
+- [ ] Changes committed and pushed to main
+
+## Useful Commands
+
+### Development
+```bash
+mix deps.get       # Install dependencies
+mix compile        # Compile project
+```
+
+### Testing
+```bash
+mix test                           # All tests
+mix test test/path/to/test.exs     # Specific file
+mix test test/path/to/test.exs:42  # Specific line
+mix test --cover                   # With coverage
+```
+
+### Quality Checks
+```bash
+mix format                    # Format code
+mix format --check-formatted  # Check formatting
+mix credo --strict            # Linting
+mix audit                     # Security audit
+```
+
+### Documentation
+```bash
+mix docs        # Generate documentation
+```
+
+### Before Committing
+```bash
+mix format --check-formatted && mix credo --strict && mix test && mix audit
+```
+
 <!-- usage-rules-end -->
