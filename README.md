@@ -191,4 +191,3 @@ MIT License - see [LICENSE](LICENSE)
 ## Credits
 
 Mojentic is a [Mojility](https://mojility.com) product by Stacey Vetzal.
-
