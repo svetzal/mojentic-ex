@@ -158,19 +158,45 @@ After running these examples, check out:
 - [API Documentation](../doc/index.html) - Generated with `mix docs`
 - [Test Suite](../test/) - More examples in the test code
 
-## Coming Soon
+### Level 2: Advanced LLM Features (Continued)
 
-The following examples are planned for future implementation:
+#### `chat_session.exs`
+Interactive chat session maintaining conversation history.
 
-### Level 2: Advanced LLM Features (Remaining)
-- `chat_session.exs` - Interactive chat sessions
-- `broker_examples.exs` - Comprehensive broker feature tests
+```bash
+mix run examples/chat_session.exs
+```
+
+#### `broker_examples.exs`
+Comprehensive demonstration of various broker features and configurations.
+
+```bash
+mix run examples/broker_examples.exs
+```
 
 ### Level 3: Tool System Extensions
-- `file_tool.exs` - File operations
-- `task_manager.exs` - Task management
+
+#### `file_tool.exs`
+Demonstrates file operations using the FileTool.
+
+```bash
+mix run examples/file_tool.exs
+```
+
+#### `ephemeral_task_manager.exs`
+Task management using the TaskManager tool.
+
+```bash
+mix run examples/ephemeral_task_manager.exs
+```
 
 ### Level 4: Tracing & Observability
-- `tracer_demo.exs` - Event tracing and debugging
+
+#### `tracer_demo.exs`
+Demonstrates the event tracing system for debugging and monitoring.
+
+```bash
+mix run examples/tracer_demo.exs
+```
 
 See [PARITY.md](../PARITY.md) for the complete feature roadmap.

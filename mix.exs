@@ -99,7 +99,13 @@ defmodule Mojentic.MixProject do
         "guides/getting_started.md": [title: "Getting Started"],
         "guides/broker.md": [title: "Broker Guide"],
         "guides/tool_usage.md": [title: "Tool Usage"],
+        "guides/file_tools.md": [title: "File Tools"],
+        "guides/task_management.md": [title: "Task Management"],
+        "guides/web_search.md": [title: "Web Search"],
         "guides/structured_output.md": [title: "Structured Output"],
+        "guides/chat_sessions.md": [title: "Chat Sessions"],
+        "guides/streaming.md": [title: "Streaming"],
+        "guides/embeddings.md": [title: "Embeddings"],
         "AGENTS.md": [title: "AI Assistant Guidelines"]
       ],
       groups_for_extras: [
