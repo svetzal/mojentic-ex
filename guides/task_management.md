@@ -1,6 +1,6 @@
-# Task Management
+# Example: Task Management
 
-The `Mojentic.LLM.Tools.TaskManager` tool allows agents to manage ephemeral tasks during their execution. This is useful for breaking down complex goals into smaller, trackable steps.
+The `Mojentic.LLM.Tools.TaskManager` is an example of how to build stateful tools that allow agents to manage ephemeral tasks. This reference implementation shows how to maintain state across tool calls.
 
 ## Features
 
