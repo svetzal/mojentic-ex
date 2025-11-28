@@ -190,28 +190,39 @@ mix audit
 - Update version in `mix.exs`
 - Update `CHANGELOG.md` with release notes
 
-### Release Workflow
+### Publishing a Release
+
+**The release pipeline is fully automated.** When you create a GitHub release, the CI/CD workflow will:
+1. Run all quality checks (format, credo, test, security audit)
+2. Build and publish the package to Hex.pm
+3. Deploy documentation to GitHub Pages
+
+#### Steps to Release
 
 ```bash
-# 1. Update version in mix.exs
+# 1. Update version in mix.exs (e.g., @version "1.1.0")
 
 # 2. Update CHANGELOG.md
-#    - Move [Unreleased] changes to new version section
-#    - Add release date: [X.Y.Z] - YYYY-MM-DD
+#    - Add new version section with date: ## [1.1.0] - YYYY-MM-DD
+#    - Document all changes under appropriate headers (Added, Changed, Fixed, etc.)
 
 # 3. Commit and push
-git add -A && git commit -m "chore: prepare vX.Y.Z release"
+git add mix.exs CHANGELOG.md
+git commit -m "chore: prepare v1.1.0 release"
 git push origin main
 
-# 4. Create GitHub release
-gh release create vX.Y.Z --title "vX.Y.Z" --notes "Release notes here"
+# 4. Create GitHub release (this triggers the publish)
+gh release create v1.1.0 \
+  --title "v1.1.0 - Release Title" \
+  --notes "## What's New
+
+- Feature 1
+- Feature 2
+
+See [CHANGELOG.md](CHANGELOG.md) for full details."
 ```
 
-The CI/CD pipeline will automatically:
-- Run quality checks (format, credo, test, audit)
-- Build the package
-- Deploy documentation to GitHub Pages
-- Publish to Hex.pm (when configured)
+The pipeline will automatically publish to Hex.pm using the `HEX_API_KEY` secret configured in the repository.
 
 ### CI/CD Pipeline
 
@@ -221,7 +232,10 @@ The GitHub Actions workflow (`.github/workflows/build.yml`) runs:
 |---------|---------------|-------------|-------------|
 | Push to main | ✅ | ❌ | ❌ |
 | Pull request | ✅ | ❌ | ❌ |
-| Release published | ✅ | ✅ | ✅ (when configured) |
+| Release published | ✅ | ✅ | ✅ |
+
+**Required GitHub Secrets:**
+- `HEX_API_KEY` - Hex.pm API key for publishing (generate with `mix hex.user key generate`)
 
 ### Pre-Release Checklist
 
