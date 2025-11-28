@@ -229,9 +229,9 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
       event_type = event.__struct__
       subscribers = Map.get(state.subscribers, event_type, [])
 
-      # Call each subscriber asynchronously
+      # Call each subscriber in a linked task so they die with the emitter
       Enum.each(subscribers, fn {_ref, callback} ->
-        Task.start(fn -> callback.(event) end)
+        Task.start_link(fn -> callback.(event) end)
       end)
 
       {:noreply, state}
@@ -343,23 +343,25 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
     parent = self()
     solution_ref = make_ref()
 
-    # Set up event handlers
-    EventEmitter.subscribe(agent.emitter, GoalSubmittedEvent, fn event ->
-      handle_goal_submitted(agent, event)
-    end)
+    # Set up event handlers and track refs for cleanup
+    goal_ref =
+      EventEmitter.subscribe(agent.emitter, GoalSubmittedEvent, fn event ->
+        handle_goal_submitted(agent, event)
+      end)
 
-    EventEmitter.subscribe(agent.emitter, IterationCompletedEvent, fn event ->
-      handle_iteration_completed(agent, event)
-    end)
+    iteration_ref =
+      EventEmitter.subscribe(agent.emitter, IterationCompletedEvent, fn event ->
+        handle_iteration_completed(agent, event)
+      end)
 
     # Handle completion events by sending message to parent
     completion_handler = fn event ->
       send(parent, {solution_ref, event.state.solution})
     end
 
-    EventEmitter.subscribe(agent.emitter, GoalAchievedEvent, completion_handler)
-    EventEmitter.subscribe(agent.emitter, GoalFailedEvent, completion_handler)
-    EventEmitter.subscribe(agent.emitter, TimeoutEvent, completion_handler)
+    achieved_ref = EventEmitter.subscribe(agent.emitter, GoalAchievedEvent, completion_handler)
+    failed_ref = EventEmitter.subscribe(agent.emitter, GoalFailedEvent, completion_handler)
+    timeout_ref = EventEmitter.subscribe(agent.emitter, TimeoutEvent, completion_handler)
 
     # Start the solving process
     EventEmitter.emit(agent.emitter, %GoalSubmittedEvent{state: state})
@@ -367,25 +369,35 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
     # Wait for solution or timeout
     timeout_ms = 300_000
 
-    receive do
-      {^solution_ref, solution} when is_binary(solution) ->
-        {:ok, solution}
+    result =
+      receive do
+        {^solution_ref, solution} when is_binary(solution) ->
+          {:ok, solution}
 
-      {^solution_ref, nil} ->
-        {:error, :no_solution}
-    after
-      timeout_ms ->
-        timeout_message = "Timeout: Could not solve the problem within 300 seconds."
+        {^solution_ref, nil} ->
+          {:error, :no_solution}
+      after
+        timeout_ms ->
+          timeout_message = "Timeout: Could not solve the problem within 300 seconds."
 
-        updated_state = %{
-          state
-          | solution: timeout_message,
-            is_complete: true
-        }
+          updated_state = %{
+            state
+            | solution: timeout_message,
+              is_complete: true
+          }
 
-        EventEmitter.emit(agent.emitter, %TimeoutEvent{state: updated_state})
-        {:ok, timeout_message}
-    end
+          EventEmitter.emit(agent.emitter, %TimeoutEvent{state: updated_state})
+          {:ok, timeout_message}
+      end
+
+    # Clean up all subscriptions to prevent handler accumulation
+    EventEmitter.unsubscribe(agent.emitter, goal_ref)
+    EventEmitter.unsubscribe(agent.emitter, iteration_ref)
+    EventEmitter.unsubscribe(agent.emitter, achieved_ref)
+    EventEmitter.unsubscribe(agent.emitter, failed_ref)
+    EventEmitter.unsubscribe(agent.emitter, timeout_ref)
+
+    result
   end
 
   # Private event handlers
@@ -460,7 +472,8 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
     """
 
     # Create a task to generate response asynchronously
-    Task.start(fn ->
+    # Use Task.start_link so the task dies with the test process
+    Task.start_link(fn ->
       case generate_response(agent, prompt) do
         {:ok, response} ->
           EventEmitter.emit(

@@ -113,14 +113,9 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
   end
 
   setup do
-    # Start the gateway state agent if not already started
-    case Process.whereis(MockGatewayState) do
-      nil -> start_supervised!(MockGatewayState)
-      _pid -> :ok
-    end
-
-    # Reset state
-    MockGatewayState.reset()
+    # Always start a fresh supervised agent for each test
+    # This ensures proper cleanup between tests and avoids race conditions
+    start_supervised!(MockGatewayState)
 
     broker = Broker.new("test-model", MockGateway)
 
