@@ -306,33 +306,67 @@ defmodule Mojentic.LLM.Broker do
     Stream.resource(
       fn -> initialize_stream(broker, messages, tools, config) end,
       fn state -> process_stream_element(state, broker, messages, tools, config) end,
-      fn _ -> :ok end
+      &cleanup_stream/1
     )
   end
 
+  # Converts a stream into a continuation function that can be stepped through
+  # one element at a time using Enumerable.reduce with suspension.
+  # This avoids the re-initialization problem with Enum.take/Stream.drop on
+  # Stream.resource-backed streams.
+  defp stream_to_continuation(stream) do
+    &Enumerable.reduce(stream, &1, fn element, _acc ->
+      {:suspend, element}
+    end)
+  end
+
+  # Steps a continuation forward by one element.
+  # Returns {:element, value, next_continuation} or :done.
+  defp next_element(continuation) do
+    case continuation.({:cont, nil}) do
+      {:suspended, element, next_cont} -> {:element, element, next_cont}
+      {:done, _} -> :done
+      {:halted, _} -> :done
+    end
+  end
+
+  defp cleanup_stream({cont, _, _}) when is_function(cont) do
+    cont.({:halt, nil})
+    :ok
+  end
+
+  defp cleanup_stream({:recursive, cont}) when is_function(cont) do
+    cont.({:halt, nil})
+    :ok
+  end
+
+  defp cleanup_stream(_), do: :ok
+
   defp initialize_stream(broker, messages, tools, config) do
     stream = broker.gateway.complete_stream(broker.model, messages, tools, config)
-    {stream, [], ""}
+    cont = stream_to_continuation(stream)
+    {cont, [], ""}
   end
 
   defp process_stream_element(
-         {stream, acc_tool_calls, acc_content},
+         {cont, acc_tool_calls, acc_content},
          broker,
          messages,
          tools,
          config
        ) do
-    case Enum.take(stream, 1) do
-      [{:content, chunk}] ->
-        handle_content_chunk(chunk, stream, acc_tool_calls, acc_content)
+    case next_element(cont) do
+      {:element, {:content, chunk}, next_cont} ->
+        {[chunk], {next_cont, acc_tool_calls, acc_content <> chunk}}
 
-      [{:tool_calls, tool_calls}] ->
-        handle_tool_calls_chunk(tool_calls, stream, acc_tool_calls, acc_content)
+      {:element, {:tool_calls, tool_calls}, next_cont} ->
+        {[], {next_cont, acc_tool_calls ++ tool_calls, acc_content}}
 
-      [{:error, reason}] ->
-        handle_stream_error(reason)
+      {:element, {:error, reason}, _next_cont} ->
+        Logger.error("Streaming error: #{inspect(reason)}")
+        {:halt, nil}
 
-      [] ->
+      :done ->
         handle_stream_end(broker, messages, acc_tool_calls, acc_content, tools, config)
     end
   end
@@ -341,32 +375,12 @@ defmodule Mojentic.LLM.Broker do
     {:halt, nil}
   end
 
-  defp process_stream_element({:recursive, recursive_stream}, _broker, _messages, _tools, _config) do
-    handle_recursive_stream(recursive_stream)
-  end
+  defp process_stream_element({:recursive, cont}, _broker, _messages, _tools, _config) do
+    case next_element(cont) do
+      {:element, chunk, next_cont} ->
+        {[chunk], {:recursive, next_cont}}
 
-  defp handle_content_chunk(chunk, stream, acc_tool_calls, acc_content) do
-    remaining_stream = Stream.drop(stream, 1)
-    {[chunk], {remaining_stream, acc_tool_calls, acc_content <> chunk}}
-  end
-
-  defp handle_tool_calls_chunk(tool_calls, stream, acc_tool_calls, acc_content) do
-    remaining_stream = Stream.drop(stream, 1)
-    {[], {remaining_stream, acc_tool_calls ++ tool_calls, acc_content}}
-  end
-
-  defp handle_stream_error(reason) do
-    Logger.error("Streaming error: #{inspect(reason)}")
-    {:halt, nil}
-  end
-
-  defp handle_recursive_stream(recursive_stream) do
-    case Enum.take(recursive_stream, 1) do
-      [chunk] ->
-        remaining = Stream.drop(recursive_stream, 1)
-        {[chunk], {:recursive, remaining}}
-
-      [] ->
+      :done ->
         {:halt, nil}
     end
   end
@@ -393,7 +407,8 @@ defmodule Mojentic.LLM.Broker do
     final_messages = execute_and_append_tool_results(broker, tool_calls, tools, new_messages)
 
     recursive_stream = generate_stream(broker, final_messages, tools, config)
-    {[], {:recursive, recursive_stream}}
+    recursive_cont = stream_to_continuation(recursive_stream)
+    {[], {:recursive, recursive_cont}}
   end
 
   defp build_gateway_response(content, tool_calls) do
