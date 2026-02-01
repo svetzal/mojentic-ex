@@ -185,6 +185,92 @@ defmodule Mojentic.LLM.ChatSession do
     end
   end
 
+  @type stream_handle :: {t(), pid()}
+
+  @doc """
+  Sends a query to the LLM and returns a stream of response chunks.
+
+  Because Elixir data is immutable, streaming requires a two-phase approach:
+  1. `send_stream/2` returns a stream and a handle
+  2. After consuming the stream, call `finalize_stream/1` with the handle to get the updated session
+
+  The user message is added to the session before streaming begins.
+  An Agent process accumulates chunks as they flow through the stream.
+
+  ## Parameters
+
+  - `session` - The ChatSession instance
+  - `query` - The user's query text
+
+  ## Returns
+
+  - `{:ok, stream, handle}` where stream is an `Enumerable.t()` of string chunks
+    and handle is passed to `finalize_stream/1`
+
+  ## Examples
+
+      {:ok, stream, handle} = ChatSession.send_stream(session, "Tell me a story")
+      stream |> Stream.each(&IO.write/1) |> Stream.run()
+      session = ChatSession.finalize_stream(handle)
+
+  """
+  @spec send_stream(t(), String.t()) :: {:ok, Enumerable.t(), stream_handle()}
+  def send_stream(session, query) do
+    # Add user message
+    session = insert_message(session, Message.user(query))
+
+    # Create an Agent to accumulate chunks
+    {:ok, agent} = Agent.start_link(fn -> [] end)
+
+    # Generate the stream from broker
+    config = %CompletionConfig{temperature: session.temperature}
+    messages = Enum.map(session.messages, & &1.message)
+    broker_stream = Broker.generate_stream(session.broker, messages, session.tools, config)
+
+    # Wrap the stream to accumulate chunks
+    wrapped_stream =
+      broker_stream
+      |> Stream.each(fn chunk ->
+        Agent.update(agent, fn chunks -> chunks ++ [chunk] end)
+      end)
+
+    {:ok, wrapped_stream, {session, agent}}
+  end
+
+  @doc """
+  Finalizes a streaming send by recording the accumulated response in the session.
+
+  Must be called after the stream returned by `send_stream/2` has been fully consumed.
+
+  ## Parameters
+
+  - `handle` - The handle returned by `send_stream/2`
+
+  ## Returns
+
+  The updated session with the assistant's response recorded in history.
+
+  ## Examples
+
+      {:ok, stream, handle} = ChatSession.send_stream(session, "Tell me a story")
+      stream |> Stream.each(&IO.write/1) |> Stream.run()
+      session = ChatSession.finalize_stream(handle)
+
+  """
+  @spec finalize_stream(stream_handle()) :: t()
+  def finalize_stream({session, agent}) do
+    # Get accumulated chunks and stop the agent
+    chunks = Agent.get(agent, & &1)
+    Agent.stop(agent)
+
+    # Ensure messages are sized
+    session = ensure_all_messages_are_sized(session)
+
+    # Insert the assembled response
+    full_response = Enum.join(chunks, "")
+    insert_message(session, Message.assistant(full_response))
+  end
+
   @doc """
   Returns the current message history.
 

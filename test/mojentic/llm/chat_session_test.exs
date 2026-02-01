@@ -282,6 +282,100 @@ defmodule Mojentic.LLM.ChatSessionTest do
     end
   end
 
+  describe "send_stream/2 and finalize_stream/1" do
+    test "yields content chunks", %{broker: broker} do
+      session = ChatSession.new(broker)
+
+      Process.put(:mock_response, fn _messages ->
+        {:ok, %GatewayResponse{content: "Mock response", tool_calls: [], object: nil}}
+      end)
+
+      {:ok, stream, handle} = ChatSession.send_stream(session, "Hello!")
+
+      chunks = stream |> Enum.to_list()
+
+      assert length(chunks) > 0
+      assert is_binary(hd(chunks))
+
+      _session = ChatSession.finalize_stream(handle)
+    end
+
+    test "grows message history after finalize", %{broker: broker} do
+      session = ChatSession.new(broker)
+
+      Process.put(:mock_response, fn _messages ->
+        {:ok, %GatewayResponse{content: "Mock response", tool_calls: [], object: nil}}
+      end)
+
+      {:ok, stream, handle} = ChatSession.send_stream(session, "Hello!")
+      stream |> Stream.run()
+      session = ChatSession.finalize_stream(handle)
+
+      assert length(session.messages) == 3
+    end
+
+    test "records full assembled response in history", %{broker: broker} do
+      session = ChatSession.new(broker)
+
+      Process.put(:mock_response, fn _messages ->
+        {:ok, %GatewayResponse{content: "Mock response", tool_calls: [], object: nil}}
+      end)
+
+      {:ok, stream, handle} = ChatSession.send_stream(session, "Hello!")
+      chunks = stream |> Enum.to_list()
+      session = ChatSession.finalize_stream(handle)
+
+      expected_response = Enum.join(chunks, "")
+      [_system, _user, assistant] = session.messages
+      assert assistant.message.content == expected_response
+    end
+
+    test "records user message in history", %{broker: broker} do
+      session = ChatSession.new(broker)
+
+      Process.put(:mock_response, fn _messages ->
+        {:ok, %GatewayResponse{content: "Mock response", tool_calls: [], object: nil}}
+      end)
+
+      {:ok, stream, handle} = ChatSession.send_stream(session, "My question")
+      stream |> Stream.run()
+      session = ChatSession.finalize_stream(handle)
+
+      [_system, user_msg, _assistant] = session.messages
+      assert user_msg.message.role == :user
+      assert user_msg.message.content == "My question"
+    end
+
+    test "respects context capacity", %{broker: broker} do
+      session = ChatSession.new(broker, max_context: 50)
+
+      Process.put(:mock_response, fn _messages ->
+        {:ok,
+         %GatewayResponse{
+           content: "This is a longer response to consume tokens",
+           tool_calls: [],
+           object: nil
+         }}
+      end)
+
+      {:ok, stream, handle} = ChatSession.send_stream(session, "First long query message")
+      stream |> Stream.run()
+      session = ChatSession.finalize_stream(handle)
+
+      {:ok, stream, handle} = ChatSession.send_stream(session, "Second long query message")
+      stream |> Stream.run()
+      session = ChatSession.finalize_stream(handle)
+
+      # System message should always be preserved
+      [system_msg | _rest] = session.messages
+      assert system_msg.message.role == :system
+
+      # Total tokens should be under max_context
+      total_tokens = ChatSession.token_count(session)
+      assert total_tokens <= 50
+    end
+  end
+
   describe "context window management" do
     test "removes oldest messages when exceeding max_context", %{broker: broker} do
       # Use small context window to trigger trimming

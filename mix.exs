@@ -1,7 +1,7 @@
 defmodule Mojentic.MixProject do
   use Mix.Project
 
-  @version "1.0.0"
+  @version "1.0.1"
   @source_url "https://github.com/svetzal/mojentic-ex"
 
   def project do
@@ -114,7 +114,7 @@ defmodule Mojentic.MixProject do
           "guides/structured_output.md",
           "guides/simple_recursive_agent.md"
         ],
-        "Examples": [
+        Examples: [
           "guides/file_tools.md",
           "guides/task_management.md",
           "guides/web_search.md"

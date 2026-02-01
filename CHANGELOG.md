@@ -5,6 +5,17 @@ All notable changes to the Mojentic Elixir implementation will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.1] - 2026-02-01
+
+### Added
+
+- `ChatSession.send_stream/2` and `ChatSession.finalize_stream/1` for streaming responses with automatic conversation history management
+  - Two-phase API for immutable session state: `send_stream` returns a stream and handle, `finalize_stream` commits the response
+  - Yields content chunks in real-time as they arrive from the LLM
+  - Automatically records user message and assembled assistant response in conversation history
+  - Supports tool calling through broker's recursive streaming
+  - Respects context window limits
+
 ## [1.0.0] - 2025-11-27
 
 ### 🎉 First Stable Release

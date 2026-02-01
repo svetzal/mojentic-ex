@@ -119,6 +119,18 @@ alias Mojentic.LLM.Tools.DateResolver
 IO.puts(response)
 ```
 
+## Streaming Responses
+
+For a better user experience with longer responses, you can stream the LLM's reply as it's generated. Because Elixir uses immutable data, streaming uses a two-phase approach:
+
+```elixir
+{:ok, stream, handle} = ChatSession.send_stream(session, "Tell me a story")
+stream |> Stream.each(&IO.write/1) |> Stream.run()
+session = ChatSession.finalize_stream(handle)
+```
+
+The `send_stream/2` function adds the user message to the session and returns a stream of chunks plus a handle. After consuming the stream, call `finalize_stream/1` with the handle to record the assembled response in the session history. Tools are handled transparently through the broker's recursive streaming.
+
 ## Summary
 
 In this tutorial, we've learned how to:
