@@ -24,7 +24,8 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistryTest do
       caps = OpenAIModelRegistry.get_model_capabilities(registry, "o1")
 
       assert caps.model_type == :reasoning
-      assert caps.supports_tools == false
+      assert caps.supports_tools == true
+      assert caps.supports_streaming == true
     end
 
     test "returns capabilities for known embedding model" do
@@ -95,10 +96,10 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistryTest do
       assert OpenAIModelRegistry.supports_temperature?(registry, "o1", 0.5) == false
     end
 
-    test "returns false for any temperature on o3 series" do
+    test "returns true for temperature=1.0 on o3 series" do
       registry = OpenAIModelRegistry.new()
 
-      assert OpenAIModelRegistry.supports_temperature?(registry, "o3", 1.0) == false
+      assert OpenAIModelRegistry.supports_temperature?(registry, "o3", 1.0) == true
       assert OpenAIModelRegistry.supports_temperature?(registry, "o3", 0.5) == false
     end
   end
@@ -108,7 +109,6 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistryTest do
       registry = OpenAIModelRegistry.new()
 
       assert OpenAIModelRegistry.reasoning_model?(registry, "o1") == true
-      assert OpenAIModelRegistry.reasoning_model?(registry, "o1-mini") == true
     end
 
     test "returns true for o3 series" do
@@ -122,6 +122,8 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistryTest do
       registry = OpenAIModelRegistry.new()
 
       assert OpenAIModelRegistry.reasoning_model?(registry, "gpt-5") == true
+      assert OpenAIModelRegistry.reasoning_model?(registry, "gpt-5.1") == true
+      assert OpenAIModelRegistry.reasoning_model?(registry, "gpt-5.2") == true
     end
 
     test "returns false for chat models" do
@@ -129,6 +131,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistryTest do
 
       assert OpenAIModelRegistry.reasoning_model?(registry, "gpt-4") == false
       assert OpenAIModelRegistry.reasoning_model?(registry, "gpt-4o") == false
+      assert OpenAIModelRegistry.reasoning_model?(registry, "gpt-5-chat-latest") == false
     end
   end
 
@@ -178,6 +181,96 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistryTest do
       registry = OpenAIModelRegistry.new()
       caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-3.5-turbo")
 
+      assert caps.supports_tools == true
+      assert caps.supports_streaming == true
+    end
+  end
+
+  describe "special model capabilities (2026-02-04 audit)" do
+    test "chatgpt-4o-latest does not support tools" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "chatgpt-4o-latest")
+
+      assert caps.model_type == :chat
+      assert caps.supports_tools == false
+      assert caps.supports_streaming == true
+    end
+
+    test "gpt-4.1-nano does not support tools" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-4.1-nano")
+
+      assert caps.model_type == :chat
+      assert caps.supports_tools == false
+    end
+
+    test "gpt-4.1-nano-2025-04-14 supports tools" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-4.1-nano-2025-04-14")
+
+      assert caps.model_type == :chat
+      assert caps.supports_tools == true
+    end
+
+    test "audio preview models do not support tools or streaming" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-4o-audio-preview")
+
+      assert caps.supports_tools == false
+      assert caps.supports_streaming == false
+    end
+
+    test "search preview models do not support tools or temperature" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-4o-search-preview")
+
+      assert caps.supports_tools == false
+      assert caps.supports_streaming == true
+      assert caps.supported_temperatures == []
+    end
+
+    test "gpt-5-chat-latest is a chat model" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-5-chat-latest")
+
+      assert caps.model_type == :chat
+      assert caps.supports_tools == true
+      assert caps.supports_streaming == true
+    end
+
+    test "gpt-5-mini does not support tools" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-5-mini")
+
+      assert caps.model_type == :reasoning
+      assert caps.supports_tools == false
+      assert caps.supports_streaming == true
+    end
+
+    test "gpt-5-search-api does not support tools or temperature" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-5-search-api")
+
+      assert caps.model_type == :chat
+      assert caps.supports_tools == false
+      assert caps.supports_streaming == true
+      assert caps.supported_temperatures == []
+    end
+
+    test "o4-mini supports tools" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "o4-mini")
+
+      assert caps.model_type == :reasoning
+      assert caps.supports_tools == true
+      assert caps.supports_streaming == true
+    end
+
+    test "o4-mini-2025-04-16 supports tools" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "o4-mini-2025-04-16")
+
+      assert caps.model_type == :reasoning
       assert caps.supports_tools == true
       assert caps.supports_streaming == true
     end

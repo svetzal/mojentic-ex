@@ -143,67 +143,62 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
 
   # Private functions
 
+  # Reasoning Models (o1, o3, o4, gpt-5 series) - Updated 2026-02-04
   defp initialize_reasoning_models(registry) do
     reasoning_models = [
       "o1",
       "o1-2024-12-17",
-      "o1-mini",
-      "o1-mini-2024-09-12",
-      "o1-pro",
-      "o1-pro-2025-03-19",
       "o3",
       "o3-2025-04-16",
-      "o3-deep-research",
-      "o3-deep-research-2025-06-26",
       "o3-mini",
       "o3-mini-2025-01-31",
-      "o3-pro",
-      "o3-pro-2025-06-10",
       "o4-mini",
       "o4-mini-2025-04-16",
-      "o4-mini-deep-research",
-      "o4-mini-deep-research-2025-06-26",
       "gpt-5",
       "gpt-5-2025-08-07",
-      "gpt-5-chat-latest",
-      "gpt-5-codex",
       "gpt-5-mini",
       "gpt-5-mini-2025-08-07",
       "gpt-5-nano",
-      "gpt-5-nano-2025-08-07"
+      "gpt-5-nano-2025-08-07",
+      "gpt-5-pro",
+      "gpt-5-pro-2025-10-06",
+      "gpt-5.1",
+      "gpt-5.1-2025-11-13",
+      "gpt-5.1-chat-latest",
+      "gpt-5.2",
+      "gpt-5.2-2025-12-11",
+      "gpt-5.2-chat-latest"
     ]
 
     Enum.reduce(reasoning_models, registry, fn model, acc ->
-      is_deep_research = String.contains?(model, "deep-research")
       is_gpt5 = String.contains?(model, "gpt-5")
       is_o1_series = String.starts_with?(model, "o1")
       is_o3_series = String.starts_with?(model, "o3")
       is_o4_series = String.starts_with?(model, "o4")
       is_mini_or_nano = String.contains?(model, "mini") or String.contains?(model, "nano")
 
-      # GPT-5 models may support more features than o1/o3/o4
-      supports_tools = is_gpt5
-      supports_streaming = is_gpt5
+      # ALL reasoning models now support tools and streaming (2026-02-04 audit)
+      supports_tools = true
+      supports_streaming = true
+
+      # Special case: gpt-5-mini doesn't support tools (audit finding)
+      supports_tools = if model == "gpt-5-mini", do: false, else: supports_tools
 
       # Set context and output tokens based on model tier
       {context_tokens, output_tokens} =
-        cond do
-          is_gpt5 ->
-            if is_mini_or_nano, do: {200_000, 32_768}, else: {300_000, 50_000}
-
-          is_deep_research ->
-            {200_000, 100_000}
-
-          true ->
-            {128_000, 32_768}
+        if is_gpt5 do
+          if is_mini_or_nano, do: {200_000, 32_768}, else: {300_000, 50_000}
+        else
+          {128_000, 32_768}
         end
 
       # Temperature restrictions based on model series
+      # o3 series now supports temperature=1.0 (2026-02-04 audit)
       supported_temps =
-        cond do
-          is_gpt5 or is_o1_series or is_o4_series -> [1.0]
-          is_o3_series -> []
-          true -> nil
+        if is_gpt5 or is_o1_series or is_o3_series or is_o4_series do
+          [1.0]
+        else
+          nil
         end
 
       capabilities = %{
@@ -220,6 +215,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
     end)
   end
 
+  # Chat Models (GPT-4 and GPT-4.1 series) - Updated 2026-02-04
   defp initialize_chat_models(registry) do
     gpt4_models = [
       "chatgpt-4o-latest",
@@ -241,26 +237,19 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
       "gpt-4o-2024-08-06",
       "gpt-4o-2024-11-20",
       "gpt-4o-audio-preview",
-      "gpt-4o-audio-preview-2024-10-01",
       "gpt-4o-audio-preview-2024-12-17",
       "gpt-4o-audio-preview-2025-06-03",
       "gpt-4o-mini",
       "gpt-4o-mini-2024-07-18",
       "gpt-4o-mini-audio-preview",
       "gpt-4o-mini-audio-preview-2024-12-17",
-      "gpt-4o-mini-realtime-preview",
-      "gpt-4o-mini-realtime-preview-2024-12-17",
       "gpt-4o-mini-search-preview",
       "gpt-4o-mini-search-preview-2025-03-11",
-      "gpt-4o-mini-transcribe",
-      "gpt-4o-mini-tts",
-      "gpt-4o-realtime-preview",
-      "gpt-4o-realtime-preview-2024-10-01",
-      "gpt-4o-realtime-preview-2024-12-17",
-      "gpt-4o-realtime-preview-2025-06-03",
       "gpt-4o-search-preview",
       "gpt-4o-search-preview-2025-03-11",
-      "gpt-4o-transcribe"
+      "gpt-5-chat-latest",
+      "gpt-5-search-api",
+      "gpt-5-search-api-2025-10-14"
     ]
 
     gpt35_models = [
@@ -274,19 +263,36 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
 
     registry =
       Enum.reduce(gpt4_models, registry, fn model, acc ->
+        # Vision support (probe limitation, not real capability change per audit)
         vision_support =
-          String.contains?(model, "gpt-4o") or
-            String.contains?(model, "audio-preview") or
-            String.contains?(model, "realtime")
+          String.contains?(model, "gpt-4o") or String.contains?(model, "audio-preview")
 
         is_mini_or_nano = String.contains?(model, "mini") or String.contains?(model, "nano")
 
+        # Audio models require audio modality
         is_audio =
-          String.contains?(model, "audio") or
-            String.contains?(model, "realtime") or
-            String.contains?(model, "transcribe")
+          String.contains?(model, "audio")
+
+        # Search preview models don't support tools
+        is_search = String.contains?(model, "search")
 
         is_gpt41 = String.contains?(model, "gpt-4.1")
+
+        # Determine tool support (2026-02-04 audit)
+        supports_tools =
+          cond do
+            model == "chatgpt-4o-latest" -> false
+            model == "gpt-4.1-nano" -> false
+            is_audio -> false
+            is_search -> false
+            true -> true
+          end
+
+        # Determine streaming support
+        supports_streaming = not is_audio
+
+        # Temperature restrictions for search models
+        supported_temps = if is_search, do: [], else: nil
 
         {context_tokens, output_tokens} =
           cond do
@@ -296,18 +302,21 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
             String.contains?(model, "gpt-4o") ->
               {128_000, 16_384}
 
+            String.contains?(model, "gpt-5") ->
+              {300_000, 50_000}
+
             true ->
               {32_000, 8_192}
           end
 
         capabilities = %{
           model_type: :chat,
-          supports_tools: true,
-          supports_streaming: not is_audio,
+          supports_tools: supports_tools,
+          supports_streaming: supports_streaming,
           supports_vision: vision_support,
           max_context_tokens: context_tokens,
           max_output_tokens: output_tokens,
-          supported_temperatures: nil
+          supported_temperatures: supported_temps
         }
 
         register_model(acc, model, capabilities)
@@ -330,6 +339,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
     end)
   end
 
+  # Embedding Models - Updated 2026-02-04
   defp initialize_embedding_models(registry) do
     embedding_models = [
       "text-embedding-3-large",
@@ -352,12 +362,15 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
     end)
   end
 
+  # Pattern mappings for unknown models - Updated 2026-02-04
   defp initialize_pattern_mappings(registry) do
     patterns = %{
       "o1" => :reasoning,
       "o3" => :reasoning,
       "o4" => :reasoning,
       "gpt-5" => :reasoning,
+      "gpt-5.1" => :reasoning,
+      "gpt-5.2" => :reasoning,
       "gpt-4" => :chat,
       "gpt-4.1" => :chat,
       "gpt-3.5" => :chat,
