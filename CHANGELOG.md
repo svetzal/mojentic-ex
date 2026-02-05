@@ -5,6 +5,20 @@ All notable changes to the Mojentic Elixir implementation will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-02-05
+
+### Added
+
+- API endpoint support flags on model capabilities: `supports_chat_api`, `supports_completions_api`, `supports_responses_api`
+  - Indicates which OpenAI API endpoints each model supports (Chat, Completions, Responses)
+  - Populated for all registered models based on endpoint audit data
+- New models: `babbage-002`, `davinci-002`, `gpt-5.1-codex-mini`, `codex-mini-latest`
+- Missing reasoning models added to registry: `o1-pro`, `o3-pro`, `o3-deep-research`, `o4-mini-deep-research`, `gpt-5-codex`
+
+### Fixed
+
+- `gpt-3.5-turbo-instruct` models now correctly flagged as completions-only (not chat-capable)
+
 ## [1.0.2] - 2026-02-01
 
 ### Fixed

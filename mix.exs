@@ -106,6 +106,7 @@ defmodule Mojentic.MixProject do
         "guides/chat_sessions.md": [title: "Chat Sessions"],
         "guides/streaming.md": [title: "Streaming"],
         "guides/embeddings.md": [title: "Embeddings"],
+        "guides/openai_model_registry.md": [title: "OpenAI Model Registry"],
         "AGENTS.md": [title: "AI Assistant Guidelines"]
       ],
       groups_for_extras: [
