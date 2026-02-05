@@ -31,7 +31,10 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
           supports_vision: boolean(),
           max_context_tokens: non_neg_integer() | nil,
           max_output_tokens: non_neg_integer() | nil,
-          supported_temperatures: [float()] | nil
+          supported_temperatures: [float()] | nil,
+          supports_chat_api: boolean(),
+          supports_completions_api: boolean(),
+          supports_responses_api: boolean()
         }
 
   @type t :: %__MODULE__{
@@ -50,6 +53,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
     |> initialize_reasoning_models()
     |> initialize_chat_models()
     |> initialize_embedding_models()
+    |> initialize_legacy_and_codex_models()
     |> initialize_pattern_mappings()
   end
 
@@ -148,14 +152,23 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
     reasoning_models = [
       "o1",
       "o1-2024-12-17",
+      "o1-pro",
+      "o1-pro-2025-03-19",
       "o3",
       "o3-2025-04-16",
       "o3-mini",
       "o3-mini-2025-01-31",
+      "o3-pro",
+      "o3-pro-2025-06-10",
+      "o3-deep-research",
+      "o3-deep-research-2025-06-26",
       "o4-mini",
       "o4-mini-2025-04-16",
+      "o4-mini-deep-research",
+      "o4-mini-deep-research-2025-06-26",
       "gpt-5",
       "gpt-5-2025-08-07",
+      "gpt-5-codex",
       "gpt-5-mini",
       "gpt-5-mini-2025-08-07",
       "gpt-5-nano",
@@ -201,6 +214,13 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
           nil
         end
 
+      # Endpoint support flags
+      is_responses_only =
+        String.contains?(model, "pro") or String.contains?(model, "deep-research") or
+          model == "gpt-5-codex"
+
+      is_both_endpoint = model in ["gpt-5.1", "gpt-5.1-2025-11-13"]
+
       capabilities = %{
         model_type: :reasoning,
         supports_tools: supports_tools,
@@ -208,7 +228,10 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
         supports_vision: false,
         max_context_tokens: context_tokens,
         max_output_tokens: output_tokens,
-        supported_temperatures: supported_temps
+        supported_temperatures: supported_temps,
+        supports_chat_api: not is_responses_only,
+        supports_completions_api: is_both_endpoint,
+        supports_responses_api: is_responses_only
       }
 
       register_model(acc, model, capabilities)
@@ -309,6 +332,15 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
               {32_000, 8_192}
           end
 
+        # Endpoint support flags
+        is_both_endpoint =
+          model in [
+            "gpt-4.1-nano",
+            "gpt-4.1-nano-2025-04-14",
+            "gpt-4o-mini",
+            "gpt-4o-mini-2024-07-18"
+          ]
+
         capabilities = %{
           model_type: :chat,
           supports_tools: supports_tools,
@@ -316,7 +348,10 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
           supports_vision: vision_support,
           max_context_tokens: context_tokens,
           max_output_tokens: output_tokens,
-          supported_temperatures: supported_temps
+          supported_temperatures: supported_temps,
+          supports_chat_api: true,
+          supports_completions_api: is_both_endpoint,
+          supports_responses_api: false
         }
 
         register_model(acc, model, capabilities)
@@ -332,7 +367,10 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
         supports_vision: false,
         max_context_tokens: 16_385,
         max_output_tokens: 4_096,
-        supported_temperatures: nil
+        supported_temperatures: nil,
+        supports_chat_api: not is_instruct,
+        supports_completions_api: is_instruct,
+        supports_responses_api: false
       }
 
       register_model(acc, model, capabilities)
@@ -355,10 +393,75 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
         supports_vision: false,
         max_context_tokens: nil,
         max_output_tokens: nil,
-        supported_temperatures: nil
+        supported_temperatures: nil,
+        supports_chat_api: false,
+        supports_completions_api: false,
+        supports_responses_api: false
       }
 
       register_model(acc, model, capabilities)
+    end)
+  end
+
+  # Legacy and Codex Models - Added 2026-02-05
+  defp initialize_legacy_and_codex_models(registry) do
+    legacy_models = [
+      {"babbage-002",
+       %{
+         model_type: :chat,
+         supports_tools: false,
+         supports_streaming: false,
+         supports_vision: false,
+         max_context_tokens: 16_384,
+         max_output_tokens: 4_096,
+         supported_temperatures: nil,
+         supports_chat_api: false,
+         supports_completions_api: true,
+         supports_responses_api: false
+       }},
+      {"davinci-002",
+       %{
+         model_type: :chat,
+         supports_tools: false,
+         supports_streaming: false,
+         supports_vision: false,
+         max_context_tokens: 16_384,
+         max_output_tokens: 4_096,
+         supported_temperatures: nil,
+         supports_chat_api: false,
+         supports_completions_api: true,
+         supports_responses_api: false
+       }},
+      {"gpt-5.1-codex-mini",
+       %{
+         model_type: :reasoning,
+         supports_tools: false,
+         supports_streaming: false,
+         supports_vision: false,
+         max_context_tokens: 200_000,
+         max_output_tokens: 32_768,
+         supported_temperatures: nil,
+         supports_chat_api: false,
+         supports_completions_api: true,
+         supports_responses_api: false
+       }},
+      {"codex-mini-latest",
+       %{
+         model_type: :reasoning,
+         supports_tools: false,
+         supports_streaming: false,
+         supports_vision: false,
+         max_context_tokens: 200_000,
+         max_output_tokens: 32_768,
+         supported_temperatures: nil,
+         supports_chat_api: false,
+         supports_completions_api: false,
+         supports_responses_api: true
+       }}
+    ]
+
+    Enum.reduce(legacy_models, registry, fn {model, caps}, acc ->
+      register_model(acc, model, caps)
     end)
   end
 
@@ -398,7 +501,10 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
           supports_vision: false,
           max_context_tokens: nil,
           max_output_tokens: nil,
-          supported_temperatures: nil
+          supported_temperatures: nil,
+          supports_chat_api: true,
+          supports_completions_api: false,
+          supports_responses_api: false
         }
 
       :chat ->
@@ -409,7 +515,10 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
           supports_vision: false,
           max_context_tokens: nil,
           max_output_tokens: nil,
-          supported_temperatures: nil
+          supported_temperatures: nil,
+          supports_chat_api: true,
+          supports_completions_api: false,
+          supports_responses_api: false
         }
 
       :embedding ->
@@ -420,7 +529,10 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
           supports_vision: false,
           max_context_tokens: nil,
           max_output_tokens: nil,
-          supported_temperatures: nil
+          supported_temperatures: nil,
+          supports_chat_api: false,
+          supports_completions_api: false,
+          supports_responses_api: false
         }
 
       :moderation ->
@@ -431,7 +543,10 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
           supports_vision: false,
           max_context_tokens: nil,
           max_output_tokens: nil,
-          supported_temperatures: nil
+          supported_temperatures: nil,
+          supports_chat_api: false,
+          supports_completions_api: false,
+          supports_responses_api: false
         }
     end
   end

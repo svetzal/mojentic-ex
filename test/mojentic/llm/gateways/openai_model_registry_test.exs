@@ -146,7 +146,10 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistryTest do
         supports_vision: false,
         max_context_tokens: 8000,
         max_output_tokens: 4000,
-        supported_temperatures: nil
+        supported_temperatures: nil,
+        supports_chat_api: true,
+        supports_completions_api: false,
+        supports_responses_api: false
       }
 
       new_registry = OpenAIModelRegistry.register_model(registry, "custom-model", custom_caps)
@@ -273,6 +276,89 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistryTest do
       assert caps.model_type == :reasoning
       assert caps.supports_tools == true
       assert caps.supports_streaming == true
+    end
+  end
+
+  describe "API endpoint support flags" do
+    test "chat-only model has correct flags" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-4")
+
+      assert caps.supports_chat_api == true
+      assert caps.supports_completions_api == false
+      assert caps.supports_responses_api == false
+    end
+
+    test "both-endpoint model has correct flags" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-4o-mini")
+
+      assert caps.supports_chat_api == true
+      assert caps.supports_completions_api == true
+      assert caps.supports_responses_api == false
+    end
+
+    test "completions-only model has correct flags" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-3.5-turbo-instruct")
+
+      assert caps.supports_chat_api == false
+      assert caps.supports_completions_api == true
+      assert caps.supports_responses_api == false
+    end
+
+    test "responses-only model has correct flags" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-5-pro")
+
+      assert caps.supports_chat_api == false
+      assert caps.supports_completions_api == false
+      assert caps.supports_responses_api == true
+    end
+
+    test "legacy completions model has correct flags" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "babbage-002")
+
+      assert caps.supports_chat_api == false
+      assert caps.supports_completions_api == true
+      assert caps.supports_responses_api == false
+    end
+
+    test "embedding model has no endpoints" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "text-embedding-3-large")
+
+      assert caps.supports_chat_api == false
+      assert caps.supports_completions_api == false
+      assert caps.supports_responses_api == false
+    end
+
+    test "codex-mini-latest is responses-only" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "codex-mini-latest")
+
+      assert caps.supports_chat_api == false
+      assert caps.supports_completions_api == false
+      assert caps.supports_responses_api == true
+    end
+
+    test "gpt-5.1 supports both chat and completions" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-5.1")
+
+      assert caps.supports_chat_api == true
+      assert caps.supports_completions_api == true
+      assert caps.supports_responses_api == false
+    end
+
+    test "default capabilities include endpoint flags" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "completely-unknown-model-xyz")
+
+      assert caps.supports_chat_api == true
+      assert caps.supports_completions_api == false
+      assert caps.supports_responses_api == false
     end
   end
 end
