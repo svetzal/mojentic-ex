@@ -144,7 +144,7 @@ jobs:
             ${{ runner.os }}-build-
 
       - name: Run Credo
-        run: mix credo --all
+        run: mix credo --strict
 
   test:
     runs-on: ubuntu-latest

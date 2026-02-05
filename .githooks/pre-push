@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "========================================"
+echo "  Mojentic Elixir — Pre-Push Checks"
+echo "========================================"
+
+echo ""
+echo "--- [1/6] mix format --check-formatted ---"
+mix format --check-formatted
+echo "PASSED"
+
+echo ""
+echo "--- [2/6] mix compile --warnings-as-errors ---"
+mix compile --warnings-as-errors
+echo "PASSED"
+
+echo ""
+echo "--- [3/6] mix credo --strict ---"
+mix credo --strict
+echo "PASSED"
+
+echo ""
+echo "--- [4/6] mix test ---"
+mix test
+echo "PASSED"
+
+echo ""
+echo "--- [5/6] mix deps.audit ---"
+mix deps.audit
+echo "PASSED"
+
+echo ""
+echo "--- [6/6] mix sobelow --config ---"
+mix sobelow --config
+echo "PASSED"
+
+echo ""
+echo "========================================"
+echo "  All checks passed — push allowed"
+echo "========================================"
