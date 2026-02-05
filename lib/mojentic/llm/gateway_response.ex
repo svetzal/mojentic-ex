@@ -8,10 +8,10 @@ defmodule Mojentic.LLM.GatewayResponse do
   ## Examples
 
       iex> %GatewayResponse{content: "Hello!"}
-      %GatewayResponse{content: "Hello!", object: nil, tool_calls: []}
+      %GatewayResponse{content: "Hello!", object: nil, tool_calls: [], thinking: nil}
 
       iex> %GatewayResponse{object: %{"answer" => 42}}
-      %GatewayResponse{content: nil, object: %{"answer" => 42}, tool_calls: []}
+      %GatewayResponse{content: nil, object: %{"answer" => 42}, tool_calls: [], thinking: nil}
 
   """
 
@@ -20,10 +20,12 @@ defmodule Mojentic.LLM.GatewayResponse do
   @type t :: %__MODULE__{
           content: String.t() | nil,
           object: term() | nil,
-          tool_calls: [ToolCall.t()]
+          tool_calls: [ToolCall.t()],
+          thinking: String.t() | nil
         }
 
   defstruct content: nil,
             object: nil,
-            tool_calls: []
+            tool_calls: [],
+            thinking: nil
 end

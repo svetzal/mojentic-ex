@@ -7,13 +7,13 @@ defmodule Mojentic.LLM.CompletionConfig do
   ## Examples
 
       iex> CompletionConfig.new()
-      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: nil, top_k: nil, response_format: nil}
+      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: nil, top_k: nil, response_format: nil, reasoning_effort: nil}
 
       iex> CompletionConfig.new(temperature: 0.7, max_tokens: 1000)
-      %CompletionConfig{temperature: 0.7, num_ctx: 32768, max_tokens: 1000, top_p: nil, top_k: nil, response_format: nil}
+      %CompletionConfig{temperature: 0.7, num_ctx: 32768, max_tokens: 1000, top_p: nil, top_k: nil, response_format: nil, reasoning_effort: nil}
 
       iex> CompletionConfig.new(top_p: 0.9, top_k: 40)
-      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: 0.9, top_k: 40, response_format: nil}
+      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: 0.9, top_k: 40, response_format: nil, reasoning_effort: nil}
 
   """
 
@@ -22,6 +22,8 @@ defmodule Mojentic.LLM.CompletionConfig do
           schema: map() | nil
         }
 
+  @type reasoning_effort :: :low | :medium | :high
+
   @type t :: %__MODULE__{
           temperature: float(),
           num_ctx: pos_integer(),
@@ -29,7 +31,8 @@ defmodule Mojentic.LLM.CompletionConfig do
           num_predict: integer() | nil,
           top_p: float() | nil,
           top_k: integer() | nil,
-          response_format: response_format() | nil
+          response_format: response_format() | nil,
+          reasoning_effort: reasoning_effort() | nil
         }
 
   defstruct temperature: 1.0,
@@ -38,7 +41,8 @@ defmodule Mojentic.LLM.CompletionConfig do
             num_predict: nil,
             top_p: nil,
             top_k: nil,
-            response_format: nil
+            response_format: nil,
+            reasoning_effort: nil
 
   @doc """
   Creates a new configuration with optional overrides.
@@ -50,13 +54,13 @@ defmodule Mojentic.LLM.CompletionConfig do
   ## Examples
 
       iex> CompletionConfig.new(temperature: 0.5)
-      %CompletionConfig{temperature: 0.5, num_ctx: 32768, max_tokens: 16384, top_p: nil, top_k: nil, response_format: nil}
+      %CompletionConfig{temperature: 0.5, num_ctx: 32768, max_tokens: 16384, top_p: nil, top_k: nil, response_format: nil, reasoning_effort: nil}
 
       iex> CompletionConfig.new(top_p: 0.95)
-      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: 0.95, top_k: nil, response_format: nil}
+      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: 0.95, top_k: nil, response_format: nil, reasoning_effort: nil}
 
       iex> CompletionConfig.new(response_format: %{type: :json_object, schema: nil})
-      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: nil, top_k: nil, response_format: %{type: :json_object, schema: nil}}
+      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: nil, top_k: nil, response_format: %{type: :json_object, schema: nil}, reasoning_effort: nil}
 
   """
   def new(opts \\ []) do

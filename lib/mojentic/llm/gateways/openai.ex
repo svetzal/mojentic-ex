@@ -376,6 +376,20 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
         params
       end
 
+    # Add reasoning_effort for reasoning models
+    params =
+      if config.reasoning_effort && capabilities.model_type == :reasoning do
+        Map.put(params, :reasoning_effort, Atom.to_string(config.reasoning_effort))
+      else
+        if config.reasoning_effort && capabilities.model_type != :reasoning do
+          Logger.warning(
+            "Model #{model} is not a reasoning model, ignoring reasoning_effort parameter"
+          )
+        end
+
+        params
+      end
+
     params
   end
 

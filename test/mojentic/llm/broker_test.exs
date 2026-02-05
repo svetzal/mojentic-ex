@@ -170,6 +170,17 @@ defmodule Mojentic.LLM.BrokerTest do
       assert call_info.config.temperature == 0.5
     end
 
+    test "passes reasoning_effort through config" do
+      broker = Broker.new("test-model", MockGateway)
+      messages = [Message.user("Think deeply about this")]
+      config = %CompletionConfig{reasoning_effort: :high}
+
+      Broker.generate(broker, messages, nil, config)
+
+      call_info = Process.get(:last_complete_call)
+      assert call_info.config.reasoning_effort == :high
+    end
+
     test "handles tool calls" do
       broker = Broker.new("test-model", MockGateway)
       messages = [Message.user("Hello")]

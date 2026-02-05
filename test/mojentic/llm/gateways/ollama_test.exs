@@ -944,6 +944,64 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
 
       assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
     end
+
+    test "includes think parameter when reasoning_effort is set" do
+      messages = [Message.user("Think deeply about this")]
+
+      config = %CompletionConfig{
+        temperature: 0.7,
+        max_tokens: 100,
+        num_ctx: 2048,
+        reasoning_effort: :high
+      }
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "After careful thought...",
+            "role" => "assistant",
+            "thinking" => "Let me analyze this problem step by step..."
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        assert decoded["think"] == true
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, %GatewayResponse{content: "After careful thought...", thinking: thinking}} =
+               Ollama.complete("qwen2.5:3b", messages, [], config)
+
+      assert thinking == "Let me analyze this problem step by step..."
+    end
+
+    test "omits think parameter when reasoning_effort is nil" do
+      messages = [Message.user("Test")]
+
+      config = %CompletionConfig{
+        temperature: 0.7,
+        max_tokens: 100,
+        num_ctx: 2048,
+        reasoning_effort: nil
+      }
+
+      response_body =
+        Jason.encode!(%{
+          "message" => %{
+            "content" => "Response",
+            "role" => "assistant"
+          }
+        })
+
+      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+        decoded = Jason.decode!(body)
+        refute Map.has_key?(decoded, "think")
+        {:ok, %{status_code: 200, body: response_body}}
+      end)
+
+      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
+    end
   end
 
   describe "complete_stream/4" do

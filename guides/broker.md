@@ -260,6 +260,32 @@ config = CompletionConfig.new(
 )
 ```
 
+### Reasoning Effort
+
+For reasoning models (like OpenAI's o1/o3 series) or when using Ollama with extended thinking, you can control the reasoning effort level:
+
+```elixir
+# Enable extended reasoning (Ollama)
+# or control reasoning effort for OpenAI reasoning models
+config = CompletionConfig.new(
+  reasoning_effort: :high  # :low, :medium, or :high
+)
+
+messages = [Message.user("Think deeply about the implications of quantum computing")]
+{:ok, response} = Broker.generate(broker, messages, [], config)
+```
+
+**Ollama Gateway**: When `reasoning_effort` is set, Ollama will use the `think: true` parameter to enable extended thinking. The model's reasoning trace is available in the response's `thinking` field:
+
+```elixir
+{:ok, %GatewayResponse{
+  content: "After careful analysis...",
+  thinking: "Let me break this down step by step..."
+}} = Broker.complete(broker, messages, config)
+```
+
+**OpenAI Gateway**: For reasoning models (o1, o3 series), the `reasoning_effort` parameter (`:low`, `:medium`, `:high`) is passed directly to the API. For non-reasoning models, the parameter is ignored with a warning logged.
+
 ## Best Practices
 
 ### 1. Use System Messages

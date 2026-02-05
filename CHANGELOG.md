@@ -5,6 +5,15 @@ All notable changes to the Mojentic Elixir implementation will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-02-05
+
+### Added
+
+- Reasoning effort control via `CompletionConfig` `:reasoning_effort` field (`:low`, `:medium`, `:high`)
+  - Ollama gateway: maps to `think: true` parameter for extended thinking
+  - OpenAI gateway: maps to `reasoning_effort` API parameter for reasoning models (o1, o3, etc.)
+- `thinking` field on `GatewayResponse` for model reasoning traces (populated by Ollama when reasoning effort is enabled)
+
 ## [1.1.0] - 2026-02-05
 
 ### Added

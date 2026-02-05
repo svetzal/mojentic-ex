@@ -62,6 +62,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
     body = maybe_add_tools(body, tools)
     body = maybe_add_format(body, config)
+    body = maybe_add_thinking(body, config)
 
     case http_client().post(
            "#{host}/api/chat",
@@ -191,6 +192,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
     body = maybe_add_tools(body, tools)
     body = maybe_add_format(body, config)
+    body = maybe_add_thinking(body, config)
 
     Stream.resource(
       # Start function - initiate the streaming request
@@ -468,6 +470,13 @@ defmodule Mojentic.LLM.Gateways.Ollama do
     end
   end
 
+  defp maybe_add_thinking(body, config) do
+    case config.reasoning_effort do
+      nil -> body
+      _ -> Map.put(body, :think, true)
+    end
+  end
+
   defp adapt_messages(messages) do
     Enum.map(messages, &adapt_message/1)
   end
@@ -531,11 +540,13 @@ defmodule Mojentic.LLM.Gateways.Ollama do
       {:ok, %{"message" => message}} ->
         content = Map.get(message, "content")
         tool_calls = parse_tool_calls(message)
+        thinking = Map.get(message, "thinking")
 
         {:ok,
          %GatewayResponse{
            content: content,
-           tool_calls: tool_calls
+           tool_calls: tool_calls,
+           thinking: thinking
          }}
 
       _ ->
