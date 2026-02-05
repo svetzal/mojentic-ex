@@ -6,7 +6,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistryTest do
   describe "new/0" do
     test "creates a new registry with models" do
       registry = OpenAIModelRegistry.new()
-      assert length(OpenAIModelRegistry.get_registered_models(registry)) > 0
+      assert OpenAIModelRegistry.get_registered_models(registry) != []
     end
   end
 

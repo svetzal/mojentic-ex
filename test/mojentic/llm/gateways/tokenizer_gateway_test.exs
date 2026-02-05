@@ -39,7 +39,7 @@ defmodule Mojentic.LLM.Gateways.TokenizerGatewayTest do
       tokens = TokenizerGateway.encode(tokenizer, "Hello, world!")
 
       assert is_list(tokens)
-      assert length(tokens) > 0
+      assert tokens != []
       assert Enum.all?(tokens, &is_integer/1)
     end
 
@@ -134,7 +134,7 @@ defmodule Mojentic.LLM.Gateways.TokenizerGatewayTest do
       text = "Hello, world!"
       tokens = TokenizerGateway.encode(tokenizer, text)
 
-      assert length(tokens) > 0
+      assert tokens != []
       assert TokenizerGateway.decode(tokenizer, tokens) == text
     end
 
@@ -143,7 +143,7 @@ defmodule Mojentic.LLM.Gateways.TokenizerGatewayTest do
       text = "Hello, world!"
       tokens = TokenizerGateway.encode(tokenizer, text)
 
-      assert length(tokens) > 0
+      assert tokens != []
       # BERT may alter casing and add special tokens
       decoded = TokenizerGateway.decode(tokenizer, tokens)
       assert is_binary(decoded)
@@ -162,7 +162,7 @@ defmodule Mojentic.LLM.Gateways.TokenizerGatewayTest do
       decoded = TokenizerGateway.decode(tokenizer, tokens)
 
       assert decoded == unicode_text
-      assert length(tokens) > 0
+      assert tokens != []
     end
 
     test "handles emoji", %{tokenizer: tokenizer} do

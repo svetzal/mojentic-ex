@@ -294,7 +294,7 @@ defmodule Mojentic.LLM.ChatSessionTest do
 
       chunks = stream |> Enum.to_list()
 
-      assert length(chunks) > 0
+      assert chunks != []
       assert is_binary(hd(chunks))
 
       _session = ChatSession.finalize_stream(handle)

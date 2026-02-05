@@ -57,7 +57,7 @@ defmodule Mojentic.Tracer.TracerEvents.LLMCallTracerEvent do
     summary = "#{base_summary}\n   Model: #{event.model}"
 
     summary =
-      if length(event.messages) > 0 do
+      if event.messages != [] do
         msg_count = length(event.messages)
         pluralized = if msg_count == 1, do: "", else: "s"
         "#{summary}\n   Messages: #{msg_count} message#{pluralized}"
@@ -72,7 +72,7 @@ defmodule Mojentic.Tracer.TracerEvents.LLMCallTracerEvent do
         summary
       end
 
-    if event.tools && length(event.tools) > 0 do
+    if event.tools && event.tools != [] do
       tool_names = Enum.map(event.tools, fn tool -> Map.get(tool, "name", "unknown") end)
       "#{summary}\n   Available Tools: #{Enum.join(tool_names, ", ")}"
     else
@@ -117,7 +117,7 @@ defmodule Mojentic.Tracer.TracerEvents.LLMResponseTracerEvent do
       end
 
     summary =
-      if event.tool_calls && length(event.tool_calls) > 0 do
+      if event.tool_calls && event.tool_calls != [] do
         tool_count = length(event.tool_calls)
         pluralized = if tool_count == 1, do: "", else: "s"
         "#{summary}\n   Tool Calls: #{tool_count} call#{pluralized}"
