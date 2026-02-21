@@ -1,0 +1,34 @@
+{
+  "gates": [
+    {
+      "name": "format",
+      "command": "mix format --check-formatted",
+      "required": true
+    },
+    {
+      "name": "compile",
+      "command": "mix compile --warnings-as-errors",
+      "required": true
+    },
+    {
+      "name": "credo",
+      "command": "mix credo --strict",
+      "required": true
+    },
+    {
+      "name": "test",
+      "command": "mix test --cover",
+      "required": true
+    },
+    {
+      "name": "deps-audit",
+      "command": "mix deps.audit",
+      "required": false
+    },
+    {
+      "name": "sobelow",
+      "command": "mix sobelow --config",
+      "required": false
+    }
+  ]
+}
