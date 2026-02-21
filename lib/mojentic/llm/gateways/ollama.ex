@@ -42,7 +42,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   @default_timeout 300_000
 
   defp http_client do
-    Application.get_env(:mojentic, :http_client, HTTPoison)
+    Application.get_env(:mojentic, :http_client, Mojentic.HTTP.ReqClient)
   end
 
   @impl Gateway
@@ -195,25 +195,21 @@ defmodule Mojentic.LLM.Gateways.Ollama do
     body = maybe_add_thinking(body, config)
 
     Stream.resource(
-      # Start function - initiate the streaming request
       fn ->
-        case http_client().post(
+        case http_client().post_stream(
                "#{host}/api/chat",
                Jason.encode!(body),
-               [{"Content-Type", "application/json"}],
+               [{"content-type", "application/json"}],
                recv_timeout: timeout,
-               timeout: timeout,
-               stream_to: self(),
-               async: :once
+               timeout: timeout
              ) do
-          {:ok, %HTTPoison.AsyncResponse{id: id}} ->
-            {id, "", []}
+          {:ok, stream} ->
+            {:stream, stream, "", []}
 
           {:error, reason} ->
             {:error, reason}
         end
       end,
-      # Next function - process incoming chunks
       fn
         :halt ->
           {:halt, :halt}
@@ -221,22 +217,17 @@ defmodule Mojentic.LLM.Gateways.Ollama do
         {:error, _reason} = error ->
           {[error], :halt}
 
-        {id, buffer, acc_tool_calls} ->
-          receive do
-            %HTTPoison.AsyncStatus{id: ^id} ->
-              http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
-              {[], {id, buffer, acc_tool_calls}}
+        {:stream, stream, buffer, acc_tool_calls} ->
+          case Enum.take(stream, 1) do
+            [{:data, chunk}] ->
+              rest = Stream.drop(stream, 1)
+              parse_streaming_chunks(chunk, buffer, acc_tool_calls, rest)
 
-            %HTTPoison.AsyncHeaders{id: ^id} ->
-              http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
-              {[], {id, buffer, acc_tool_calls}}
+            [{:error, _reason} = error] ->
+              {[error], :halt}
 
-            %HTTPoison.AsyncChunk{id: ^id, chunk: chunk} ->
-              http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
-              parse_streaming_chunks(chunk, buffer, acc_tool_calls, id)
-
-            %HTTPoison.AsyncEnd{id: ^id} ->
-              # Stream finished - yield accumulated tool calls if any
+            [] ->
+              # Stream ended — yield accumulated tool calls if any
               result =
                 if acc_tool_calls != [] do
                   [{:tool_calls, Enum.reverse(acc_tool_calls)}]
@@ -245,12 +236,8 @@ defmodule Mojentic.LLM.Gateways.Ollama do
                 end
 
               {result, :halt}
-          after
-            timeout ->
-              {[{:error, :timeout}], :halt}
           end
       end,
-      # After function - cleanup
       fn
         :halt -> :ok
         {:error, _} -> :ok
@@ -298,17 +285,15 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
     body = %{name: model, stream: true}
 
-    case http_client().post(
+    case http_client().post_stream(
            "#{host}/api/pull",
            Jason.encode!(body),
-           [{"Content-Type", "application/json"}],
+           [{"content-type", "application/json"}],
            recv_timeout: timeout,
-           timeout: timeout,
-           stream_to: self(),
-           async: :once
+           timeout: timeout
          ) do
-      {:ok, %HTTPoison.AsyncResponse{id: id}} ->
-        process_pull_stream(id, model, progress_callback, "", timeout)
+      {:ok, stream} ->
+        process_pull_stream(stream, model, progress_callback, "")
 
       {:error, reason} ->
         {:error, {:request_failed, reason}}
@@ -316,35 +301,24 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   end
 
   # Process the streaming response from the pull endpoint
-  defp process_pull_stream(id, model, progress_callback, buffer, timeout) do
-    receive do
-      %HTTPoison.AsyncStatus{id: ^id, code: 200} ->
-        http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
-        process_pull_stream(id, model, progress_callback, buffer, timeout)
-
-      %HTTPoison.AsyncStatus{id: ^id, code: status} ->
-        {:error, {:http_error, status}}
-
-      %HTTPoison.AsyncHeaders{id: ^id} ->
-        http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
-        process_pull_stream(id, model, progress_callback, buffer, timeout)
-
-      %HTTPoison.AsyncChunk{id: ^id, chunk: chunk} ->
-        http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
+  defp process_pull_stream(stream, model, progress_callback, buffer) do
+    case Enum.take(stream, 1) do
+      [{:data, chunk}] ->
         new_buffer = buffer <> chunk
         {remaining_buffer, continue?} = parse_pull_chunks(new_buffer, progress_callback)
 
         if continue? do
-          process_pull_stream(id, model, progress_callback, remaining_buffer, timeout)
+          process_pull_stream(Stream.drop(stream, 1), model, progress_callback, remaining_buffer)
         else
           {:ok, model}
         end
 
-      %HTTPoison.AsyncEnd{id: ^id} ->
+      [{:error, reason}] ->
+        {:error, reason}
+
+      [] ->
+        # Stream ended
         {:ok, model}
-    after
-      timeout ->
-        {:error, :timeout}
     end
   end
 
@@ -589,7 +563,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
   # Parse streaming chunks from Ollama
   # Ollama sends newline-delimited JSON objects
-  defp parse_streaming_chunks(chunk, buffer, acc_tool_calls, id) do
+  defp parse_streaming_chunks(chunk, buffer, acc_tool_calls, rest_stream) do
     # Append chunk to buffer
     new_buffer = buffer <> chunk
 
@@ -628,7 +602,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
             {new_results, new_tools}
 
           {:ok, %{"done" => true}} ->
-            # Final chunk - don't emit anything here, will be handled in AsyncEnd
+            # Final chunk
             {acc_results, acc_tools}
 
           {:error, _} ->
@@ -641,6 +615,6 @@ defmodule Mojentic.LLM.Gateways.Ollama do
       end)
 
     # Return reversed results (they were prepended) and continue with new state
-    {Enum.reverse(results), {id, remaining_buffer, new_acc_tool_calls}}
+    {Enum.reverse(results), {:stream, rest_stream, remaining_buffer, new_acc_tool_calls}}
   end
 end

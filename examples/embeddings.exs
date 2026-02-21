@@ -38,7 +38,7 @@ defmodule EmbeddingsExample do
         IO.puts("Error: Model not found. Please pull it first:")
         IO.puts("  ollama pull #{model}")
 
-      {:error, {:request_failed, %HTTPoison.Error{reason: :econnrefused}}} ->
+      {:error, {:request_failed, %{reason: :econnrefused}}} ->
         IO.puts("Error: Cannot connect to Ollama. Please ensure it's running:")
         IO.puts("  ollama serve")
 

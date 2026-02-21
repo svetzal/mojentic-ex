@@ -34,7 +34,7 @@ defmodule Mojentic.LLM.Tools.WebSearchTool do
 
   ## Options
 
-  - `:http_client` - Optional HTTP client module for testing (defaults to HTTPoison or configured client)
+  - `:http_client` - Optional HTTP client module for testing (defaults to configured client)
   """
   def new(opts \\ []) do
     %__MODULE__{
@@ -78,7 +78,7 @@ defmodule Mojentic.LLM.Tools.WebSearchTool do
   # Private functions
 
   defp http_client do
-    Application.get_env(:mojentic, :http_client, HTTPoison)
+    Application.get_env(:mojentic, :http_client, Mojentic.HTTP.ReqClient)
   end
 
   defp perform_search(client, query) do

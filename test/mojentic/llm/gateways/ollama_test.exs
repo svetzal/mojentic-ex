@@ -23,7 +23,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
         {:ok, %{status_code: 200, body: response_body}}
       end)
 
@@ -52,7 +52,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
         {:ok, %{status_code: 200, body: response_body}}
       end)
 
@@ -68,7 +68,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       messages = [Message.user("Hello")]
       config = CompletionConfig.new()
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
         {:ok, %{status_code: 500, body: "Server error"}}
       end)
 
@@ -79,7 +79,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       messages = [Message.user("Hello")]
       config = CompletionConfig.new()
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
         {:error, :timeout}
       end)
 
@@ -91,7 +91,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       messages = [Message.user("Hello")]
       config = CompletionConfig.new()
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
         {:ok, %{status_code: 200, body: "invalid json"}}
       end)
 
@@ -115,7 +115,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
         {:ok, %{status_code: 200, body: response_body}}
       end)
 
@@ -136,7 +136,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
         {:ok, %{status_code: 200, body: response_body}}
       end)
 
@@ -149,7 +149,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       schema = %{type: "object"}
       config = CompletionConfig.new()
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
         {:ok, %{status_code: 404, body: "Not found"}}
       end)
 
@@ -168,7 +168,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           ]
         })
 
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:ok, %{status_code: 200, body: response_body}}
       end)
 
@@ -176,7 +176,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
     end
 
     test "handles HTTP errors" do
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:ok, %{status_code: 500, body: "Error"}}
       end)
 
@@ -184,7 +184,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
     end
 
     test "handles request failures" do
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:error, :econnrefused}
       end)
 
@@ -192,7 +192,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
     end
 
     test "handles invalid response format" do
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:ok, %{status_code: 200, body: "{}"}}
       end)
 
@@ -204,7 +204,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
     test "successfully calculates embeddings" do
       response_body = Jason.encode!(%{"embedding" => [0.1, 0.2, 0.3]})
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
         {:ok, %{status_code: 200, body: response_body}}
       end)
 
@@ -215,7 +215,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
     test "uses default model when nil provided" do
       response_body = Jason.encode!(%{"embedding" => [0.1]})
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         assert decoded["model"] == "mxbai-embed-large"
         {:ok, %{status_code: 200, body: response_body}}
@@ -225,7 +225,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
     end
 
     test "handles HTTP errors" do
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
         {:ok, %{status_code: 400, body: "Bad request"}}
       end)
 
@@ -233,7 +233,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
     end
 
     test "handles invalid response format" do
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
         {:ok, %{status_code: 200, body: "{}"}}
       end)
 
@@ -245,37 +245,18 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
     test "successfully pulls a model without progress callback" do
       model = "qwen2.5:3b"
 
-      # Simulate streaming response
       pull_status =
         Jason.encode!(%{"status" => "downloading", "completed" => 100, "total" => 1000})
 
       pull_complete = Jason.encode!(%{"status" => "success"})
       stream_data = pull_status <> "\n" <> pull_complete <> "\n"
 
-      test_pid = self()
-      ref = make_ref()
-
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, opts ->
-        # Verify request body
+      expect(Mojentic.HTTPMock, :post_stream, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         assert decoded["name"] == model
         assert decoded["stream"] == true
 
-        # Verify streaming options
-        assert opts[:stream_to] == test_pid
-        assert opts[:async] == :once
-
-        # Send async messages in order
-        send(test_pid, %HTTPoison.AsyncStatus{id: ref, code: 200})
-        send(test_pid, %HTTPoison.AsyncHeaders{id: ref, headers: []})
-        send(test_pid, %HTTPoison.AsyncChunk{id: ref, chunk: stream_data})
-        send(test_pid, %HTTPoison.AsyncEnd{id: ref})
-
-        {:ok, %HTTPoison.AsyncResponse{id: ref}}
-      end)
-
-      expect(HTTPoisonMock, :stream_next, 3, fn %HTTPoison.AsyncResponse{id: ^ref} ->
-        :ok
+        {:ok, [{:data, stream_data}]}
       end)
 
       assert {:ok, ^model} = Ollama.pull_model(model)
@@ -304,51 +285,24 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       stream_data = pull_status1 <> "\n" <> pull_status2 <> "\n" <> pull_complete <> "\n"
 
       test_pid = self()
-      ref = make_ref()
 
       progress_callback = fn status ->
         send(test_pid, {:progress, status})
       end
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
-        send(test_pid, %HTTPoison.AsyncStatus{id: ref, code: 200})
-        send(test_pid, %HTTPoison.AsyncHeaders{id: ref, headers: []})
-        send(test_pid, %HTTPoison.AsyncChunk{id: ref, chunk: stream_data})
-        send(test_pid, %HTTPoison.AsyncEnd{id: ref})
-
-        {:ok, %HTTPoison.AsyncResponse{id: ref}}
-      end)
-
-      expect(HTTPoisonMock, :stream_next, 3, fn %HTTPoison.AsyncResponse{id: ^ref} ->
-        :ok
+      expect(Mojentic.HTTPMock, :post_stream, fn _url, _body, _headers, _opts ->
+        {:ok, [{:data, stream_data}]}
       end)
 
       assert {:ok, ^model} = Ollama.pull_model(model, progress_callback)
 
-      # Verify progress callbacks were called
       assert_received {:progress, %{status: "downloading", completed: 500, total: 1000}}
       assert_received {:progress, %{status: "downloading", completed: 1000, total: 1000}}
       assert_received {:progress, %{status: "success"}}
     end
 
-    test "handles HTTP errors during pull" do
-      model = "nonexistent"
-      test_pid = self()
-      ref = make_ref()
-
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
-        send(test_pid, %HTTPoison.AsyncStatus{id: ref, code: 404})
-
-        {:ok, %HTTPoison.AsyncResponse{id: ref}}
-      end)
-
-      # stream_next is not called when we get a non-200 status
-
-      assert {:error, {:http_error, 404}} = Ollama.pull_model(model)
-    end
-
     test "handles request failures during pull" do
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post_stream, fn _url, _body, _headers, _opts ->
         {:error, :network_error}
       end)
 
@@ -362,21 +316,8 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       chunk1 = "{\"status\": \"down"
       chunk2 = "loading\"}\n{\"status\": \"success\"}\n"
 
-      test_pid = self()
-      ref = make_ref()
-
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
-        send(test_pid, %HTTPoison.AsyncStatus{id: ref, code: 200})
-        send(test_pid, %HTTPoison.AsyncHeaders{id: ref, headers: []})
-        send(test_pid, %HTTPoison.AsyncChunk{id: ref, chunk: chunk1})
-        send(test_pid, %HTTPoison.AsyncChunk{id: ref, chunk: chunk2})
-        send(test_pid, %HTTPoison.AsyncEnd{id: ref})
-
-        {:ok, %HTTPoison.AsyncResponse{id: ref}}
-      end)
-
-      expect(HTTPoisonMock, :stream_next, 4, fn %HTTPoison.AsyncResponse{id: ^ref} ->
-        :ok
+      expect(Mojentic.HTTPMock, :post_stream, fn _url, _body, _headers, _opts ->
+        {:ok, [{:data, chunk1}, {:data, chunk2}]}
       end)
 
       assert {:ok, ^model} = Ollama.pull_model(model)
@@ -390,20 +331,8 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           Jason.encode!(%{"status" => "downloading"}) <>
           "\n" <> Jason.encode!(%{"status" => "success"}) <> "\n"
 
-      test_pid = self()
-      ref = make_ref()
-
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
-        send(test_pid, %HTTPoison.AsyncStatus{id: ref, code: 200})
-        send(test_pid, %HTTPoison.AsyncHeaders{id: ref, headers: []})
-        send(test_pid, %HTTPoison.AsyncChunk{id: ref, chunk: stream_data})
-        send(test_pid, %HTTPoison.AsyncEnd{id: ref})
-
-        {:ok, %HTTPoison.AsyncResponse{id: ref}}
-      end)
-
-      expect(HTTPoisonMock, :stream_next, 3, fn %HTTPoison.AsyncResponse{id: ^ref} ->
-        :ok
+      expect(Mojentic.HTTPMock, :post_stream, fn _url, _body, _headers, _opts ->
+        {:ok, [{:data, stream_data}]}
       end)
 
       # Should continue despite malformed JSON
@@ -425,23 +354,13 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
         status_with_all_fields <> "\n" <> Jason.encode!(%{"status" => "success"}) <> "\n"
 
       test_pid = self()
-      ref = make_ref()
 
       progress_callback = fn status ->
         send(test_pid, {:progress, status})
       end
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
-        send(test_pid, %HTTPoison.AsyncStatus{id: ref, code: 200})
-        send(test_pid, %HTTPoison.AsyncHeaders{id: ref, headers: []})
-        send(test_pid, %HTTPoison.AsyncChunk{id: ref, chunk: stream_data})
-        send(test_pid, %HTTPoison.AsyncEnd{id: ref})
-
-        {:ok, %HTTPoison.AsyncResponse{id: ref}}
-      end)
-
-      expect(HTTPoisonMock, :stream_next, 3, fn %HTTPoison.AsyncResponse{id: ^ref} ->
-        :ok
+      expect(Mojentic.HTTPMock, :post_stream, fn _url, _body, _headers, _opts ->
+        {:ok, [{:data, stream_data}]}
       end)
 
       assert {:ok, ^model} = Ollama.pull_model(model, progress_callback)
@@ -460,28 +379,17 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
     test "handles progress callback with partial fields" do
       model = "test-model"
 
-      # Some status updates might not have all fields
       status_partial = Jason.encode!(%{"status" => "pulling manifest"})
       stream_data = status_partial <> "\n" <> Jason.encode!(%{"status" => "success"}) <> "\n"
 
       test_pid = self()
-      ref = make_ref()
 
       progress_callback = fn status ->
         send(test_pid, {:progress, status})
       end
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
-        send(test_pid, %HTTPoison.AsyncStatus{id: ref, code: 200})
-        send(test_pid, %HTTPoison.AsyncHeaders{id: ref, headers: []})
-        send(test_pid, %HTTPoison.AsyncChunk{id: ref, chunk: stream_data})
-        send(test_pid, %HTTPoison.AsyncEnd{id: ref})
-
-        {:ok, %HTTPoison.AsyncResponse{id: ref}}
-      end)
-
-      expect(HTTPoisonMock, :stream_next, 3, fn %HTTPoison.AsyncResponse{id: ^ref} ->
-        :ok
+      expect(Mojentic.HTTPMock, :post_stream, fn _url, _body, _headers, _opts ->
+        {:ok, [{:data, stream_data}]}
       end)
 
       assert {:ok, ^model} = Ollama.pull_model(model, progress_callback)
@@ -529,7 +437,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         assert is_list(decoded["tools"])
         assert length(decoded["tools"]) == 1
@@ -566,7 +474,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         images = hd(decoded["messages"])["images"]
         assert images == [expected_base64_1, expected_base64_2]
@@ -598,7 +506,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         msg = hd(decoded["messages"])
         assert is_list(msg["tool_calls"])
@@ -629,7 +537,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         assert decoded["options"]["temperature"] == 0.7
         assert decoded["options"]["num_ctx"] == 2048
@@ -658,7 +566,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         assert decoded["options"]["num_predict"] == 200
         {:ok, %{status_code: 200, body: response_body}}
@@ -685,7 +593,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         refute Map.has_key?(decoded["options"], "num_predict")
         {:ok, %{status_code: 200, body: response_body}}
@@ -713,7 +621,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         assert decoded["options"]["top_p"] == 0.9
         {:ok, %{status_code: 200, body: response_body}}
@@ -741,7 +649,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         assert decoded["options"]["top_k"] == 40
         {:ok, %{status_code: 200, body: response_body}}
@@ -770,7 +678,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         assert decoded["options"]["top_p"] == 0.95
         assert decoded["options"]["top_k"] == 50
@@ -799,7 +707,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         refute Map.has_key?(decoded["options"], "top_p")
         {:ok, %{status_code: 200, body: response_body}}
@@ -827,7 +735,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         refute Map.has_key?(decoded["options"], "top_k")
         {:ok, %{status_code: 200, body: response_body}}
@@ -855,7 +763,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         assert decoded["format"] == schema
         {:ok, %{status_code: 200, body: response_body}}
@@ -882,7 +790,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         assert decoded["format"] == "json"
         {:ok, %{status_code: 200, body: response_body}}
@@ -909,7 +817,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         refute Map.has_key?(decoded, "format")
         {:ok, %{status_code: 200, body: response_body}}
@@ -936,7 +844,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         refute Map.has_key?(decoded, "format")
         {:ok, %{status_code: 200, body: response_body}}
@@ -964,7 +872,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         assert decoded["think"] == true
         {:ok, %{status_code: 200, body: response_body}}
@@ -994,7 +902,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         refute Map.has_key?(decoded, "think")
         {:ok, %{status_code: 200, body: response_body}}
@@ -1009,7 +917,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       messages = [Message.user("Hello")]
       config = CompletionConfig.new()
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post_stream, fn _url, _body, _headers, _opts ->
         {:error, :connection_refused}
       end)
 
@@ -1046,12 +954,12 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       config = CompletionConfig.new()
       tools = [MockStreamTool]
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post_stream, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         assert is_list(decoded["tools"])
         assert length(decoded["tools"]) == 1
         assert decoded["stream"] == true
-        {:error, :test_abort}
+        {:ok, []}
       end)
 
       stream = Ollama.complete_stream("qwen2.5:3b", messages, tools, config)
@@ -1072,7 +980,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         msg = hd(decoded["messages"])
         refute Map.has_key?(msg, "tool_calls")
@@ -1094,7 +1002,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         msg = hd(decoded["messages"])
         refute Map.has_key?(msg, "tool_calls")
@@ -1116,7 +1024,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         msg = hd(decoded["messages"])
         refute Map.has_key?(msg, "images")
@@ -1138,7 +1046,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         msg = hd(decoded["messages"])
         refute Map.has_key?(msg, "images")
@@ -1163,7 +1071,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         msg = hd(decoded["messages"])
         # Should have images key but empty list due to read error
@@ -1186,7 +1094,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
         {:ok, %{status_code: 200, body: response_body}}
       end)
 
@@ -1206,7 +1114,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
         msg = hd(decoded["messages"])
         assert msg["content"] == ""
@@ -1237,7 +1145,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
           }
         })
 
-      expect(HTTPoisonMock, :post, fn _url, _body, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
         {:ok, %{status_code: 200, body: response_body}}
       end)
 

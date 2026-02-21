@@ -80,17 +80,17 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
     end
 
     test "creates tool with custom http client" do
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      assert tool.http_client == HTTPoisonMock
+      assert tool.http_client == Mojentic.HTTPMock
     end
   end
 
   describe "run/2" do
     test "successfully searches and returns results" do
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn url, _headers, _opts ->
         assert url =~ "lite.duckduckgo.com/lite/"
         assert url =~ "q=Elixir"
         {:ok, %{status_code: 200, body: @sample_html}}
@@ -109,9 +109,9 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
     end
 
     test "properly encodes query parameters" do
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn url, _headers, _opts ->
         assert url =~ "q=hello+world"
         {:ok, %{status_code: 200, body: @empty_html}}
       end)
@@ -137,9 +137,9 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
 
       html = "<html><body><table>#{many_results}</table></body></html>"
 
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:ok, %{status_code: 200, body: html}}
       end)
 
@@ -160,9 +160,9 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
     end
 
     test "handles HTTP error response" do
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:ok, %{status_code: 500, body: "Internal Server Error"}}
       end)
 
@@ -171,9 +171,9 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
     end
 
     test "handles network timeout" do
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:error, %{reason: :timeout}}
       end)
 
@@ -182,9 +182,9 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
     end
 
     test "handles connection error" do
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:error, :econnrefused}
       end)
 
@@ -193,9 +193,9 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
     end
 
     test "returns empty list when no results found" do
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:ok, %{status_code: 200, body: @empty_html}}
       end)
 
@@ -221,9 +221,9 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
       </html>
       """
 
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:ok, %{status_code: 200, body: html}}
       end)
 
@@ -250,9 +250,9 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
       </html>
       """
 
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:ok, %{status_code: 200, body: html}}
       end)
 
@@ -280,9 +280,9 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
       </html>
       """
 
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:ok, %{status_code: 200, body: html}}
       end)
 
@@ -308,9 +308,9 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
       </html>
       """
 
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:ok, %{status_code: 200, body: html}}
       end)
 
@@ -320,9 +320,9 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
     end
 
     test "sets appropriate timeout for HTTP request" do
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn _url, _headers, opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, opts ->
         assert Keyword.get(opts, :timeout) == 10_000
         assert Keyword.get(opts, :recv_timeout) == 10_000
         {:ok, %{status_code: 200, body: @empty_html}}
@@ -334,9 +334,9 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
 
   describe "result structure" do
     test "each result has required fields" do
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:ok, %{status_code: 200, body: @sample_html}}
       end)
 
@@ -353,9 +353,9 @@ defmodule Mojentic.LLM.Tools.WebSearchToolTest do
     end
 
     test "URLs are properly decoded" do
-      tool = WebSearchTool.new(http_client: HTTPoisonMock)
+      tool = WebSearchTool.new(http_client: Mojentic.HTTPMock)
 
-      expect(HTTPoisonMock, :get, fn _url, _headers, _opts ->
+      expect(Mojentic.HTTPMock, :get, fn _url, _headers, _opts ->
         {:ok, %{status_code: 200, body: @sample_html}}
       end)
 

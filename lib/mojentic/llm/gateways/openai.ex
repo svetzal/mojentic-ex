@@ -38,7 +38,7 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
   @default_timeout 60_000
 
   defp http_client do
-    Application.get_env(:mojentic, :http_client, HTTPoison)
+    Application.get_env(:mojentic, :http_client, Mojentic.HTTP.ReqClient)
   end
 
   @impl Gateway
@@ -212,7 +212,7 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
 
     Stream.resource(
       fn -> initiate_stream_request(body, headers, timeout) end,
-      fn state -> process_stream_chunk(state, timeout) end,
+      fn state -> process_stream_chunk(state) end,
       fn state -> cleanup_stream(state) end
     )
   end
@@ -249,45 +249,35 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
   defp initiate_stream_request(body, headers, timeout) do
     endpoint = get_endpoint()
 
-    case http_client().post(
+    case http_client().post_stream(
            "#{endpoint}/chat/completions",
            Jason.encode!(body),
            headers,
            recv_timeout: timeout,
-           timeout: timeout,
-           stream_to: self(),
-           async: :once
+           timeout: timeout
          ) do
-      {:ok, %HTTPoison.AsyncResponse{id: id}} ->
-        {id, "", %{}}
+      {:ok, stream} ->
+        {:stream, stream, "", %{}}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp process_stream_chunk(:halt, _timeout), do: {:halt, :halt}
-  defp process_stream_chunk({:error, _reason} = error, _timeout), do: {[error], :halt}
+  defp process_stream_chunk(:halt), do: {:halt, :halt}
+  defp process_stream_chunk({:error, _reason} = error), do: {[error], :halt}
 
-  defp process_stream_chunk({id, buffer, tool_calls_acc}, timeout) do
-    receive do
-      %HTTPoison.AsyncStatus{id: ^id} ->
-        http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
-        {[], {id, buffer, tool_calls_acc}}
+  defp process_stream_chunk({:stream, stream, buffer, tool_calls_acc}) do
+    case Enum.take(stream, 1) do
+      [{:data, chunk}] ->
+        rest = Stream.drop(stream, 1)
+        parse_sse_chunks(chunk, buffer, tool_calls_acc, rest)
 
-      %HTTPoison.AsyncHeaders{id: ^id} ->
-        http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
-        {[], {id, buffer, tool_calls_acc}}
+      [{:error, _reason} = error] ->
+        {[error], :halt}
 
-      %HTTPoison.AsyncChunk{id: ^id, chunk: chunk} ->
-        http_client().stream_next(%HTTPoison.AsyncResponse{id: id})
-        parse_sse_chunks(chunk, buffer, tool_calls_acc, id)
-
-      %HTTPoison.AsyncEnd{id: ^id} ->
+      [] ->
         handle_stream_end(tool_calls_acc)
-    after
-      timeout ->
-        {[{:error, :timeout}], :halt}
     end
   end
 
@@ -525,7 +515,7 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
   end
 
   # Parse SSE chunks from OpenAI streaming response
-  defp parse_sse_chunks(chunk, buffer, tool_calls_acc, id) do
+  defp parse_sse_chunks(chunk, buffer, tool_calls_acc, rest_stream) do
     new_buffer = buffer <> chunk
 
     # Split on double newlines (SSE format)
@@ -570,7 +560,7 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
         end
       end)
 
-    {Enum.reverse(results), {id, remaining_buffer, new_tool_calls_acc}}
+    {Enum.reverse(results), {:stream, rest_stream, remaining_buffer, new_tool_calls_acc}}
   end
 
   defp parse_streaming_json(json, acc_results, acc_tools) do
