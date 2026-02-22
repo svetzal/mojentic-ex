@@ -73,7 +73,7 @@ defmodule Mojentic.MixProject do
 
       # AI Assistant
       {:igniter, "~> 0.7", only: [:dev]},
-      {:usage_rules, "~> 0.1", only: [:dev]}
+      {:usage_rules, "~> 1.2", only: [:dev]}
     ]
   end
 
