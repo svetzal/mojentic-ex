@@ -1,4 +1,7 @@
 <!-- usage-rules-start -->
+
+Why this project exists and what problem does it solve: @CHARTER.md
+
 <!-- usage-rules-header -->
 # Usage Rules
 
