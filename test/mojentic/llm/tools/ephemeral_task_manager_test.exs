@@ -60,7 +60,7 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManagerTest do
     test "prepend_task adds task to beginning of list" do
       task_list = TaskList.new()
 
-      {task1, task_list} = TaskList.append_task(task_list, "Task 1")
+      {_task1, task_list} = TaskList.append_task(task_list, "Task 1")
       {task2, task_list} = TaskList.prepend_task(task_list, "Task 2")
 
       assert task2.id == 2
@@ -508,7 +508,7 @@ defmodule Mojentic.LLM.Tools.EphemeralTaskManagerTest do
 
       # Create tasks
       {:ok, task1} = AppendTask.run(append_tool, %{"description" => "Write code"})
-      {:ok, task3} = AppendTask.run(append_tool, %{"description" => "Deploy"})
+      {:ok, _task3} = AppendTask.run(append_tool, %{"description" => "Deploy"})
 
       {:ok, _task2} =
         InsertTaskAfter.run(insert_tool, %{

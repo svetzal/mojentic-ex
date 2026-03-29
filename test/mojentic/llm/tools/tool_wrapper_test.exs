@@ -2,7 +2,6 @@ defmodule Mojentic.LLM.Tools.ToolWrapperTest do
   use ExUnit.Case, async: true
 
   alias Mojentic.Agents.BaseLLMAgent
-  alias Mojentic.LLM.Broker
   alias Mojentic.LLM.Message
   alias Mojentic.LLM.Tools.ToolWrapper
 
@@ -166,7 +165,7 @@ defmodule Mojentic.LLM.Tools.ToolWrapperTest do
           tools: [MockTool]
         )
 
-      wrapper =
+      _wrapper =
         ToolWrapper.new(
           agent: agent,
           name: "historian",
@@ -196,7 +195,7 @@ defmodule Mojentic.LLM.Tools.ToolWrapperTest do
           behaviour: "You are helpful."
         )
 
-      wrapper =
+      _wrapper =
         ToolWrapper.new(
           agent: agent,
           name: "test",

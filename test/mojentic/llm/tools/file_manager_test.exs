@@ -272,8 +272,6 @@ defmodule Mojentic.LLM.Tools.FileManagerTest do
 
   describe "ListFilesTool" do
     test "has correct descriptor" do
-      fs = %FilesystemGateway{base_path: "/tmp"}
-      tool = ListFilesTool.new(fs)
       descriptor = ListFilesTool.descriptor()
 
       assert descriptor[:type] == "function"

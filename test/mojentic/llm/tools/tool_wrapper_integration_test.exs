@@ -3,7 +3,6 @@ defmodule Mojentic.LLM.Tools.ToolWrapperIntegrationTest do
 
   alias Mojentic.Agents.BaseLLMAgent
   alias Mojentic.LLM.Broker
-  alias Mojentic.LLM.Message
   alias Mojentic.LLM.Tools.ToolWrapper
 
   # Mock Gateway for testing - simulates LLM responses

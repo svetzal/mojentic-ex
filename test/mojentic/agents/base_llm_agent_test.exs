@@ -2,7 +2,6 @@ defmodule Mojentic.Agents.BaseLLMAgentTest do
   use ExUnit.Case, async: true
 
   alias Mojentic.Agents.BaseLLMAgent
-  alias Mojentic.LLM.Broker
   alias Mojentic.LLM.Message
 
   # Mock broker for testing
