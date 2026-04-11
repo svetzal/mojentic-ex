@@ -5,6 +5,20 @@ All notable changes to the Mojentic Elixir implementation will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-04-11
+
+### Removed
+
+- HTTPoison dependency — HTTP calls now use Req exclusively
+
+### Changed
+
+- Updated igniter to 0.7.7
+- Updated castore and synced transitive dependencies
+- Updated usage_rules to 1.2.5
+- Updated credo and resolved lock file mismatches
+- Updated dev dependencies
+
 ## [1.2.0] - 2026-02-05
 
 ### Added
