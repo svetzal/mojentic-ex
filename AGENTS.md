@@ -200,21 +200,31 @@ mix audit
 2. Build and publish the package to Hex.pm
 3. Deploy documentation to GitHub Pages
 
-#### Steps to Release
+#### To create a new release:
+
+> **Note:** No local install is needed — this is a library consumed via Hex.
 
 ```bash
-# 1. Update version in mix.exs (e.g., @version "1.1.0")
+# 1. Pre-flight: ensure all quality gates pass
+mix format --check-formatted && mix credo --strict && mix test && mix audit
 
-# 2. Update CHANGELOG.md
-#    - Add new version section with date: ## [1.1.0] - YYYY-MM-DD
+# 2. Update version in mix.exs (e.g., @version "1.1.0")
+
+# 3. Update CHANGELOG.md
+#    - Move [Unreleased] section to [1.1.0] - YYYY-MM-DD (today's date)
 #    - Document all changes under appropriate headers (Added, Changed, Fixed, etc.)
 
-# 3. Commit and push
+# 4. Commit
 git add mix.exs CHANGELOG.md
-git commit -m "chore: prepare v1.1.0 release"
-git push origin main
+git commit -m "Release v1.1.0"
 
-# 4. Create GitHub release (this triggers the publish)
+# 5. Tag
+git tag v1.1.0
+
+# 6. Push
+git push origin main --tags
+
+# 7. Create GitHub release (triggers Hex.pm publishing and docs deploy)
 gh release create v1.1.0 \
   --title "v1.1.0 - Release Title" \
   --notes "## What's New
