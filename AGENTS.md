@@ -150,6 +150,14 @@ _A code generation and project patching framework_
 [igniter usage rules](deps/igniter/usage-rules.md)
 <!-- igniter-end -->
 
+## Development Workflow
+
+- Trunk-based development: `main` is the only long-lived branch.
+- All work lands on `main` via direct commit.
+- Feature branches are not pushed to `origin`.
+- Pull requests are not used.
+- Short-lived local working branches (e.g. from hopper worktrees) are merged to `main` and deleted locally before work is considered complete.
+
 ## Quality Guidelines
 
 ### MANDATORY Pre-Commit Quality Gates
