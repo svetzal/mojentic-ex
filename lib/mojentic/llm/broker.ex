@@ -133,7 +133,10 @@ defmodule Mojentic.LLM.Broker do
   """
   def generate(broker, messages, tools \\ nil, config \\ nil) do
     config = config || %CompletionConfig{}
+    do_generate(broker, messages, tools, config, config.max_tool_iterations)
+  end
 
+  defp do_generate(broker, messages, tools, config, iterations_remaining) do
     # Record LLM call in tracer
     tools_for_tracer = if tools, do: Enum.map(tools, &tool_descriptor/1), else: nil
 
@@ -178,7 +181,8 @@ defmodule Mojentic.LLM.Broker do
             messages,
             response,
             tools,
-            config
+            config,
+            iterations_remaining
           )
       end
     end
@@ -302,9 +306,12 @@ defmodule Mojentic.LLM.Broker do
   """
   def generate_stream(broker, messages, tools \\ nil, config \\ nil) do
     config = config || %CompletionConfig{}
+    do_generate_stream(broker, messages, tools, config, config.max_tool_iterations)
+  end
 
+  defp do_generate_stream(broker, messages, tools, config, iterations_remaining) do
     Stream.resource(
-      fn -> initialize_stream(broker, messages, tools, config) end,
+      fn -> initialize_stream(broker, messages, tools, config, iterations_remaining) end,
       fn state -> process_stream_element(state, broker, messages, tools, config) end,
       &cleanup_stream/1
     )
@@ -330,7 +337,7 @@ defmodule Mojentic.LLM.Broker do
     end
   end
 
-  defp cleanup_stream({cont, _, _}) when is_function(cont) do
+  defp cleanup_stream({cont, _, _, _}) when is_function(cont) do
     cont.({:halt, nil})
     :ok
   end
@@ -342,14 +349,14 @@ defmodule Mojentic.LLM.Broker do
 
   defp cleanup_stream(_), do: :ok
 
-  defp initialize_stream(broker, messages, tools, config) do
+  defp initialize_stream(broker, messages, tools, config, iterations_remaining) do
     stream = broker.gateway.complete_stream(broker.model, messages, tools, config)
     cont = stream_to_continuation(stream)
-    {cont, [], ""}
+    {cont, [], "", iterations_remaining}
   end
 
   defp process_stream_element(
-         {cont, acc_tool_calls, acc_content},
+         {cont, acc_tool_calls, acc_content, iterations_remaining},
          broker,
          messages,
          tools,
@@ -357,17 +364,25 @@ defmodule Mojentic.LLM.Broker do
        ) do
     case next_element(cont) do
       {:element, {:content, chunk}, next_cont} ->
-        {[chunk], {next_cont, acc_tool_calls, acc_content <> chunk}}
+        {[chunk], {next_cont, acc_tool_calls, acc_content <> chunk, iterations_remaining}}
 
       {:element, {:tool_calls, tool_calls}, next_cont} ->
-        {[], {next_cont, acc_tool_calls ++ tool_calls, acc_content}}
+        {[], {next_cont, acc_tool_calls ++ tool_calls, acc_content, iterations_remaining}}
 
       {:element, {:error, reason}, _next_cont} ->
         Logger.error("Streaming error: #{inspect(reason)}")
         {:halt, nil}
 
       :done ->
-        handle_stream_end(broker, messages, acc_tool_calls, acc_content, tools, config)
+        handle_stream_end(
+          broker,
+          messages,
+          acc_tool_calls,
+          acc_content,
+          tools,
+          config,
+          iterations_remaining
+        )
     end
   end
 
@@ -385,28 +400,68 @@ defmodule Mojentic.LLM.Broker do
     end
   end
 
-  defp handle_stream_end(_broker, _messages, [], _acc_content, _tools, _config) do
+  defp handle_stream_end(_broker, _messages, [], _acc_content, _tools, _config, _iterations) do
     {:halt, nil}
   end
 
-  defp handle_stream_end(_broker, _messages, _tool_calls, _acc_content, nil, _config) do
+  defp handle_stream_end(
+         _broker,
+         _messages,
+         _tool_calls,
+         _acc_content,
+         nil,
+         _config,
+         _iterations
+       ) do
     Logger.warning("LLM requested tool calls but no tools provided")
     {:halt, nil}
   end
 
-  defp handle_stream_end(_broker, _messages, _tool_calls, _acc_content, [], _config) do
+  defp handle_stream_end(
+         _broker,
+         _messages,
+         _tool_calls,
+         _acc_content,
+         [],
+         _config,
+         _iterations
+       ) do
     Logger.warning("LLM requested tool calls but no tools provided")
     {:halt, nil}
   end
 
-  defp handle_stream_end(broker, messages, tool_calls, acc_content, tools, config) do
+  defp handle_stream_end(
+         _broker,
+         _messages,
+         _tool_calls,
+         _acc_content,
+         _tools,
+         _config,
+         iterations_remaining
+       )
+       when iterations_remaining <= 1 do
+    Logger.error("Max tool iterations exceeded in streaming path")
+    {:halt, nil}
+  end
+
+  defp handle_stream_end(
+         broker,
+         messages,
+         tool_calls,
+         acc_content,
+         tools,
+         config,
+         iterations_remaining
+       ) do
     Logger.info("Processing #{length(tool_calls)} tool call(s) in stream")
 
     response = build_gateway_response(acc_content, tool_calls)
     new_messages = messages ++ [build_assistant_message(response)]
     final_messages = execute_and_append_tool_results(broker, tool_calls, tools, new_messages)
 
-    recursive_stream = generate_stream(broker, final_messages, tools, config)
+    recursive_stream =
+      do_generate_stream(broker, final_messages, tools, config, iterations_remaining - 1)
+
     recursive_cont = stream_to_continuation(recursive_stream)
     {[], {:recursive, recursive_cont}}
   end
@@ -434,7 +489,7 @@ defmodule Mojentic.LLM.Broker do
 
   # Private functions
 
-  defp handle_tool_calls(broker, messages, response, tools, config) do
+  defp handle_tool_calls(broker, messages, response, tools, config, iterations_remaining) do
     case tools do
       nil ->
         Logger.warning("LLM requested tool calls but no tools provided")
@@ -443,6 +498,10 @@ defmodule Mojentic.LLM.Broker do
       [] ->
         Logger.warning("LLM requested tool calls but no tools provided")
         {:ok, response.content || ""}
+
+      _tools when iterations_remaining <= 1 ->
+        Logger.error("Max tool iterations exceeded")
+        {:error, :max_tool_iterations_exceeded}
 
       tools ->
         Logger.info("Processing #{length(response.tool_calls)} tool call(s)")
@@ -467,8 +526,8 @@ defmodule Mojentic.LLM.Broker do
               acc
           end)
 
-        # Recursively call generate with updated messages
-        generate(broker, final_messages, tools, config)
+        # Recursively call generate with updated messages and decremented counter
+        do_generate(broker, final_messages, tools, config, iterations_remaining - 1)
     end
   end
 

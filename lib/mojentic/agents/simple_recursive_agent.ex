@@ -125,6 +125,14 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
     defstruct [:state]
   end
 
+  defmodule HandlerErrorEvent do
+    @moduledoc """
+    Event triggered when an event handler raises an exception.
+    """
+    @type t :: %__MODULE__{reason: term()}
+    defstruct [:reason]
+  end
+
   # EventEmitter GenServer
   defmodule EventEmitter do
     @moduledoc """
@@ -228,10 +236,18 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
     def handle_cast({:emit, event}, state) do
       event_type = event.__struct__
       subscribers = Map.get(state.subscribers, event_type, [])
+      emitter = self()
 
-      # Call each subscriber in a linked task so they die with the emitter
+      # Call each subscriber in a task; catch handler crashes and emit a HandlerErrorEvent
       Enum.each(subscribers, fn {_ref, callback} ->
-        Task.start_link(fn -> callback.(event) end)
+        Task.start(fn ->
+          try do
+            callback.(event)
+          rescue
+            reason ->
+              GenServer.cast(emitter, {:emit, %HandlerErrorEvent{reason: reason}})
+          end
+        end)
       end)
 
       {:noreply, state}
@@ -363,6 +379,11 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
     failed_ref = EventEmitter.subscribe(agent.emitter, GoalFailedEvent, completion_handler)
     timeout_ref = EventEmitter.subscribe(agent.emitter, TimeoutEvent, completion_handler)
 
+    error_ref =
+      EventEmitter.subscribe(agent.emitter, HandlerErrorEvent, fn event ->
+        send(parent, {solution_ref, {:handler_error, event.reason}})
+      end)
+
     # Start the solving process
     EventEmitter.emit(agent.emitter, %GoalSubmittedEvent{state: state})
 
@@ -376,6 +397,9 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
 
         {^solution_ref, nil} ->
           {:error, :no_solution}
+
+        {^solution_ref, {:handler_error, reason}} ->
+          {:error, {:handler_error, reason}}
       after
         timeout_ms ->
           timeout_message = "Timeout: Could not solve the problem within 300 seconds."
@@ -396,6 +420,7 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
     EventEmitter.unsubscribe(agent.emitter, achieved_ref)
     EventEmitter.unsubscribe(agent.emitter, failed_ref)
     EventEmitter.unsubscribe(agent.emitter, timeout_ref)
+    EventEmitter.unsubscribe(agent.emitter, error_ref)
 
     result
   end

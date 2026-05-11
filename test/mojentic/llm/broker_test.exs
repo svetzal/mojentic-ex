@@ -1,6 +1,8 @@
 defmodule Mojentic.LLM.BrokerTest do
   use ExUnit.Case, async: true
 
+  import ExUnit.CaptureLog
+
   alias Mojentic.LLM.Broker
   alias Mojentic.LLM.CompletionConfig
   alias Mojentic.LLM.GatewayResponse
@@ -266,6 +268,29 @@ defmodule Mojentic.LLM.BrokerTest do
       Process.put(:mock_response, {:error, {:http_error, 500}})
 
       assert {:error, {:http_error, 500}} = Broker.generate(broker, messages)
+    end
+
+    test "caps tool-call recursion at max_tool_iterations" do
+      broker = Broker.new("test-model", MockGateway)
+      messages = [Message.user("Hello")]
+      config = %CompletionConfig{max_tool_iterations: 3}
+
+      tool_call = %ToolCall{id: "call-1", name: "mock_tool", arguments: %{}}
+
+      # Gateway always returns a tool call — never converges
+      Process.put(:call_count, 0)
+
+      Process.put(:mock_response, fn ->
+        count = Process.get(:call_count, 0)
+        Process.put(:call_count, count + 1)
+        {:ok, %GatewayResponse{content: "", tool_calls: [tool_call], object: nil}}
+      end)
+
+      assert {:error, :max_tool_iterations_exceeded} =
+               Broker.generate(broker, messages, [MockTool], config)
+
+      # Gateway should have been invoked exactly max_tool_iterations times
+      assert Process.get(:call_count) == 3
     end
   end
 
@@ -564,6 +589,52 @@ defmodule Mojentic.LLM.BrokerTest do
 
       captured_tools = Process.get(:captured_stream_tools)
       assert captured_tools == [MockTool]
+    end
+
+    test "caps tool-call recursion during streaming" do
+      defmodule AlwaysToolCallStreamGateway do
+        @behaviour Mojentic.LLM.Gateway
+
+        @impl true
+        def complete(_model, _messages, _tools, _config), do: {:ok, %GatewayResponse{}}
+
+        @impl true
+        def complete_object(_model, _messages, _schema, _config), do: {:ok, %GatewayResponse{}}
+
+        @impl true
+        def get_available_models, do: {:ok, []}
+
+        @impl true
+        def calculate_embeddings(_model, _text), do: {:ok, []}
+
+        @impl true
+        def complete_stream(_model, _messages, _tools, _config) do
+          count = Process.get(:stream_call_count, 0)
+          Process.put(:stream_call_count, count + 1)
+
+          tool_call = %ToolCall{id: "call-1", name: "mock_tool", arguments: %{}}
+
+          # Always return a tool call — never converges
+          Stream.map([[tool_call]], fn tool_calls ->
+            {:tool_calls, tool_calls}
+          end)
+        end
+      end
+
+      broker = Broker.new("test-model", AlwaysToolCallStreamGateway)
+      messages = [Message.user("Hello")]
+      config = %CompletionConfig{max_tool_iterations: 3}
+
+      log =
+        capture_log(fn ->
+          broker
+          |> Broker.generate_stream(messages, [MockTool], config)
+          |> Enum.to_list()
+        end)
+
+      assert log =~ "Max tool iterations exceeded"
+      # Gateway should have been called exactly max_tool_iterations times
+      assert Process.get(:stream_call_count) == 3
     end
   end
 end

@@ -9,7 +9,8 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
     GoalSubmittedEvent,
     IterationCompletedEvent,
     GoalAchievedEvent,
-    GoalFailedEvent
+    GoalFailedEvent,
+    HandlerErrorEvent
   }
 
   alias Mojentic.LLM.{Broker, GatewayResponse, ToolCall}
@@ -473,6 +474,30 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
 
       assert {:ok, solution} = SimpleRecursiveAgent.solve(agent, "Test")
       assert solution == "Correct prompt. DONE"
+    end
+
+    test "solve returns error when an event handler crashes", %{broker: broker} do
+      agent = SimpleRecursiveAgent.new(broker)
+      test_pid = self()
+      solution_ref = make_ref()
+
+      # Subscribe a handler that raises — this tests the HandlerErrorEvent path
+      EventEmitter.subscribe(agent.emitter, GoalSubmittedEvent, fn _event ->
+        raise RuntimeError, "intentional crash in handler"
+      end)
+
+      # Also subscribe to HandlerErrorEvent to verify it is emitted correctly
+      EventEmitter.subscribe(agent.emitter, HandlerErrorEvent, fn event ->
+        send(test_pid, {solution_ref, event.reason})
+      end)
+
+      # solve/2 should return {:error, {:handler_error, _}} rather than hanging
+      assert {:error, {:handler_error, _reason}} =
+               SimpleRecursiveAgent.solve(agent, "trigger crash")
+
+      # HandlerErrorEvent should have been emitted
+      assert_receive {^solution_ref, %RuntimeError{message: "intentional crash in handler"}},
+                     2000
     end
   end
 

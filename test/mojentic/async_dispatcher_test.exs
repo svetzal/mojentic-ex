@@ -37,6 +37,23 @@ defmodule Mojentic.AsyncDispatcherTest do
     def receive_event_async(_event), do: {:ok, []}
   end
 
+  defmodule EventBToEventCAgent do
+    @behaviour BaseAsyncAgent
+
+    @impl true
+    def receive_event_async(%EventB{data: data} = event) do
+      result = %EventC{
+        source: __MODULE__,
+        correlation_id: event.correlation_id,
+        data: "chained: #{data}"
+      }
+
+      {:ok, [result]}
+    end
+
+    def receive_event_async(_event), do: {:ok, []}
+  end
+
   defmodule CollectorAgent do
     use GenServer
 
@@ -459,6 +476,35 @@ defmodule Mojentic.AsyncDispatcherTest do
 
       AsyncDispatcher.stop(dispatcher)
       GenServer.stop(aggregator)
+      GenServer.stop(collector)
+    end
+  end
+
+  describe "AsyncDispatcher cascading event race" do
+    test "wait_for_empty_queue waits for cascading event emissions" do
+      # EventA -> SimpleAgent -> EventB -> EventBToEventCAgent -> EventC -> collector
+      {:ok, collector} = CollectorAgent.start_link()
+
+      router =
+        Router.new()
+        |> Router.add_route(EventA, SimpleAgent)
+        |> Router.add_route(EventB, EventBToEventCAgent)
+        |> Router.add_route(EventC, collector)
+
+      # Use batch_size: 1 to maximise chance of catching intermediate empty states
+      {:ok, dispatcher} = AsyncDispatcher.start_link(router: router, batch_size: 1)
+
+      event = %EventA{source: __MODULE__, data: "original"}
+      AsyncDispatcher.dispatch(dispatcher, event)
+
+      :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher, timeout: 5000)
+
+      # The collector should have received the final EventC
+      events = CollectorAgent.get_events(collector)
+      assert length(events) == 1
+      assert hd(events).data == "chained: processed: original"
+
+      AsyncDispatcher.stop(dispatcher)
       GenServer.stop(collector)
     end
   end

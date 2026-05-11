@@ -288,12 +288,10 @@ defmodule Mojentic.AsyncDispatcher do
   def handle_info({:agent_result, correlation_id, result}, state) do
     Logger.debug("Received agent result for #{correlation_id}: #{inspect(result)}")
 
-    # Decrement pending_tasks counter
-    state = %{state | pending_tasks: max(0, state.pending_tasks - 1)}
-
     case result do
       {:ok, events} ->
-        # Dispatch resulting events
+        # Enqueue child events and decrement pending_tasks atomically in one state update
+        # so that :get_queue_size never observes an intermediate "empty" state.
         state =
           Enum.reduce(events, state, fn event, acc_state ->
             if match?(%TerminateEvent{}, event) do
@@ -306,10 +304,17 @@ defmodule Mojentic.AsyncDispatcher do
             end
           end)
 
+        state = %{state | pending_tasks: max(0, state.pending_tasks - 1)}
+
+        if :queue.len(state.event_queue) > 0 do
+          send(self(), :process_events)
+        end
+
         {:noreply, state}
 
       {:error, reason} ->
         Logger.error("Agent processing failed: #{inspect(reason)}")
+        state = %{state | pending_tasks: max(0, state.pending_tasks - 1)}
         {:noreply, state}
     end
   end
