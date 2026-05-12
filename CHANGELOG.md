@@ -5,6 +5,23 @@ All notable changes to the Mojentic Elixir implementation will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-05-11
+
+### Added
+
+- `max_tool_iterations` field on `CompletionConfig` (default `10`) — bounds recursive tool-calling in both `generate/4` and `generate_stream/4`; returns `{:error, :max_tool_iterations_exceeded}` when the limit is reached (the streaming path yields it as a stream element).
+- Integration test exercising the OpenAI tool-calling round-trip (assistant tool-call → tool result → final response), backed by a shared fixture set used across all four mojentic ports.
+
+### Changed
+
+- `SimpleRecursiveAgent` completion detection requires a strict whole-string match for `DONE`/`FAIL` (case-insensitive, trimmed); responses that merely contain those words as substrings no longer trigger completion.
+- `AsyncDispatcher` documents that agents matching an event are dispatched concurrently via `Task`s — intentional and safe under the BEAM's process isolation; `SharedWorkingMemory` carries a corresponding note about why that safety holds.
+
+### Fixed
+
+- `AsyncDispatcher.wait_for_empty_queue` could observe an empty queue while agent tasks were still processing events that would enqueue follow-up events; that window is now closed.
+- Asynchronous event-handler crashes in `SimpleRecursiveAgent` were swallowed, leaving `solve/2` to hang; handler errors now surface via a `HandlerErrorEvent`.
+
 ## [1.3.0] - 2026-04-11
 
 ### Removed
