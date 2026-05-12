@@ -439,9 +439,9 @@ defmodule Mojentic.LLM.Broker do
          _config,
          iterations_remaining
        )
-       when iterations_remaining <= 1 do
+       when iterations_remaining <= 0 do
     Logger.error("Max tool iterations exceeded in streaming path")
-    {:halt, nil}
+    {[{:error, :max_tool_iterations_exceeded}], :halt}
   end
 
   defp handle_stream_end(
@@ -499,7 +499,7 @@ defmodule Mojentic.LLM.Broker do
         Logger.warning("LLM requested tool calls but no tools provided")
         {:ok, response.content || ""}
 
-      _tools when iterations_remaining <= 1 ->
+      _tools when iterations_remaining <= 0 ->
         Logger.error("Max tool iterations exceeded")
         {:error, :max_tool_iterations_exceeded}
 

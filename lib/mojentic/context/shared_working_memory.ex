@@ -12,6 +12,18 @@ defmodule Mojentic.Context.SharedWorkingMemory do
   - **Merge Updates** - New information is merged into existing memory
   - **Simple API** - Get and merge operations for easy use
 
+  ## Immutability and Concurrency Safety
+
+  This struct is immutable — every mutating operation (`merge_to_working_memory/2`)
+  returns a **new** struct rather than modifying the original. This immutability is
+  what makes `Mojentic.AsyncDispatcher`'s concurrent (per-subscriber `Task`) dispatch
+  safe: each agent receives its own snapshot of memory and cannot race with other agents
+  over a shared mutable reference.
+
+  **Important:** If a future change introduces genuinely shared mutable state (an ETS
+  table, an `Agent` process, or a stateful GenServer that multiple agents call), revisit
+  the dispatcher's concurrency model — concurrent dispatch may no longer be safe.
+
   ## Usage
 
       # Initialize with user data

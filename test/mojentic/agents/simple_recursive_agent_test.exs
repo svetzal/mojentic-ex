@@ -278,11 +278,11 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
       agent = SimpleRecursiveAgent.new(broker, max_iterations: 3)
 
       MockGatewayState.set_response_fn(fn _messages ->
-        {:ok, %GatewayResponse{content: "The answer is 4. DONE", tool_calls: [], object: nil}}
+        {:ok, %GatewayResponse{content: "DONE", tool_calls: [], object: nil}}
       end)
 
       assert {:ok, solution} = SimpleRecursiveAgent.solve(agent, "What is 2+2?")
-      assert solution == "The answer is 4. DONE"
+      assert solution == "DONE"
     end
 
     test "solves problem with FAIL response", %{broker: broker} do
@@ -291,7 +291,7 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
       MockGatewayState.set_response_fn(fn _messages ->
         {:ok,
          %GatewayResponse{
-           content: "I cannot solve this problem. FAIL",
+           content: "FAIL",
            tool_calls: [],
            object: nil
          }}
@@ -299,7 +299,6 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
 
       assert {:ok, solution} = SimpleRecursiveAgent.solve(agent, "Impossible task")
       assert String.contains?(solution, "Failed to solve")
-      assert String.contains?(solution, "cannot solve")
     end
 
     test "reaches max iterations without completion", %{broker: broker} do
@@ -332,7 +331,7 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
           case count do
             1 -> "Still working on it, iteration 1..."
             2 -> "Still working on it, iteration 2..."
-            3 -> "Found the answer! DONE"
+            3 -> "DONE"
             _ -> "Should not get here"
           end
 
@@ -340,7 +339,7 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
       end)
 
       assert {:ok, solution} = SimpleRecursiveAgent.solve(agent, "Multi-step problem")
-      assert solution == "Found the answer! DONE"
+      assert solution == "DONE"
 
       # Should have called 3 times before completing
       assert MockGatewayState.get_call_count() == 3
@@ -358,15 +357,13 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
       assert String.contains?(solution, "Error:")
     end
 
-    test "case-insensitive DONE detection", %{broker: broker} do
+    test "exact whole-string DONE detection (case-insensitive, whitespace-trimmed)", %{
+      broker: broker
+    } do
       agent = SimpleRecursiveAgent.new(broker)
 
-      test_cases = [
-        "Task complete - done",
-        "We are DONE here",
-        "Done with the task",
-        "I'm done"
-      ]
+      # Only the whole response (after trim+downcase) being "done" triggers completion.
+      test_cases = ["DONE", "done", "Done", " DONE ", "\nDONE\n"]
 
       for content <- test_cases do
         MockGatewayState.reset()
@@ -380,15 +377,13 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
       end
     end
 
-    test "case-insensitive FAIL detection", %{broker: broker} do
+    test "exact whole-string FAIL detection (case-insensitive, whitespace-trimmed)", %{
+      broker: broker
+    } do
       agent = SimpleRecursiveAgent.new(broker)
 
-      test_cases = [
-        "This will fail",
-        "Task FAIL",
-        "I must Fail this",
-        "fail to complete"
-      ]
+      # Only the whole response (after trim+downcase) being "fail" triggers failure.
+      test_cases = ["FAIL", "fail", "Fail", " FAIL ", "\nFAIL\n"]
 
       for content <- test_cases do
         MockGatewayState.reset()
@@ -406,13 +401,19 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
     test "does not trigger false positives for DONE/FAIL", %{broker: broker} do
       agent = SimpleRecursiveAgent.new(broker, max_iterations: 1)
 
-      # These should NOT trigger completion
-      # Note: "abandoned", "failed", "unfailing" contain the words but in compound forms
-      # "not yet done" still contains "done" as a word, so it WILL match
+      # With strict whole-string matching, responses that merely *contain* "done" or
+      # "fail" (as substrings or as words in a sentence) do NOT trigger completion.
+      # Only an entire response that equals "done" / "fail" (after trim+downcase) does.
       test_cases = [
+        # Compound-word forms
         "I have abandoned this approach",
         "The system failed earlier",
-        "This is unfailing logic"
+        "This is unfailing logic",
+        # Sentences that include "DONE" or "FAIL" as words but not as the whole response
+        "The task is DONE",
+        "I should FAIL at this",
+        "Not done yet",
+        "Do not fail"
       ]
 
       for content <- test_cases do
@@ -448,13 +449,12 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
              object: nil
            }}
         else
-          {:ok,
-           %GatewayResponse{content: "Tool result processed. DONE", tool_calls: [], object: nil}}
+          {:ok, %GatewayResponse{content: "DONE", tool_calls: [], object: nil}}
         end
       end)
 
       assert {:ok, solution} = SimpleRecursiveAgent.solve(agent, "Use the tool")
-      assert solution == "Tool result processed. DONE"
+      assert solution == "DONE"
     end
 
     test "uses custom system prompt", %{broker: broker} do
@@ -466,14 +466,14 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
         system_msg = Enum.find(messages, fn msg -> msg.role == :system end)
 
         if system_msg && system_msg.content == custom_prompt do
-          {:ok, %GatewayResponse{content: "Correct prompt. DONE", tool_calls: [], object: nil}}
+          {:ok, %GatewayResponse{content: "DONE", tool_calls: [], object: nil}}
         else
-          {:ok, %GatewayResponse{content: "Wrong prompt. FAIL", tool_calls: [], object: nil}}
+          {:ok, %GatewayResponse{content: "FAIL", tool_calls: [], object: nil}}
         end
       end)
 
       assert {:ok, solution} = SimpleRecursiveAgent.solve(agent, "Test")
-      assert solution == "Correct prompt. DONE"
+      assert solution == "DONE"
     end
 
     test "solve returns error when an event handler crashes", %{broker: broker} do
@@ -520,7 +520,7 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
       end)
 
       MockGatewayState.set_response_fn(fn _messages ->
-        {:ok, %GatewayResponse{content: "Success! DONE", tool_calls: [], object: nil}}
+        {:ok, %GatewayResponse{content: "DONE", tool_calls: [], object: nil}}
       end)
 
       Task.async(fn ->
@@ -529,7 +529,7 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
 
       # Verify event order
       assert_receive {:event, :goal_submitted, 0}, 1000
-      assert_receive {:event, :iteration_completed, 1, "Success! DONE"}, 1000
+      assert_receive {:event, :iteration_completed, 1, "DONE"}, 1000
       assert_receive {:event, :goal_achieved, 1}, 1000
     end
 
@@ -542,7 +542,7 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
       end)
 
       MockGatewayState.set_response_fn(fn _messages ->
-        {:ok, %GatewayResponse{content: "Cannot do this. FAIL", tool_calls: [], object: nil}}
+        {:ok, %GatewayResponse{content: "FAIL", tool_calls: [], object: nil}}
       end)
 
       Task.async(fn ->

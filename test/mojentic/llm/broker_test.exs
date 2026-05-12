@@ -289,8 +289,9 @@ defmodule Mojentic.LLM.BrokerTest do
       assert {:error, :max_tool_iterations_exceeded} =
                Broker.generate(broker, messages, [MockTool], config)
 
-      # Gateway should have been invoked exactly max_tool_iterations times
-      assert Process.get(:call_count) == 3
+      # With max_tool_iterations: 3, the gateway is called 4 times:
+      # 3 tool-execution rounds + 1 final call that detects cap exhaustion.
+      assert Process.get(:call_count) == 4
     end
   end
 
@@ -625,16 +626,19 @@ defmodule Mojentic.LLM.BrokerTest do
       messages = [Message.user("Hello")]
       config = %CompletionConfig{max_tool_iterations: 3}
 
-      log =
-        capture_log(fn ->
+      {result, log} =
+        with_log(fn ->
           broker
           |> Broker.generate_stream(messages, [MockTool], config)
           |> Enum.to_list()
         end)
 
+      # The stream surfaces the cap error as an element so the consumer can detect it.
+      assert {:error, :max_tool_iterations_exceeded} in result
       assert log =~ "Max tool iterations exceeded"
-      # Gateway should have been called exactly max_tool_iterations times
-      assert Process.get(:stream_call_count) == 3
+      # With max_tool_iterations: 3, the gateway is called 4 times:
+      # 3 tool-execution rounds + 1 final call that detects cap exhaustion.
+      assert Process.get(:stream_call_count) == 4
     end
   end
 end

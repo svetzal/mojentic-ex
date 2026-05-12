@@ -51,9 +51,15 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
 
   ## Completion Indicators
 
-  The agent monitors responses for these keywords:
-  - "DONE" (case-insensitive) - Task completed successfully
-  - "FAIL" (case-insensitive) - Task cannot be completed
+  The agent treats a response as a completion signal only when the **entire response**
+  (after trimming leading and trailing whitespace, case-insensitive) equals exactly
+  `DONE` or `FAIL`.
+
+  - `DONE` — Task completed successfully
+  - `FAIL` — Task cannot be completed
+
+  Responses that merely contain "done" or "fail" as substrings (e.g. "The task is done"
+  or "This was a failing approach") do **not** trigger completion.
   """
 
   alias Mojentic.LLM.{Broker, ChatSession}
@@ -435,14 +441,10 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
   defp handle_iteration_completed(agent, event) do
     state = event.state
     response = event.response
-    response_lower = String.downcase(response)
+    normalized = response |> String.trim() |> String.downcase()
 
     cond do
-      # Check if the task failed
-      # Match "FAIL" as a complete word (not in "failed", "unfailing", etc.)
-      # Allow variations like "FAIL", "fail", "Fail"
-      String.contains?(response_lower, "fail") &&
-          Regex.match?(~r/\bfail\b/, response_lower) ->
+      normalized == "fail" ->
         updated_state = %{
           state
           | solution: "Failed to solve after #{state.iteration} iterations:\n#{response}",
@@ -451,11 +453,7 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
 
         EventEmitter.emit(agent.emitter, %GoalFailedEvent{state: updated_state})
 
-      # Check if the task succeeded
-      # Match "DONE" as a complete word (not in "abandoned", "undone", etc.)
-      # Allow variations like "DONE", "done", "Done"
-      String.contains?(response_lower, "done") &&
-          Regex.match?(~r/\bdone\b/, response_lower) ->
+      normalized == "done" ->
         updated_state = %{
           state
           | solution: response,
@@ -464,7 +462,6 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
 
         EventEmitter.emit(agent.emitter, %GoalAchievedEvent{state: updated_state})
 
-      # Check if we've reached max iterations
       state.iteration >= state.max_iterations ->
         updated_state = %{
           state
@@ -474,7 +471,6 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
 
         EventEmitter.emit(agent.emitter, %GoalAchievedEvent{state: updated_state})
 
-      # Continue with next iteration
       true ->
         process_iteration(agent, state)
     end

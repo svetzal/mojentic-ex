@@ -77,6 +77,13 @@ defmodule Mojentic.AsyncDispatcher do
       AsyncDispatcher.wait_for_empty_queue(dispatcher)
       AsyncDispatcher.stop(dispatcher)
 
+  ## Concurrency Model
+
+  Agents matching an event are dispatched concurrently via Tasks. This is intentional
+  and is safe in Elixir because processes do not share mutable memory. The other
+  mojentic ports (ts/py/ru) serialize agent dispatch precisely because they DO share
+  mutable state (SharedWorkingMemory etc.) where concurrent agents would race.
+
   """
 
   use GenServer
