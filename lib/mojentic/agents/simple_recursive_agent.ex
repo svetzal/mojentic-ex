@@ -477,10 +477,8 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
   end
 
   defp process_iteration(agent, state) do
-    # Increment iteration counter
     updated_state = %{state | iteration: state.iteration + 1}
 
-    # Generate prompt for this iteration
     prompt = """
     Given the user request:
     #{state.goal}
@@ -492,28 +490,29 @@ defmodule Mojentic.Agents.SimpleRecursiveAgent do
     If you have the answer, say only "DONE".
     """
 
-    # Create a task to generate response asynchronously
-    # Use Task.start_link so the task dies with the test process
-    Task.start_link(fn ->
-      case generate_response(agent, prompt) do
-        {:ok, response} ->
-          EventEmitter.emit(
-            agent.emitter,
-            %IterationCompletedEvent{state: updated_state, response: response}
-          )
+    # EventEmitter already dispatches each handler in its own Task, so calling
+    # generate_response directly here is already async from solve/2's perspective.
+    # Spawning an additional Task.start_link creates an extra process that can
+    # outlive the current solve/2 call and cause spurious side-effects in the
+    # next invocation (e.g., incrementing shared state after it has been reset).
+    case generate_response(agent, prompt) do
+      {:ok, response} ->
+        EventEmitter.emit(
+          agent.emitter,
+          %IterationCompletedEvent{state: updated_state, response: response}
+        )
 
-        {:error, reason} ->
-          Logger.error("Error generating response: #{inspect(reason)}")
+      {:error, reason} ->
+        Logger.error("Error generating response: #{inspect(reason)}")
 
-          error_state = %{
-            updated_state
-            | solution: "Error: #{inspect(reason)}",
-              is_complete: true
-          }
+        error_state = %{
+          updated_state
+          | solution: "Error: #{inspect(reason)}",
+            is_complete: true
+        }
 
-          EventEmitter.emit(agent.emitter, %GoalFailedEvent{state: error_state})
-      end
-    end)
+        EventEmitter.emit(agent.emitter, %GoalFailedEvent{state: error_state})
+    end
   end
 
   defp generate_response(agent, prompt) do
