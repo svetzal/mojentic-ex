@@ -196,6 +196,37 @@ defmodule Mojentic.Tracer.TracerEvents.ToolCallTracerEvent do
   end
 end
 
+defmodule Mojentic.Tracer.TracerEvents.ToolBatchTracerEvent do
+  @moduledoc """
+  Records the end-to-end execution of a parallel tool batch.
+
+  Per-call detail still lands as `ToolCallTracerEvent` events; the
+  batch event lets observers measure parallelism gains and correlate
+  calls dispatched together.
+  """
+
+  defstruct [
+    :timestamp,
+    :correlation_id,
+    :source,
+    :batch_id,
+    :tool_names,
+    :success_count,
+    :failure_count,
+    :call_duration_ms,
+    :caller
+  ]
+
+  def printable_summary(%__MODULE__{} = event) do
+    base = Mojentic.Tracer.TracerEvents.format_base_summary(event, "ToolBatchTracerEvent")
+
+    "#{base}\n   Batch: #{event.batch_id}\n" <>
+      "   Tools: #{Enum.join(event.tool_names, ", ")}\n" <>
+      "   Outcome: #{event.success_count} ok / #{event.failure_count} failed\n" <>
+      "   Duration: #{event.call_duration_ms}ms"
+  end
+end
+
 defmodule Mojentic.Tracer.TracerEvents.AgentInteractionTracerEvent do
   @moduledoc """
   Records interactions between agents.

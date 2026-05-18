@@ -57,6 +57,7 @@ defmodule Mojentic.Tracer.TracerSystem do
     LLMCallTracerEvent,
     LLMResponseTracerEvent,
     ToolCallTracerEvent,
+    ToolBatchTracerEvent,
     AgentInteractionTracerEvent
   }
 
@@ -191,6 +192,25 @@ defmodule Mojentic.Tracer.TracerSystem do
   @spec record_tool_call(GenServer.server(), keyword()) :: :ok
   def record_tool_call(server, opts) do
     GenServer.call(server, {:record_tool_call, opts})
+  end
+
+  @doc """
+  Records a parallel tool batch event.
+
+  ## Options
+
+  - `:batch_id` - Unique id identifying this batch (required)
+  - `:tool_names` - Names of every tool dispatched (required)
+  - `:success_count` - Tools that returned `{:ok, _}` (required)
+  - `:failure_count` - Tools that returned `{:error, _}` or raised (required)
+  - `:call_duration_ms` - Wall-clock duration in milliseconds (required)
+  - `:caller` - Component that dispatched the batch (default: nil)
+  - `:source` - Source module (default: TracerSystem)
+  - `:correlation_id` - Correlation ID (required)
+  """
+  @spec record_tool_batch(GenServer.server(), keyword()) :: :ok
+  def record_tool_batch(server, opts) do
+    GenServer.call(server, {:record_tool_batch, opts})
   end
 
   @doc """
@@ -415,6 +435,32 @@ defmodule Mojentic.Tracer.TracerSystem do
           result: Keyword.fetch!(opts, :result),
           caller: Keyword.get(opts, :caller),
           call_duration_ms: Keyword.get(opts, :call_duration_ms)
+        }
+
+        EventStore.store(state.event_store, event)
+      end
+
+      {:reply, :ok, state}
+    rescue
+      e in KeyError ->
+        {:reply, {:error, e}, state}
+    end
+  end
+
+  @impl true
+  def handle_call({:record_tool_batch, opts}, _from, state) do
+    try do
+      if state.enabled do
+        event = %ToolBatchTracerEvent{
+          timestamp: current_timestamp(),
+          correlation_id: Keyword.fetch!(opts, :correlation_id),
+          source: Keyword.get(opts, :source, __MODULE__),
+          batch_id: Keyword.fetch!(opts, :batch_id),
+          tool_names: Keyword.fetch!(opts, :tool_names),
+          success_count: Keyword.fetch!(opts, :success_count),
+          failure_count: Keyword.fetch!(opts, :failure_count),
+          call_duration_ms: Keyword.fetch!(opts, :call_duration_ms),
+          caller: Keyword.get(opts, :caller)
         }
 
         EventStore.store(state.event_store, event)

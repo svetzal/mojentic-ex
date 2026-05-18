@@ -113,6 +113,12 @@ defmodule Mojentic.Tracer do
   def record_tool_call(server, opts), do: TracerSystem.record_tool_call(server, opts)
 
   @doc """
+  Records a parallel tool-batch event.
+  """
+  def record_tool_batch(:null_tracer, opts), do: NullTracer.record_tool_batch(:null_tracer, opts)
+  def record_tool_batch(server, opts), do: TracerSystem.record_tool_batch(server, opts)
+
+  @doc """
   Records an agent interaction event.
   """
   def record_agent_interaction(:null_tracer, opts),

@@ -83,6 +83,12 @@ defmodule Mojentic.Tracer.NullTracer do
   def record_tool_call(_server, _opts), do: :ok
 
   @doc """
+  No-op: Does not record the tool batch.
+  """
+  @spec record_tool_batch(atom(), keyword()) :: :ok
+  def record_tool_batch(_server, _opts), do: :ok
+
+  @doc """
   No-op: Does not record the agent interaction.
 
   ## Examples

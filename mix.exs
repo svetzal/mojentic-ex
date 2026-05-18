@@ -58,6 +58,11 @@ defmodule Mojentic.MixProject do
       # JSON
       {:jason, "~> 1.4"},
 
+      # WebSocket transport for the realtime voice broker
+      {:mint, "~> 1.5"},
+      {:mint_web_socket, "~> 1.0"},
+      {:castore, "~> 1.0"},
+
       # UUID generation
       {:elixir_uuid, "~> 1.2"},
 
