@@ -14,6 +14,16 @@ Before running these examples, ensure you have:
    ollama pull qwen2.5:3b
    ```
 
+### OpenAI API key (realtime example only)
+
+The `realtime.exs` example connects to the OpenAI Realtime API. Set your key before running it:
+
+```bash
+export OPENAI_API_KEY="sk-..."
+```
+
+All other examples use Ollama and do not require an API key.
+
 ## Available Examples
 
 ### Level 1: Basic LLM Usage ✅
@@ -198,5 +208,38 @@ Demonstrates the event tracing system for debugging and monitoring.
 ```bash
 mix run examples/tracer_demo.exs
 ```
+
+### Level 5: Parallel Tools & Realtime Voice
+
+#### `parallel_tools.exs`
+Demonstrates serial vs. parallel tool execution using `SerialToolRunner`
+and `ParallelToolRunner`. Uses a synthetic slow tool — no LLM or API key
+required.
+
+```bash
+mix run examples/parallel_tools.exs
+```
+
+Demonstrates:
+- `SerialToolRunner` executing calls one at a time
+- `ParallelToolRunner` executing the same batch concurrently
+- Output order preserved regardless of completion order
+- Measured speedup from parallel dispatch
+
+#### `realtime.exs`
+End-to-end realtime voice session against the OpenAI Realtime API (text mode).
+
+**Requirements**: `OPENAI_API_KEY` environment variable (see Prerequisites above).
+
+```bash
+export OPENAI_API_KEY="sk-..."
+mix run examples/realtime.exs
+```
+
+Demonstrates:
+- Opening a `RealtimeVoiceBroker` session
+- Subscribing to vendor-neutral events
+- Sending a text message and receiving the streamed reply
+- Closing the session cleanly
 
 See [PARITY.md](../PARITY.md) for the complete feature roadmap.
