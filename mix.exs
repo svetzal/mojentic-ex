@@ -38,7 +38,10 @@ defmodule Mojentic.MixProject do
           Mojentic.Examples.React.Models.ThoughtActionObservation,
           # OpenAI gateway not yet fully implemented
           Mojentic.LLM.Gateways.OpenAI,
-          Mojentic.LLM.Gateways.OpenAIMessagesAdapter
+          Mojentic.LLM.Gateways.OpenAIMessagesAdapter,
+          # WebSocket infrastructure — requires live network to exercise
+          Mojentic.Realtime.MintTransport,
+          Mojentic.Realtime.OpenAIGateway
         ]
       ]
     ]

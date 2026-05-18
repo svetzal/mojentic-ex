@@ -108,6 +108,25 @@ defmodule Mojentic.LLM.Tools.RunnerTest do
       refute outcome.ok?
       assert outcome.error == {:tool_not_found, "missing"}
     end
+
+    test "returns empty list for empty call list" do
+      assert [] = SerialToolRunner.run_batch([], [EchoTool])
+    end
+
+    test "aborts remaining calls when context is cancelled" do
+      ref = :atomics.new(1, signed: false)
+      :atomics.put(ref, 1, 1)
+      ctx = RunContext.new(cancel_ref: ref)
+
+      calls = [
+        ToolCallExecution.new("1", "echo", %{"value" => "a"}),
+        ToolCallExecution.new("2", "echo", %{"value" => "b"})
+      ]
+
+      outcomes = SerialToolRunner.run_batch(calls, [EchoTool], ctx)
+
+      assert Enum.all?(outcomes, fn o -> not o.ok? and o.error == :cancelled end)
+    end
   end
 
   describe "ParallelToolRunner" do
