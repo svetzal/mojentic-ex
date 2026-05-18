@@ -51,7 +51,7 @@ defmodule Mojentic.Realtime.Config do
 
   @type modality :: :audio | :text
   @type audio_format :: :pcm16 | :g711_ulaw | :g711_alaw
-  @type interrupt_policy :: :drop | :submit | :"submit-completed-only"
+  @type interrupt_policy :: :drop | :submit | :submit_completed_only
   @type tool_choice ::
           :auto
           | :none

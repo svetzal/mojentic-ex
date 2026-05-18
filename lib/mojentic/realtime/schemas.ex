@@ -1,11 +1,15 @@
 defmodule Mojentic.Realtime.Schemas do
   @moduledoc """
-  Boundary validation for OpenAI Realtime API server events.
+  Schema catalogue for OpenAI Realtime API server events.
 
-  Validates that recognised event types carry their required fields;
-  unknown fields are tolerated (provider drift won't crash parsing).
-  Unrecognised event types pass through verbatim so callers can still
-  consume them via the raw event stream.
+  Documents the required fields for each known event type. The
+  `parse_server_event/1` function normalises missing-type payloads and
+  passes all recognised and unknown events through verbatim — the live
+  path in `Session` pattern-matches event types directly, so no hard
+  validation is needed here.
+
+  Callers that need to validate a payload in tests can use
+  `valid?/1` to check that required fields are present.
 
   Schema snapshot: OpenAI Realtime API beta circa 2026-05.
   """
@@ -43,29 +47,37 @@ defmodule Mojentic.Realtime.Schemas do
   }
 
   @doc """
-  Best-effort parse: returns the raw map when the event is recognised
-  and all required fields are present. Falls back to the original
-  payload otherwise so callers can still surface unrecognised /
-  malformed events.
+  Normalise a raw server-event map: ensures a `"type"` key is present.
 
-  A payload without a `"type"` key becomes `%{"type" => "unknown"}`.
+  - Maps without a `"type"` key are tagged `%{"type" => "unknown"}`.
+  - All other maps are returned verbatim — unknown event types from
+    provider drift pass through so callers can still consume them.
   """
   def parse_server_event(raw) when is_map(raw) do
-    type = Map.get(raw, "type")
-
-    cond do
-      type == nil ->
-        %{"type" => "unknown"}
-
-      Map.has_key?(@required_fields, type) ->
-        if all_present?(raw, Map.fetch!(@required_fields, type)), do: raw, else: raw
-
-      true ->
-        raw
-    end
+    if Map.has_key?(raw, "type"), do: raw, else: %{"type" => "unknown"}
   end
 
   def parse_server_event(_other), do: %{"type" => "unknown"}
+
+  @doc """
+  Returns `true` when a recognised event's required fields are all present.
+
+  Unknown event types (not in the schema catalogue) always return `true`
+  so callers don't need to guard against future provider additions.
+  """
+  def valid?(raw) when is_map(raw) do
+    type = Map.get(raw, "type")
+
+    case Map.fetch(@required_fields, type) do
+      {:ok, paths} -> all_present?(raw, paths)
+      :error -> true
+    end
+  end
+
+  def valid?(_), do: false
+
+  @doc "List the event types this module recognises."
+  def known_types, do: Map.keys(@required_fields)
 
   defp all_present?(_raw, []), do: true
   defp all_present?(raw, paths), do: Enum.all?(paths, &has_path?(raw, &1))
@@ -80,7 +92,4 @@ defmodule Mojentic.Realtime.Schemas do
   end
 
   defp has_path?(_raw, _path), do: false
-
-  @doc "List the event types this module recognises."
-  def known_types, do: Map.keys(@required_fields)
 end

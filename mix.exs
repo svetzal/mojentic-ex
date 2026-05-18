@@ -152,6 +152,26 @@ defmodule Mojentic.MixProject do
           Mojentic.LLM.Tools.DateResolver,
           Mojentic.LLM.Tools.CurrentDateTime,
           Mojentic.LLM.Tools.WebSearchTool
+        ],
+        "Tool Runners": [
+          Mojentic.LLM.Tools.Runner,
+          Mojentic.LLM.Tools.SerialToolRunner,
+          Mojentic.LLM.Tools.ParallelToolRunner,
+          Mojentic.LLM.Tools.RunContext
+        ],
+        "Realtime Voice": [
+          Mojentic.Realtime.Broker,
+          Mojentic.Realtime.Session,
+          Mojentic.Realtime.Gateway,
+          Mojentic.Realtime.OpenAIGateway,
+          Mojentic.Realtime.Config,
+          Mojentic.Realtime.Event,
+          Mojentic.Realtime.Transport,
+          Mojentic.Realtime.MintTransport,
+          Mojentic.Realtime.Codec,
+          Mojentic.Realtime.Schemas,
+          Mojentic.Realtime.ServerVadConfig,
+          Mojentic.Realtime.SemanticVadConfig
         ]
       ],
       before_closing_body_tag: &before_closing_body_tag/1

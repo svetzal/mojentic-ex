@@ -22,7 +22,7 @@ config =
   )
 
 broker =
-  Broker.new("gpt-realtime",
+  Broker.new("gpt-realtime-2",
     gateway: OpenAIGateway.new(),
     config: config
   )
@@ -93,7 +93,7 @@ a cancelled batch so the next turn isn't polluted by stale answers.
 Alternatives:
 
 - `:submit_completed_only` — submit only outcomes that finished
-  before the cancel landed.
+  before the cancel landed (snake_case; matches the atom in code).
 - `:submit` — submit every outcome, even after the cancel.
 
 Manual interruption: `Session.interrupt(session)`.

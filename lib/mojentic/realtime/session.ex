@@ -13,11 +13,21 @@ defmodule Mojentic.Realtime.Session do
   - submits `function_call_output` items back through the transport
     and triggers the next `response.create`
 
-  This module is a focused, in-process orchestrator. It mirrors the
-  RealtimeSession class in the Python port. The implementation here
-  exposes the public API surface and the event-normalisation path
-  end-to-end; the broker uses it to provide a single ergonomic entry
-  point.
+  ## Tool batch execution
+
+  When `response.done` arrives with pending function calls, the
+  session spawns a supervised `Task` to run the batch so the GenServer
+  remains responsive to inbound WebSocket messages (e.g.
+  `input_audio_buffer.speech_started` barge-in) during execution.
+  The task sends `{:tool_batch_done, executions, outcomes, duration_ms}`
+  back to the session when it completes.
+
+  An `:atomics`-backed cancel ref is stored in the `RunContext` so
+  calling `interrupt/1` mid-batch signals cancellation to any tool
+  that has opted in via `run/3`.
+
+  This module mirrors the RealtimeSession class in the Python port.
+  The broker uses it to provide a single ergonomic entry point.
   """
 
   use GenServer
@@ -43,6 +53,8 @@ defmodule Mojentic.Realtime.Session do
             subscribers: [],
             current_turn: nil,
             current_response_id: nil,
+            batch_task: nil,
+            batch_cancel_ref: nil,
             closed?: false
 
   # Public API ----------------------------------------------------------------
@@ -171,6 +183,8 @@ defmodule Mojentic.Realtime.Session do
            state.transport_module.send(state.transport, %{"type" => "input_audio_buffer.commit"}),
          :ok <- state.transport_module.send(state.transport, %{"type" => "response.create"}) do
       {:reply, :ok, state}
+    else
+      err -> {:reply, err, state}
     end
   end
 
@@ -200,6 +214,26 @@ defmodule Mojentic.Realtime.Session do
   def handle_info({:realtime_error, reason}, state) do
     emit(state, Event.new(:error, %{error: reason, recoverable?: true}))
     {:noreply, state}
+  end
+
+  # Per-tool-call observability events from the RunContext callbacks.
+  # These are sent from Task workers back to the session so we can
+  # forward them to subscribers without blocking the batch.
+  def handle_info({:emit_event, %Event{} = event}, state) do
+    emit(state, event)
+    {:noreply, state}
+  end
+
+  # Tool batch completed asynchronously — submit outputs and clear turn.
+  def handle_info({:tool_batch_done, executions, outcomes, duration_ms}, state) do
+    record_batch(state, executions, outcomes, duration_ms)
+    new_state = submit_outcomes(state, outcomes)
+    {:noreply, %{new_state | batch_task: nil, batch_cancel_ref: nil}}
+  end
+
+  # Task exit messages from the supervised tool-batch task.
+  def handle_info({:DOWN, _ref, :process, pid, _reason}, %{batch_task: %Task{pid: pid}} = state) do
+    {:noreply, %{state | batch_task: nil, batch_cancel_ref: nil}}
   end
 
   def handle_info(_other, state), do: {:noreply, state}
@@ -394,28 +428,35 @@ defmodule Mojentic.Realtime.Session do
         %{state | current_turn: nil, current_response_id: nil}
 
       calls ->
-        run_tool_batch(calls, %{state | current_turn: %{turn | done?: true}})
+        start_tool_batch_async(calls, %{state | current_turn: %{turn | done?: true}})
     end
   end
 
   defp handle_response_done(_response, state),
     do: %{state | current_turn: nil, current_response_id: nil}
 
-  defp run_tool_batch(calls, state) do
+  # Spawn the tool batch in a monitored Task so the GenServer stays
+  # responsive to barge-in and other inbound messages while tools run.
+  defp start_tool_batch_async(calls, state) do
     {executions, parse_failures} = parse_executions(calls)
     Enum.each(parse_failures, &emit(state, &1))
 
     if executions == [] do
       %{state | current_turn: nil, current_response_id: nil}
     else
-      ctx = build_run_context(state, executions)
-      start_time = System.monotonic_time(:millisecond)
-      outcomes = state.tool_runner.run_batch(executions, state.tools, ctx)
-      duration_ms = System.monotonic_time(:millisecond) - start_time
+      cancel_ref = :atomics.new(1, signed: false)
+      ctx = build_run_context(state, cancel_ref)
+      session_pid = self()
 
-      record_batch(state, executions, outcomes, duration_ms)
+      task =
+        Task.async(fn ->
+          start_time = System.monotonic_time(:millisecond)
+          outcomes = state.tool_runner.run_batch(executions, state.tools, ctx)
+          duration_ms = System.monotonic_time(:millisecond) - start_time
+          send(session_pid, {:tool_batch_done, executions, outcomes, duration_ms})
+        end)
 
-      submit_outcomes(state, outcomes)
+      %{state | batch_task: task, batch_cancel_ref: cancel_ref}
     end
   end
 
@@ -442,12 +483,13 @@ defmodule Mojentic.Realtime.Session do
     |> then(fn {execs, fails} -> {Enum.reverse(execs), Enum.reverse(fails)} end)
   end
 
-  defp build_run_context(state, executions) do
+  defp build_run_context(state, cancel_ref) do
     self_pid = self()
 
     RunContext.new(
       correlation_id: state.correlation_id,
       source: "RealtimeSession",
+      cancel_ref: cancel_ref,
       on_call_start: fn call ->
         send(
           self_pid,
@@ -462,7 +504,6 @@ defmodule Mojentic.Realtime.Session do
         :ok
       end
     )
-    |> then(fn ctx -> Map.put(ctx, :executions, executions) end)
   end
 
   defp outcome_event(%{ok?: true} = o) do
@@ -526,7 +567,7 @@ defmodule Mojentic.Realtime.Session do
 
   defp select_outputs(%{current_turn: %{cancelled?: true}}, _outcomes, :drop), do: []
 
-  defp select_outputs(%{current_turn: %{cancelled?: true}}, outcomes, :"submit-completed-only"),
+  defp select_outputs(%{current_turn: %{cancelled?: true}}, outcomes, :submit_completed_only),
     do: Enum.filter(outcomes, & &1.ok?)
 
   defp select_outputs(_state, outcomes, _policy), do: outcomes
@@ -553,6 +594,11 @@ defmodule Mojentic.Realtime.Session do
 
     if state.current_response_id do
       state.transport_module.send(state.transport, %{"type" => "response.cancel"})
+    end
+
+    # Signal any in-flight tool batch to abort early.
+    if state.batch_cancel_ref do
+      RunContext.cancel(%RunContext{cancel_ref: state.batch_cancel_ref})
     end
 
     %{state | current_turn: turn}

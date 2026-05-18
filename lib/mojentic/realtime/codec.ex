@@ -27,7 +27,8 @@ defmodule Mojentic.Realtime.Codec do
 
   def encode_base64_pcm16(samples) when is_list(samples) do
     samples
-    |> Enum.reduce(<<>>, fn s, acc -> acc <> <<s::little-16-signed>> end)
+    |> Enum.map(fn s -> <<s::little-16-signed>> end)
+    |> IO.iodata_to_binary()
     |> Base.encode64()
   end
 end
