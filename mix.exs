@@ -104,6 +104,8 @@ defmodule Mojentic.MixProject do
         "guides/getting_started.md": [title: "Getting Started"],
         "guides/broker.md": [title: "Broker Guide"],
         "guides/tool_usage.md": [title: "Tool Usage"],
+        "guides/parallel_tools.md": [title: "Parallel Tools"],
+        "guides/realtime.md": [title: "Realtime Voice"],
         "guides/file_tools.md": [title: "Example: File Tools"],
         "guides/task_management.md": [title: "Example: Task Management"],
         "guides/web_search.md": [title: "Example: Web Search"],
