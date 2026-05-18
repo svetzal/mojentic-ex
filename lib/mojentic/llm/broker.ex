@@ -47,7 +47,9 @@ defmodule Mojentic.LLM.Broker do
   alias Mojentic.LLM.Gateway
   alias Mojentic.LLM.GatewayResponse
   alias Mojentic.LLM.Message
+  alias Mojentic.LLM.Tools.SerialToolRunner
   alias Mojentic.LLM.Tools.Tool
+  alias Mojentic.LLM.Tools.ToolCallExecution
   alias Mojentic.Tracer
 
   require Logger
@@ -56,10 +58,17 @@ defmodule Mojentic.LLM.Broker do
           model: String.t(),
           gateway: Gateway.gateway(),
           correlation_id: String.t() | nil,
-          tracer: pid() | :null_tracer
+          tracer: pid() | :null_tracer,
+          tool_runner: module()
         }
 
-  defstruct [:model, :gateway, :correlation_id, tracer: Tracer.null_tracer()]
+  defstruct [
+    :model,
+    :gateway,
+    :correlation_id,
+    tracer: Tracer.null_tracer(),
+    tool_runner: SerialToolRunner
+  ]
 
   @doc """
   Creates a new LLM broker.
@@ -90,7 +99,8 @@ defmodule Mojentic.LLM.Broker do
       model: model,
       gateway: gateway,
       correlation_id: Keyword.get(opts, :correlation_id) || generate_correlation_id(),
-      tracer: Keyword.get(opts, :tracer, Tracer.null_tracer())
+      tracer: Keyword.get(opts, :tracer, Tracer.null_tracer()),
+      tool_runner: Keyword.get(opts, :tool_runner, SerialToolRunner)
     }
   end
 
@@ -475,16 +485,16 @@ defmodule Mojentic.LLM.Broker do
   end
 
   defp execute_and_append_tool_results(broker, tool_calls, tools, messages) do
-    tool_results = Enum.map(tool_calls, &execute_tool(broker, &1, tools))
+    executions =
+      tool_calls
+      |> Enum.with_index()
+      |> Enum.map(fn {tc, idx} ->
+        ToolCallExecution.new(tool_call_id(tc, idx), tc.name, tc.arguments)
+      end)
 
-    Enum.reduce(tool_results, messages, fn
-      {:ok, tool_message}, acc ->
-        acc ++ [tool_message]
+    outcomes = broker.tool_runner.run_batch(executions, tools)
 
-      {:error, reason}, acc ->
-        Logger.error("Tool execution failed: #{Error.format_error(reason)}")
-        acc
-    end)
+    append_outcome_messages(broker, tool_calls, outcomes, messages)
   end
 
   # Private functions
@@ -506,30 +516,69 @@ defmodule Mojentic.LLM.Broker do
       tools ->
         Logger.info("Processing #{length(response.tool_calls)} tool call(s)")
 
-        # Add assistant message with tool calls
         new_messages = messages ++ [build_assistant_message(response)]
 
-        # Execute all tool calls
-        tool_results =
-          Enum.map(response.tool_calls, fn tool_call ->
-            execute_tool(broker, tool_call, tools)
+        executions =
+          response.tool_calls
+          |> Enum.with_index()
+          |> Enum.map(fn {tool_call, idx} ->
+            id = tool_call_id(tool_call, idx)
+            ToolCallExecution.new(id, tool_call.name, tool_call.arguments)
           end)
 
-        # Add tool result messages
+        outcomes = broker.tool_runner.run_batch(executions, tools)
+
         final_messages =
-          Enum.reduce(tool_results, new_messages, fn
-            {:ok, tool_message}, acc ->
-              acc ++ [tool_message]
+          append_outcome_messages(broker, response.tool_calls, outcomes, new_messages)
 
-            {:error, reason}, acc ->
-              Logger.error("Tool execution failed: #{Error.format_error(reason)}")
-              acc
-          end)
-
-        # Recursively call generate with updated messages and decremented counter
         do_generate(broker, final_messages, tools, config, iterations_remaining - 1)
     end
   end
+
+  defp tool_call_id(tool_call, idx) do
+    Map.get(tool_call, :id) || "call-#{idx}"
+  end
+
+  defp append_outcome_messages(broker, tool_calls, outcomes, messages) do
+    tool_calls
+    |> Enum.zip(outcomes)
+    |> Enum.reduce(messages, fn {tool_call, outcome}, acc ->
+      Tracer.record_tool_call(broker.tracer,
+        tool_name: tool_call.name,
+        arguments: tool_call.arguments,
+        result: outcome_result(outcome),
+        caller: "Broker",
+        call_duration_ms: outcome.duration_ms,
+        source: __MODULE__,
+        correlation_id: broker.correlation_id
+      )
+
+      if outcome.ok? do
+        acc ++
+          [
+            %Message{
+              role: :tool,
+              content: Jason.encode!(outcome.result),
+              tool_calls: [tool_call]
+            }
+          ]
+      else
+        Logger.error("Tool execution failed: #{Error.format_error(outcome.error)}")
+
+        acc ++
+          [
+            %Message{
+              role: :tool,
+              content: Jason.encode!(%{"error" => inspect(outcome.error)}),
+              tool_calls: [tool_call]
+            }
+          ]
+      end
+    end)
+  end
+
+  defp outcome_result(%{ok?: true, result: result}), do: result
+  defp outcome_result(%{ok?: false, error: err}), do: {:error, err}
 
   defp build_assistant_message(response) do
     %Message{
@@ -537,66 +586,6 @@ defmodule Mojentic.LLM.Broker do
       content: response.content,
       tool_calls: response.tool_calls
     }
-  end
-
-  defp execute_tool(broker, tool_call, tools) do
-    case find_tool(tools, tool_call.name) do
-      nil ->
-        Logger.warning("Tool not found: #{tool_call.name}")
-        Error.tool_error("Tool not found: #{tool_call.name}")
-
-      tool ->
-        Logger.info("Executing tool: #{tool_call.name}")
-
-        # Measure tool execution time
-        start_time = System.monotonic_time(:millisecond)
-
-        case Tool.run(tool, tool_call.arguments) do
-          {:ok, result} ->
-            call_duration_ms = System.monotonic_time(:millisecond) - start_time
-
-            # Record tool call in tracer
-            Tracer.record_tool_call(broker.tracer,
-              tool_name: tool_call.name,
-              arguments: tool_call.arguments,
-              result: result,
-              caller: "Broker",
-              call_duration_ms: call_duration_ms,
-              source: __MODULE__,
-              correlation_id: broker.correlation_id
-            )
-
-            {:ok,
-             %Message{
-               role: :tool,
-               content: Jason.encode!(result),
-               tool_calls: [tool_call]
-             }}
-
-          {:error, reason} ->
-            call_duration_ms = System.monotonic_time(:millisecond) - start_time
-
-            # Record failed tool call in tracer
-            Tracer.record_tool_call(broker.tracer,
-              tool_name: tool_call.name,
-              arguments: tool_call.arguments,
-              result: {:error, reason},
-              caller: "Broker",
-              call_duration_ms: call_duration_ms,
-              source: __MODULE__,
-              correlation_id: broker.correlation_id
-            )
-
-            Logger.error("Tool execution failed: #{Error.format_error(reason)}")
-            Error.tool_error("Tool execution failed: #{Error.format_error(reason)}")
-        end
-    end
-  end
-
-  defp find_tool(tools, name) do
-    Enum.find(tools, fn tool ->
-      Tool.matches?(tool, name)
-    end)
   end
 
   defp tool_descriptor(tool) do
