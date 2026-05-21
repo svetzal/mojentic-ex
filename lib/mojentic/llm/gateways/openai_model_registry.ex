@@ -54,6 +54,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
     |> initialize_chat_models()
     |> initialize_embedding_models()
     |> initialize_legacy_and_codex_models()
+    |> initialize_gpt54_55_models()
     |> initialize_pattern_mappings()
   end
 
@@ -465,7 +466,50 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
     end)
   end
 
-  # Pattern mappings for unknown models - Updated 2026-02-04
+  # GPT-5.4 and GPT-5.5 Reasoning Models - Added 2026-05-21
+  #
+  # Registered explicitly rather than through the gpt-5 loop above: that loop's
+  # tier formula assumes ~300K/50K (or 200K/32K for mini/nano) and would produce
+  # wrong context/output limits for these models, which have 1.05M/400K context
+  # windows and a 128K output cap. These models also support vision, unlike the
+  # earlier gpt-5 series.
+  defp initialize_gpt54_55_models(registry) do
+    large_context = 1_050_000
+    small_context = 400_000
+    max_output = 128_000
+
+    gpt54_55_models = [
+      {"gpt-5.4", large_context},
+      {"gpt-5.4-2026-03-05", large_context},
+      {"gpt-5.4-mini", small_context},
+      {"gpt-5.4-mini-2026-03-17", small_context},
+      {"gpt-5.4-nano", small_context},
+      {"gpt-5.4-nano-2026-03-17", small_context},
+      {"gpt-5.5", large_context},
+      {"gpt-5.5-2026-04-23", large_context},
+      {"gpt-5.5-pro", large_context},
+      {"gpt-5.5-pro-2026-04-23", large_context}
+    ]
+
+    Enum.reduce(gpt54_55_models, registry, fn {model, context_tokens}, acc ->
+      capabilities = %{
+        model_type: :reasoning,
+        supports_tools: true,
+        supports_streaming: true,
+        supports_vision: true,
+        max_context_tokens: context_tokens,
+        max_output_tokens: max_output,
+        supported_temperatures: [1.0],
+        supports_chat_api: true,
+        supports_completions_api: false,
+        supports_responses_api: true
+      }
+
+      register_model(acc, model, capabilities)
+    end)
+  end
+
+  # Pattern mappings for unknown models - Updated 2026-05-21
   defp initialize_pattern_mappings(registry) do
     patterns = %{
       "o1" => :reasoning,
@@ -474,6 +518,9 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
       "gpt-5" => :reasoning,
       "gpt-5.1" => :reasoning,
       "gpt-5.2" => :reasoning,
+      "gpt-5.3" => :reasoning,
+      "gpt-5.4" => :reasoning,
+      "gpt-5.5" => :reasoning,
       "gpt-4" => :chat,
       "gpt-4.1" => :chat,
       "gpt-3.5" => :chat,

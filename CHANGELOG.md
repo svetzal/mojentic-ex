@@ -5,6 +5,12 @@ All notable changes to the Mojentic Elixir implementation will be documented in 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- OpenAI model registry now recognizes the GPT-5.4 and GPT-5.5 reasoning model families (`gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.5`, `gpt-5.5-pro`, plus dated snapshots). These are registered explicitly with their real 1,050,000 / 400,000-token context windows and 128,000-token output cap, rather than falling through to the gpt-5 tier formula (which assumed smaller limits) or to substring pattern matching. Pattern mappings for `gpt-5.3`, `gpt-5.4`, and `gpt-5.5` were also added so unregistered variants still resolve to the reasoning type.
+
 ## [1.4.0] - 2026-05-11
 
 ### Added

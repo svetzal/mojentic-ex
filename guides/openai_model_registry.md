@@ -117,6 +117,18 @@ Legacy models that only support the Completions API:
 - gpt-4.1-nano
 - gpt-5.1
 
+### Dual-endpoint Models (Chat + Responses)
+
+GPT-5.4 and GPT-5.5 reasoning models support both the Chat and Responses APIs:
+
+- gpt-5.4, gpt-5.4-mini, gpt-5.4-nano
+- gpt-5.5, gpt-5.5-pro
+
+These are registered explicitly (not via the gpt-5 tier formula) because they have
+much larger context windows — 1,050,000 tokens for the base/pro tiers and 400,000
+tokens for mini/nano — with a 128,000-token output cap. They also support vision
+(image input) and accept only `temperature = 1.0`.
+
 ### Responses-only Models
 
 Newer models using the Responses API:

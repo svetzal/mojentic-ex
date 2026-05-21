@@ -279,6 +279,93 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistryTest do
     end
   end
 
+  describe "gpt-5.4 and gpt-5.5 models (2026-05-21)" do
+    test "gpt-5.4 resolves to a reasoning model with correct token limits" do
+      registry = OpenAIModelRegistry.new()
+      caps = OpenAIModelRegistry.get_model_capabilities(registry, "gpt-5.4")
+
+      assert caps.model_type == :reasoning
+      assert caps.max_context_tokens == 1_050_000
+      assert caps.max_output_tokens == 128_000
+      assert caps.supports_tools == true
+      assert caps.supports_streaming == true
+      assert caps.supports_vision == true
+      assert caps.supported_temperatures == [1.0]
+      assert caps.supports_chat_api == true
+      assert caps.supports_completions_api == false
+      assert caps.supports_responses_api == true
+    end
+
+    test "gpt-5.4-mini and gpt-5.4-nano have a 400K context window" do
+      registry = OpenAIModelRegistry.new()
+
+      for model <- ["gpt-5.4-mini", "gpt-5.4-nano"] do
+        caps = OpenAIModelRegistry.get_model_capabilities(registry, model)
+
+        assert caps.model_type == :reasoning
+        assert caps.max_context_tokens == 400_000
+        assert caps.max_output_tokens == 128_000
+        assert caps.supports_tools == true
+      end
+    end
+
+    test "dated gpt-5.4 snapshots resolve to the same capabilities" do
+      registry = OpenAIModelRegistry.new()
+
+      dated = [
+        {"gpt-5.4-2026-03-05", 1_050_000},
+        {"gpt-5.4-mini-2026-03-17", 400_000},
+        {"gpt-5.4-nano-2026-03-17", 400_000}
+      ]
+
+      for {model, context} <- dated do
+        caps = OpenAIModelRegistry.get_model_capabilities(registry, model)
+
+        assert caps.model_type == :reasoning
+        assert caps.max_context_tokens == context
+        assert caps.max_output_tokens == 128_000
+      end
+    end
+
+    test "gpt-5.5 and gpt-5.5-pro resolve to reasoning models with 1.05M context" do
+      registry = OpenAIModelRegistry.new()
+
+      for model <- ["gpt-5.5", "gpt-5.5-2026-04-23", "gpt-5.5-pro", "gpt-5.5-pro-2026-04-23"] do
+        caps = OpenAIModelRegistry.get_model_capabilities(registry, model)
+
+        assert caps.model_type == :reasoning
+        assert caps.max_context_tokens == 1_050_000
+        assert caps.max_output_tokens == 128_000
+        assert caps.supports_tools == true
+        assert caps.supports_streaming == true
+        assert caps.supports_vision == true
+        assert caps.supported_temperatures == [1.0]
+        assert caps.supports_chat_api == true
+        assert caps.supports_completions_api == false
+        assert caps.supports_responses_api == true
+      end
+    end
+
+    test "gpt-5.4 and gpt-5.5 use max_completion_tokens" do
+      registry = OpenAIModelRegistry.new()
+
+      assert OpenAIModelRegistry.get_token_limit_param(registry, "gpt-5.4") ==
+               "max_completion_tokens"
+
+      assert OpenAIModelRegistry.get_token_limit_param(registry, "gpt-5.5-pro") ==
+               "max_completion_tokens"
+    end
+
+    test "unregistered gpt-5.4/5.5/5.3 variants still pattern-match to reasoning" do
+      registry = OpenAIModelRegistry.new()
+
+      for model <- ["gpt-5.4-turbo-experimental", "gpt-5.5-custom", "gpt-5.3-preview"] do
+        caps = OpenAIModelRegistry.get_model_capabilities(registry, model)
+        assert caps.model_type == :reasoning
+      end
+    end
+  end
+
   describe "API endpoint support flags" do
     test "chat-only model has correct flags" do
       registry = OpenAIModelRegistry.new()
