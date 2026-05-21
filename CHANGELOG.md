@@ -7,9 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-05-21
+
 ### Added
 
-- OpenAI model registry now recognizes the GPT-5.4 and GPT-5.5 reasoning model families (`gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.5`, `gpt-5.5-pro`, plus dated snapshots). These are registered explicitly with their real 1,050,000 / 400,000-token context windows and 128,000-token output cap, rather than falling through to the gpt-5 tier formula (which assumed smaller limits) or to substring pattern matching. Pattern mappings for `gpt-5.3`, `gpt-5.4`, and `gpt-5.5` were also added so unregistered variants still resolve to the reasoning type.
+- `RealtimeVoiceBroker` and `Mojentic.LLM.Gateways.OpenAIRealtime` — WebSocket-based gateway for OpenAI's Realtime API, enabling low-latency voice and streaming sessions.
+- `Mojentic.LLM.ToolRunner` abstraction with a serial default — provides a composable interface for executing tool calls outside of the broker's built-in recursion loop.
+- OpenAI model registry now recognizes the GPT-5.4 and GPT-5.5 reasoning model families (`gpt-5.4`, `gpt-5.4-mini`, `gpt-5.4-nano`, `gpt-5.5`, `gpt-5.5-pro`, plus dated snapshots). These are registered explicitly with their real 1,050,000 / 400,000-token context windows and 128,000-token output cap. Pattern mappings for `gpt-5.3`, `gpt-5.4`, and `gpt-5.5` were also added so unregistered variants still resolve to the reasoning type.
+- Realtime and parallel tools examples and accompanying guides.
+
+### Fixed
+
+- Race condition in `SimpleRecursiveAgent.process_iteration` that could cause incorrect completion detection under concurrent load.
+- Realtime session blockers and dead code cleaned up in the OpenAI Realtime gateway.
 
 ## [1.4.0] - 2026-05-11
 
