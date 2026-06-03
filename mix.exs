@@ -62,7 +62,7 @@ defmodule Mojentic.MixProject do
       {:jason, "~> 1.4"},
 
       # WebSocket transport for the realtime voice broker
-      {:mint, "~> 1.5"},
+      {:mint, "~> 1.9"},
       {:mint_web_socket, "~> 1.0"},
       {:castore, "~> 1.0"},
 
