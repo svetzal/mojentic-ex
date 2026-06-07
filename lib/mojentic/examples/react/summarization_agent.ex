@@ -10,8 +10,6 @@ defmodule Mojentic.Examples.React.SummarizationAgent do
   alias Mojentic.Examples.React.Formatters
   alias Mojentic.LLM.{Broker, Message}
 
-  require Logger
-
   @doc """
   Receives and processes a FinishAndSummarize event.
 

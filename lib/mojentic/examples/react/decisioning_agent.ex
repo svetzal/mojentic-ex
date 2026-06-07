@@ -19,8 +19,6 @@ defmodule Mojentic.Examples.React.DecisioningAgent do
   alias Mojentic.LLM.{Broker, Message}
   alias Mojentic.LLM.Tools.DateResolver
 
-  require Logger
-
   @max_iterations 10
 
   @doc """

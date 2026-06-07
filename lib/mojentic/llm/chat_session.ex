@@ -42,8 +42,6 @@ defmodule Mojentic.LLM.ChatSession do
   alias Mojentic.LLM.Gateways.TokenizerGateway
   alias Mojentic.LLM.Message
 
-  require Logger
-
   @type t :: %__MODULE__{
           broker: Broker.t(),
           messages: [sized_message()],

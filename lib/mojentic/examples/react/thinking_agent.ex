@@ -12,8 +12,6 @@ defmodule Mojentic.Examples.React.ThinkingAgent do
   alias Mojentic.LLM.{Broker, Message}
   alias Mojentic.LLM.Tools.DateResolver
 
-  require Logger
-
   @doc """
   Receives and processes an InvokeThinking event.
 

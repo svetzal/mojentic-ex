@@ -61,8 +61,6 @@ defmodule Mojentic.Tracer.TracerSystem do
     AgentInteractionTracerEvent
   }
 
-  require Logger
-
   defmodule State do
     @moduledoc false
     @type t :: %__MODULE__{
