@@ -49,26 +49,25 @@ defmodule Mojentic.Agents.AsyncAggregatorAgentTest do
 
   describe "AsyncAggregatorAgent.start_link/1" do
     test "starts with required options" do
-      {:ok, pid} =
-        AsyncAggregatorAgent.start_link(
-          event_types_needed: [EventA, EventB],
-          process_events_fn: &simple_process_events/2
+      pid =
+        start_supervised!(
+          {AsyncAggregatorAgent,
+           event_types_needed: [EventA, EventB], process_events_fn: &simple_process_events/2}
         )
 
       assert Process.alive?(pid)
-      GenServer.stop(pid)
     end
 
     test "starts with name registration" do
-      {:ok, pid} =
-        AsyncAggregatorAgent.start_link(
-          event_types_needed: [EventA, EventB],
-          process_events_fn: &simple_process_events/2,
-          name: :test_aggregator
+      pid =
+        start_supervised!(
+          {AsyncAggregatorAgent,
+           event_types_needed: [EventA, EventB],
+           process_events_fn: &simple_process_events/2,
+           name: :test_aggregator}
         )
 
       assert Process.whereis(:test_aggregator) == pid
-      GenServer.stop(pid)
     end
 
     test "fails without event_types_needed" do
@@ -89,15 +88,11 @@ defmodule Mojentic.Agents.AsyncAggregatorAgentTest do
 
   describe "AsyncAggregatorAgent.receive_event/2" do
     setup do
-      {:ok, pid} =
-        AsyncAggregatorAgent.start_link(
-          event_types_needed: [EventA, EventB],
-          process_events_fn: &simple_process_events/2
+      pid =
+        start_supervised!(
+          {AsyncAggregatorAgent,
+           event_types_needed: [EventA, EventB], process_events_fn: &simple_process_events/2}
         )
-
-      on_exit(fn ->
-        if Process.alive?(pid), do: GenServer.stop(pid)
-      end)
 
       {:ok, pid: pid}
     end
@@ -148,15 +143,11 @@ defmodule Mojentic.Agents.AsyncAggregatorAgentTest do
 
   describe "AsyncAggregatorAgent.wait_for_events/3" do
     setup do
-      {:ok, pid} =
-        AsyncAggregatorAgent.start_link(
-          event_types_needed: [EventA, EventB],
-          process_events_fn: &combining_process_events/2
+      pid =
+        start_supervised!(
+          {AsyncAggregatorAgent,
+           event_types_needed: [EventA, EventB], process_events_fn: &combining_process_events/2}
         )
-
-      on_exit(fn ->
-        if Process.alive?(pid), do: GenServer.stop(pid)
-      end)
 
       {:ok, pid: pid}
     end
@@ -246,23 +237,20 @@ defmodule Mojentic.Agents.AsyncAggregatorAgentTest do
 
   describe "AsyncAggregatorAgent with three event types" do
     setup do
-      {:ok, pid} =
-        AsyncAggregatorAgent.start_link(
-          event_types_needed: [EventA, EventB, EventC],
-          process_events_fn: fn events, state ->
-            result = %ResultEvent{
-              source: __MODULE__,
-              correlation_id: List.first(events).correlation_id,
-              result: "Got all three!"
-            }
+      pid =
+        start_supervised!(
+          {AsyncAggregatorAgent,
+           event_types_needed: [EventA, EventB, EventC],
+           process_events_fn: fn events, state ->
+             result = %ResultEvent{
+               source: __MODULE__,
+               correlation_id: List.first(events).correlation_id,
+               result: "Got all three!"
+             }
 
-            {:ok, [result], state}
-          end
+             {:ok, [result], state}
+           end}
         )
-
-      on_exit(fn ->
-        if Process.alive?(pid), do: GenServer.stop(pid)
-      end)
 
       {:ok, pid: pid}
     end
@@ -288,10 +276,10 @@ defmodule Mojentic.Agents.AsyncAggregatorAgentTest do
     end
 
     test "handles process_events_fn errors" do
-      {:ok, pid} =
-        AsyncAggregatorAgent.start_link(
-          event_types_needed: [EventA, EventB],
-          process_events_fn: &error_process_events/2
+      pid =
+        start_supervised!(
+          {AsyncAggregatorAgent,
+           event_types_needed: [EventA, EventB], process_events_fn: &error_process_events/2}
         )
 
       correlation_id = "error-test"
@@ -300,8 +288,6 @@ defmodule Mojentic.Agents.AsyncAggregatorAgentTest do
 
       {:ok, []} = AsyncAggregatorAgent.receive_event(pid, event_a)
       assert {:error, :processing_failed} = AsyncAggregatorAgent.receive_event(pid, event_b)
-
-      GenServer.stop(pid)
     end
   end
 end
