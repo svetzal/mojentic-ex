@@ -1,7 +1,12 @@
 defmodule Mojentic.LLM.Gateways.TokenizerGatewayTest do
+  # Tests in this module download tokenizer models from Hugging Face Hub.
+  # They are excluded from the default suite and require network access plus
+  # model cache warming. Run them explicitly with: mix test --include integration
   use ExUnit.Case, async: true
 
   alias Mojentic.LLM.Gateways.TokenizerGateway
+
+  @moduletag :integration
 
   describe "new/1" do
     test "creates gateway with default model" do

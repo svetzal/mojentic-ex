@@ -48,7 +48,7 @@ defmodule Mojentic.LLM.ChatSession do
           system_prompt: String.t(),
           tools: [module()] | nil,
           max_context: non_neg_integer(),
-          tokenizer: TokenizerGateway.t(),
+          tokenizer: Mojentic.LLM.Tokenizer.t(),
           temperature: float()
         }
 
@@ -76,7 +76,9 @@ defmodule Mojentic.LLM.ChatSession do
   - `:system_prompt` - System prompt for the conversation (default: "You are a helpful assistant.")
   - `:tools` - List of tool modules to make available to the LLM (default: nil)
   - `:max_context` - Maximum token count for context window (default: 32,768)
-  - `:tokenizer` - TokenizerGateway instance (default: auto-created with gpt2)
+  - `:tokenizer` - A struct implementing `Mojentic.LLM.Tokenizer` (default: auto-created via
+    the module configured in `Application.get_env(:mojentic, :default_tokenizer_mod)`,
+    which defaults to `Mojentic.LLM.Gateways.TokenizerGateway`)
   - `:temperature` - Temperature for response generation (default: 1.0)
 
   ## Examples
@@ -105,11 +107,9 @@ defmodule Mojentic.LLM.ChatSession do
     tokenizer =
       case Keyword.get(opts, :tokenizer) do
         nil ->
-          # Create default tokenizer
-          case TokenizerGateway.new() do
-            {:ok, tokenizer} -> tokenizer
-            {:error, reason} -> raise "Failed to create tokenizer: #{inspect(reason)}"
-          end
+          # Create default tokenizer via the configured module (overridable for testing)
+          mod = Application.get_env(:mojentic, :default_tokenizer_mod, TokenizerGateway)
+          mod.new!()
 
         tokenizer ->
           tokenizer
@@ -325,9 +325,8 @@ defmodule Mojentic.LLM.ChatSession do
           0
 
         content ->
-          tokenizer
-          |> TokenizerGateway.encode(content)
-          |> length()
+          # Dispatch via the tokenizer's struct module to support any Mojentic.LLM.Tokenizer implementation
+          tokenizer.__struct__.count_tokens(tokenizer, content)
       end
 
     %{

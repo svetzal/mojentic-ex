@@ -21,6 +21,8 @@ defmodule Mojentic.LLM.Gateways.TokenizerGateway do
 
   """
 
+  @behaviour Mojentic.LLM.Tokenizer
+
   require Logger
 
   @type t :: %__MODULE__{
@@ -117,6 +119,7 @@ defmodule Mojentic.LLM.Gateways.TokenizerGateway do
       true
 
   """
+  @impl Mojentic.LLM.Tokenizer
   @spec encode(t(), String.t()) :: list(integer())
   def encode(%__MODULE__{tokenizer: tokenizer}, text) do
     Logger.debug("Encoding text: #{text}")
@@ -152,6 +155,7 @@ defmodule Mojentic.LLM.Gateways.TokenizerGateway do
       "Hello!"
 
   """
+  @impl Mojentic.LLM.Tokenizer
   @spec decode(t(), list(integer())) :: String.t()
   def decode(%__MODULE__{tokenizer: tokenizer}, tokens) do
     Logger.debug("Decoding #{length(tokens)} tokens")
@@ -189,6 +193,7 @@ defmodule Mojentic.LLM.Gateways.TokenizerGateway do
       true
 
   """
+  @impl Mojentic.LLM.Tokenizer
   @spec count_tokens(t(), String.t()) :: non_neg_integer()
   def count_tokens(gateway, text) do
     gateway

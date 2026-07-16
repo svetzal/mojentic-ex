@@ -4,8 +4,8 @@ defmodule Mojentic.LLM.ChatSessionTest do
   alias Mojentic.LLM.Broker
   alias Mojentic.LLM.ChatSession
   alias Mojentic.LLM.GatewayResponse
-  alias Mojentic.LLM.Gateways.TokenizerGateway
   alias Mojentic.LLM.ToolCall
+  alias Mojentic.TestSupport.StubTokenizer
 
   # Mock gateway for testing
   defmodule MockGateway do
@@ -96,9 +96,8 @@ defmodule Mojentic.LLM.ChatSessionTest do
     Process.delete(:last_complete_call)
     Process.delete(:call_number)
 
-    # Create tokenizer
-    {:ok, tokenizer} = TokenizerGateway.new()
-
+    # Use the stub tokenizer so tests do not make network requests
+    tokenizer = StubTokenizer.new!()
     broker = Broker.new("test-model", MockGateway)
 
     {:ok, broker: broker, tokenizer: tokenizer}
@@ -113,7 +112,7 @@ defmodule Mojentic.LLM.ChatSessionTest do
       assert session.tools == nil
       assert session.max_context == 32_768
       assert session.temperature == 1.0
-      assert is_struct(session.tokenizer, TokenizerGateway)
+      assert is_struct(session.tokenizer, StubTokenizer)
 
       # Should have system message
       assert length(session.messages) == 1
