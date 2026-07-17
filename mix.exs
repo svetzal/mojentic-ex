@@ -60,7 +60,7 @@ defmodule Mojentic.MixProject do
   defp deps do
     [
       # HTTP client
-      {:req, "~> 0.6.2"},
+      {:req, "~> 0.6"},
 
       # JSON
       {:jason, "~> 1.4"},
