@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated `req` 0.6.3→0.7.1 (constraint broadened to `~> 0.7`).
+
 ## [1.5.0] - 2026-05-21
 
 ### Added
