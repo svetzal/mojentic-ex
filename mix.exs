@@ -74,14 +74,14 @@ defmodule Mojentic.MixProject do
       {:elixir_uuid, "~> 1.2"},
 
       # Tokenization (Hugging Face tokenizers via Rustler NIF)
-      {:tokenizers, "~> 0.4"},
+      {:tokenizers, "~> 0.5"},
 
       # Development and testing
       {:mox, "~> 1.0", only: :test},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
-      {:sobelow, "~> 0.13", only: [:dev, :test], runtime: false},
+      {:sobelow, "~> 0.15", only: [:dev, :test], runtime: false},
 
       # AI Assistant
       {:igniter, "~> 0.8", only: [:dev]},
