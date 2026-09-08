@@ -249,7 +249,7 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
       stream: true
     }
 
-    body = Map.merge(body, adapted_params)
+    body = body |> Map.merge(adapted_params) |> stream_response_format(config.response_format)
 
     if tools && tools != [] && capabilities.supports_tools do
       tool_descriptors = Enum.map(tools, &Tool.descriptor/1)
@@ -258,6 +258,21 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
       body
     end
   end
+
+  defp stream_response_format(body, %{type: :json_object, schema: schema}) when is_map(schema),
+    do:
+      Map.put(body, :response_format, %{
+        type: "json_schema",
+        json_schema: %{name: "response", schema: schema}
+      })
+
+  defp stream_response_format(body, %{type: :json_object}),
+    do: Map.put(body, :response_format, %{type: "json_object"})
+
+  defp stream_response_format(body, %{type: :text}),
+    do: Map.put(body, :response_format, %{type: "text"})
+
+  defp stream_response_format(body, nil), do: body
 
   defp build_headers do
     api_key = get_api_key()

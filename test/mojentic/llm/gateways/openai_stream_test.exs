@@ -85,6 +85,51 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
     refute_receive {:request, _}
   end
 
+  test "single-turn streaming forwards requested JSON mode in the real HTTP body" do
+    serve([event("{}"), finish("stop"), "data: [DONE]\n\n"])
+    config = CompletionConfig.new(response_format: %{type: :json_object})
+
+    assert [{:content, "{}"}, {:completed, _}] =
+             Enum.to_list(
+               Broker.generate_stream_events(
+                 Broker.new("gpt-4o", OpenAI),
+                 [Message.user("JSON")],
+                 config
+               )
+             )
+
+    assert_receive {:request, request}
+    body = request |> String.split("\r\n\r\n", parts: 2) |> List.last() |> Jason.decode!()
+    assert body["response_format"] == %{"type" => "json_object"}
+    refute Map.has_key?(body, "tools")
+  end
+
+  test "legacy streaming forwards an explicit JSON schema without executing tools" do
+    serve([event("{}"), finish("stop"), "data: [DONE]\n\n"])
+    schema = %{"type" => "object", "properties" => %{}}
+    config = CompletionConfig.new(response_format: %{type: :json_object, schema: schema})
+
+    assert ["{}"] =
+             Enum.to_list(
+               Broker.generate_stream(
+                 Broker.new("gpt-4o", OpenAI),
+                 [Message.user("JSON")],
+                 nil,
+                 config
+               )
+             )
+
+    assert_receive {:request, request}
+    body = request |> String.split("\r\n\r\n", parts: 2) |> List.last() |> Jason.decode!()
+
+    assert body["response_format"] == %{
+             "type" => "json_schema",
+             "json_schema" => %{"name" => "response", "schema" => schema}
+           }
+
+    refute Map.has_key?(body, "tools")
+  end
+
   test "complete-looking JSON followed by EOF remains failed and retains content" do
     serve([event("{}")])
     assert [{:content, "{}"}, {:error, :incomplete_stream}] = Enum.to_list(stream())

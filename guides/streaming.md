@@ -71,3 +71,9 @@ provider can emit reasoning for a long time before it emits answer content.
 This event API is currently an Elixir-specific safety extension; the other ports
 retain their existing streaming interfaces. It does not change their parity
 claims.
+
+Set `CompletionConfig.new(response_format: %{type: :json_object})` to request
+JSON object mode in an OpenAI-compatible streaming request. Supplying a `schema`
+map requests `json_schema` mode with that schema. Both streaming APIs forward
+this configuration. This records a provider request, not proof that a particular
+provider enforces the format; validate the returned content locally as well.
