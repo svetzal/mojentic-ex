@@ -327,6 +327,86 @@ defmodule Mojentic.LLM.Broker do
     )
   end
 
+  @doc """
+  Streams one non-executing turn with explicit terminal evidence.
+
+  Yields `{:content, text}`, then `{:completed, metadata}` on proven completion,
+  or `{:error, reason}` on failure. Partial content is not a successful result.
+  No tools are supplied and no retry or recursive generation occurs. Gateways
+  without terminal-event support return an error without making a request.
+  Halting enumeration cancels the underlying stream.
+  """
+  def generate_stream_events(broker, messages, config \\ nil) do
+    config = %{(config || %CompletionConfig{}) | max_tool_iterations: 0}
+
+    Stream.resource(
+      fn -> start_event_stream(broker, messages, config) end,
+      &next_event_stream/1,
+      &close_event_stream/1
+    )
+  end
+
+  defp start_event_stream(broker, messages, config) do
+    if Code.ensure_loaded?(broker.gateway) and
+         function_exported?(broker.gateway, :complete_stream_events, 3) do
+      Tracer.record_llm_call(broker.tracer,
+        model: broker.model,
+        messages: messages,
+        temperature: config.temperature,
+        tools: nil,
+        source: __MODULE__,
+        correlation_id: broker.correlation_id
+      )
+
+      stream = broker.gateway.complete_stream_events(broker.model, messages, config)
+
+      %{
+        continuation: stream_to_continuation(stream),
+        broker: broker,
+        started: System.monotonic_time(:millisecond),
+        content: "",
+        terminal: false
+      }
+    else
+      {:error, :stream_events_unsupported}
+    end
+  end
+
+  defp next_event_stream({:error, reason}), do: {[{:error, reason}], :halt}
+  defp next_event_stream(:halt), do: {:halt, :halt}
+  defp next_event_stream(%{terminal: true} = state), do: {:halt, state}
+
+  defp next_event_stream(state) do
+    case next_element(state.continuation) do
+      {:element, {:content, text} = event, continuation} ->
+        {[event], %{state | continuation: continuation, content: state.content <> text}}
+
+      {:element, {kind, _} = event, continuation} when kind in [:completed, :error] ->
+        record_stream_response(state)
+        {[event], %{state | continuation: continuation, terminal: true}}
+
+      :done ->
+        record_stream_response(state)
+        {[{:error, :incomplete_stream}], %{state | terminal: true}}
+    end
+  end
+
+  defp record_stream_response(state) do
+    broker = state.broker
+
+    Tracer.record_llm_response(broker.tracer,
+      model: broker.model,
+      content: state.content,
+      tool_calls: [],
+      call_duration_ms: System.monotonic_time(:millisecond) - state.started,
+      source: __MODULE__,
+      correlation_id: broker.correlation_id
+    )
+  end
+
+  defp close_event_stream(%{continuation: continuation}), do: continuation.({:halt, nil})
+  defp close_event_stream(_), do: :ok
+
   # Converts a stream into a continuation function that can be stepped through
   # one element at a time using Enumerable.reduce with suspension.
   # This avoids the re-initialization problem with Enum.take/Stream.drop on

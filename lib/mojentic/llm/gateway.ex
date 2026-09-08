@@ -147,4 +147,8 @@ defmodule Mojentic.LLM.Gateway do
               tools :: [module()] | nil,
               config :: CompletionConfig.t()
             ) :: Enumerable.t()
+  @doc "Single-turn content and terminal events. No executable tools are supplied."
+  @callback complete_stream_events(String.t(), [Message.t()], CompletionConfig.t()) ::
+              Enumerable.t()
+  @optional_callbacks complete_stream_events: 3
 end

@@ -47,45 +47,75 @@ defmodule Mojentic.HTTP.ReqClient do
 
     stream =
       Stream.resource(
-        fn ->
-          case Req.post(url,
-                 body: body,
-                 headers: headers,
-                 receive_timeout: timeout,
-                 connect_options: [timeout: timeout],
-                 into: :self
-               ) do
-            {:ok, resp} ->
-              {:streaming, resp}
-
-            {:error, reason} ->
-              {:error, reason}
-          end
-        end,
-        fn
-          {:error, reason} ->
-            {[{:error, reason}], :done}
-
-          :done ->
-            {:halt, :done}
-
-          {:streaming, resp} ->
-            receive do
-              {ref, {:data, data}} when ref == resp.body ->
-                {[{:data, data}], {:streaming, resp}}
-
-              {ref, :done} when ref == resp.body ->
-                {:halt, :done}
-            after
-              timeout ->
-                {[{:error, :timeout}], :done}
-            end
-        end,
-        fn _ -> :ok end
+        fn -> start_stream(url, body, headers, timeout) end,
+        &next_stream/1,
+        &close_stream/1
       )
 
     {:ok, stream}
   end
+
+  defp start_stream(url, body, headers, timeout) do
+    deadline = System.monotonic_time(:millisecond) + timeout
+
+    case Req.post(url,
+           body: body,
+           headers: headers,
+           receive_timeout: timeout,
+           connect_options: [timeout: timeout],
+           retry: false,
+           redirect: false,
+           into: :self
+         ) do
+      {:ok, %{status: status} = response} when status in 200..299 ->
+        {:streaming, response, deadline}
+
+      {:ok, response} ->
+        Req.cancel_async_response(response)
+        {:error, {:http_error, response.status}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp next_stream({:error, reason}), do: {[{:error, reason}], :done}
+  defp next_stream(:done), do: {:halt, :done}
+
+  defp next_stream({:streaming, response, deadline} = state) do
+    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+
+    if remaining == 0 do
+      close_stream(state)
+      {[{:error, :timeout}], :done}
+    else
+      receive_stream(state, response.body.ref, remaining)
+    end
+  end
+
+  defp receive_stream({:streaming, response, _deadline} = state, ref, remaining) do
+    receive do
+      {^ref, _} = message ->
+        case Req.parse_message(response, message) do
+          {:ok, [:done]} ->
+            {:halt, state}
+
+          {:ok, events} ->
+            {Enum.filter(events, &match?({:data, _}, &1)), state}
+
+          {:error, reason} ->
+            close_stream(state)
+            {[{:error, reason}], :done}
+        end
+    after
+      remaining ->
+        close_stream(state)
+        {[{:error, :timeout}], :done}
+    end
+  end
+
+  defp close_stream({:streaming, response, _deadline}), do: Req.cancel_async_response(response)
+  defp close_stream(_), do: :ok
 
   defp flatten_headers(headers) when is_map(headers) do
     Enum.flat_map(headers, fn {key, values} ->

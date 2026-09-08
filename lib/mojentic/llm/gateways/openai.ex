@@ -217,6 +217,28 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
     )
   end
 
+  @impl Gateway
+  def complete_stream_events(model, messages, config) do
+    registry = OpenAIModelRegistry.new()
+    capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
+
+    body =
+      build_stream_request_body(model, messages, nil, config, registry, capabilities)
+      |> Map.put(:stream_options, %{include_usage: true})
+
+    client = http_client()
+
+    Mojentic.LLM.Gateways.OpenAIStream.events(fn ->
+      client.post_stream(
+        "#{get_endpoint()}/chat/completions",
+        Jason.encode!(body),
+        build_headers(),
+        recv_timeout: get_timeout(),
+        timeout: get_timeout()
+      )
+    end)
+  end
+
   defp build_stream_request_body(model, messages, tools, config, registry, capabilities) do
     openai_messages = OpenAIMessagesAdapter.adapt_messages(messages)
     adapted_params = adapt_parameters_for_model(registry, model, config)
@@ -257,7 +279,7 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
            timeout: timeout
          ) do
       {:ok, stream} ->
-        {:stream, stream, "", %{}}
+        {:stream, stream_continuation(stream), "", %{}}
 
       {:error, reason} ->
         {:error, reason}
@@ -268,15 +290,15 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
   defp process_stream_chunk({:error, _reason} = error), do: {[error], :halt}
 
   defp process_stream_chunk({:stream, stream, buffer, tool_calls_acc}) do
-    case Enum.take(stream, 1) do
-      [{:data, chunk}] ->
-        rest = Stream.drop(stream, 1)
+    case stream.({:cont, nil}) do
+      {:suspended, {:data, chunk}, rest} ->
         parse_sse_chunks(chunk, buffer, tool_calls_acc, rest)
 
-      [{:error, _reason} = error] ->
+      {:suspended, {:error, _reason} = error, rest} ->
+        rest.({:halt, nil})
         {[error], :halt}
 
-      [] ->
+      {done, _} when done in [:done, :halted] ->
         handle_stream_end(tool_calls_acc)
     end
   end
@@ -292,6 +314,10 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
     {result, :halt}
   end
 
+  defp stream_continuation(stream),
+    do: &Enumerable.reduce(stream, &1, fn element, _ -> {:suspend, element} end)
+
+  defp cleanup_stream({:stream, continuation, _, _}), do: continuation.({:halt, nil})
   defp cleanup_stream(:halt), do: :ok
   defp cleanup_stream({:error, _}), do: :ok
   defp cleanup_stream(_), do: :ok
