@@ -2,6 +2,10 @@ defmodule Mojentic.LLM.CompletionConfig do
   @moduledoc """
   Configuration for LLM completion requests.
 
+  Set `max_tool_iterations: :infinity` to let the tool loop run until the model
+  returns a final response, the gateway fails, or its caller cancels execution.
+  This removes only the iteration cutoff; provider request limits still apply.
+
   Provides settings for temperature, context window size, and token limits.
 
   ## Examples
@@ -33,7 +37,7 @@ defmodule Mojentic.LLM.CompletionConfig do
           top_k: integer() | nil,
           response_format: response_format() | nil,
           reasoning_effort: reasoning_effort() | nil,
-          max_tool_iterations: pos_integer()
+          max_tool_iterations: non_neg_integer() | :infinity
         }
 
   defstruct temperature: 1.0,

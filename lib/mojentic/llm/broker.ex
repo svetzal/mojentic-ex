@@ -529,7 +529,7 @@ defmodule Mojentic.LLM.Broker do
          _config,
          iterations_remaining
        )
-       when iterations_remaining <= 0 do
+       when is_integer(iterations_remaining) and iterations_remaining <= 0 do
     Logger.error("Max tool iterations exceeded in streaming path")
     {[{:error, :max_tool_iterations_exceeded}], :halt}
   end
@@ -550,7 +550,13 @@ defmodule Mojentic.LLM.Broker do
     final_messages = execute_and_append_tool_results(broker, tool_calls, tools, new_messages)
 
     recursive_stream =
-      do_generate_stream(broker, final_messages, tools, config, iterations_remaining - 1)
+      do_generate_stream(
+        broker,
+        final_messages,
+        tools,
+        config,
+        next_iteration(iterations_remaining)
+      )
 
     recursive_cont = stream_to_continuation(recursive_stream)
     {[], {:recursive, recursive_cont}}
@@ -589,7 +595,7 @@ defmodule Mojentic.LLM.Broker do
         Logger.warning("LLM requested tool calls but no tools provided")
         {:ok, response.content || ""}
 
-      _tools when iterations_remaining <= 0 ->
+      _tools when is_integer(iterations_remaining) and iterations_remaining <= 0 ->
         Logger.error("Max tool iterations exceeded")
         {:error, :max_tool_iterations_exceeded}
 
@@ -611,9 +617,12 @@ defmodule Mojentic.LLM.Broker do
         final_messages =
           append_outcome_messages(broker, response.tool_calls, outcomes, new_messages)
 
-        do_generate(broker, final_messages, tools, config, iterations_remaining - 1)
+        do_generate(broker, final_messages, tools, config, next_iteration(iterations_remaining))
     end
   end
+
+  defp next_iteration(:infinity), do: :infinity
+  defp next_iteration(remaining), do: remaining - 1
 
   defp tool_call_id(tool_call, idx) do
     Map.get(tool_call, :id) || "call-#{idx}"

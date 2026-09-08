@@ -270,6 +270,32 @@ defmodule Mojentic.LLM.BrokerTest do
       assert {:error, {:http_error, 500}} = Broker.generate(broker, messages)
     end
 
+    test "an uncapped tool loop reaches its natural final response" do
+      broker = Broker.new("test-model", MockGateway)
+      Process.put(:call_count, 0)
+
+      Process.put(:mock_response, fn ->
+        count = Process.get(:call_count)
+        Process.put(:call_count, count + 1)
+
+        if count < 25 do
+          {:ok,
+           %GatewayResponse{
+             tool_calls: [%ToolCall{id: "call-#{count}", name: "mock_tool", arguments: %{}}]
+           }}
+        else
+          {:ok, %GatewayResponse{content: "Finished naturally"}}
+        end
+      end)
+
+      assert {:ok, "Finished naturally"} =
+               Broker.generate(broker, [Message.user("Continue")], [MockTool], %CompletionConfig{
+                 max_tool_iterations: :infinity
+               })
+
+      assert Process.get(:call_count) == 26
+    end
+
     test "caps tool-call recursion at max_tool_iterations" do
       broker = Broker.new("test-model", MockGateway)
       messages = [Message.user("Hello")]
@@ -615,10 +641,11 @@ defmodule Mojentic.LLM.BrokerTest do
 
           tool_call = %ToolCall{id: "call-1", name: "mock_tool", arguments: %{}}
 
-          # Always return a tool call — never converges
-          Stream.map([[tool_call]], fn tool_calls ->
-            {:tool_calls, tool_calls}
-          end)
+          if Process.get(:stream_stop_after) == count do
+            Stream.map(["Finished naturally"], &{:content, &1})
+          else
+            Stream.map([[tool_call]], &{:tool_calls, &1})
+          end
         end
       end
 
@@ -639,6 +666,18 @@ defmodule Mojentic.LLM.BrokerTest do
       # With max_tool_iterations: 3, the gateway is called 4 times:
       # 3 tool-execution rounds + 1 final call that detects cap exhaustion.
       assert Process.get(:stream_call_count) == 4
+      Process.put(:stream_call_count, 0)
+      Process.put(:stream_stop_after, 25)
+
+      result =
+        Broker.generate_stream(broker, messages, [MockTool], %{
+          config
+          | max_tool_iterations: :infinity
+        })
+        |> Enum.to_list()
+
+      assert "Finished naturally" in result
+      assert Process.get(:stream_call_count) == 26
     end
   end
 end
