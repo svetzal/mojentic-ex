@@ -21,7 +21,9 @@ defmodule Mojentic.LLM.Tools.SerialToolRunner do
   def run_batch(calls, tools, ctx) do
     Enum.map(calls, fn call ->
       if ctx_cancelled?(ctx) do
-        aborted_outcome(call)
+        outcome = aborted_outcome(call)
+        ToolInvocation.notify_complete(ctx, outcome)
+        outcome
       else
         ToolInvocation.invoke(call, tools, ctx)
       end

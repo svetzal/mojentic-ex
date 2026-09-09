@@ -58,40 +58,46 @@ defmodule Mojentic.LLM.Tools.ParallelToolRunner do
 
   defp do_run(%__MODULE__{} = runner, calls, tools, ctx) do
     calls
-    |> Enum.with_index()
     |> Task.async_stream(
-      fn {call, _idx} -> run_one(call, tools, ctx) end,
+      fn call -> run_one(call, tools, ctx) end,
       max_concurrency: runner.max_concurrency,
       timeout: runner.timeout,
       ordered: true,
       on_timeout: :kill_task
     )
+    |> Enum.zip(calls)
     |> Enum.map(fn
-      {:ok, outcome} -> outcome
-      {:exit, reason} -> exit_outcome(reason)
+      {{:ok, outcome}, _call} ->
+        outcome
+
+      {{:exit, reason}, call} ->
+        outcome = exit_outcome(call, reason)
+        ToolInvocation.notify_complete(ctx, outcome)
+        outcome
     end)
   end
 
   defp run_one(%ToolCallExecution{} = call, tools, ctx) do
     if RunContext.cancelled?(ctx || %RunContext{}) do
-      %ToolCallOutcome{
+      outcome = %ToolCallOutcome{
         id: call.id,
         name: call.name,
         ok?: false,
         error: :cancelled,
         duration_ms: 0
       }
+
+      ToolInvocation.notify_complete(ctx, outcome)
+      outcome
     else
       ToolInvocation.invoke(call, tools, ctx)
     end
   end
 
-  defp exit_outcome(reason) do
-    # Best-effort; Task.async_stream loses the call_id on timeout so we
-    # surface a placeholder. Callers can correlate by position.
+  defp exit_outcome(call, reason) do
     %ToolCallOutcome{
-      id: "<lost>",
-      name: "<lost>",
+      id: call.id,
+      name: call.name,
       ok?: false,
       error: {:task_exit, reason},
       duration_ms: 0

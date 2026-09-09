@@ -53,6 +53,26 @@ defmodule Mojentic.LLM.Gateways.OpenAIToolRoundtripTest do
     def matches?(name), do: name == "get_weather"
   end
 
+  test "native single response preserves provider metadata and does not execute tools" do
+    fixture = File.read!(Path.join(@fixtures_dir, "response-1-tool-call.json"))
+    expected = Jason.decode!(fixture)
+
+    expect(Mojentic.HTTPMock, :post, fn _, _, _, _ ->
+      {:ok, %{status_code: 200, body: fixture}}
+    end)
+
+    {:ok, response} =
+      Broker.generate_response(Broker.new("gpt-4o", OpenAI), [Message.user("weather")], [
+        GetWeatherTool
+      ])
+
+    assert response.model == expected["model"]
+    assert response.usage == expected["usage"]
+    assert response.finish_reason == "tool_calls"
+    assert [%{id: "call_fixture_get_weather"}] = response.tool_calls
+    refute_received {:weather_tool_called, _}
+  end
+
   describe "tool-call round-trip via Broker.generate/4" do
     test "correctly threads user→assistant(tool_calls)→tool messages through two HTTP calls" do
       test_pid = self()

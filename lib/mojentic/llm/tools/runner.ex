@@ -32,4 +32,13 @@ defmodule Mojentic.LLM.Tools.Runner do
               tools :: [module() | struct()],
               context :: RunContext.t() | nil
             ) :: [ToolCallOutcome.t()]
+
+  @doc "Dispatch using a runner module or a configured runner struct."
+  def run_batch(runner, calls, tools, context \\ nil)
+
+  def run_batch(module, calls, tools, context) when is_atom(module),
+    do: module.run_batch(calls, tools, context)
+
+  def run_batch(%module{} = runner, calls, tools, context),
+    do: module.run_with(runner, calls, tools, context)
 end

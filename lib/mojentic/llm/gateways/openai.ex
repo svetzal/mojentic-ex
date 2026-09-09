@@ -426,7 +426,7 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
 
   defp parse_response(body) do
     case Jason.decode(body) do
-      {:ok, %{"choices" => [%{"message" => message} | _]}} ->
+      {:ok, %{"choices" => [%{"message" => message} = choice | _]} = response} ->
         content = Map.get(message, "content")
 
         tool_calls =
@@ -438,7 +438,10 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
         {:ok,
          %GatewayResponse{
            content: content,
-           tool_calls: tool_calls
+           tool_calls: tool_calls,
+           model: response["model"],
+           usage: response["usage"],
+           finish_reason: choice["finish_reason"]
          }}
 
       _ ->

@@ -47,6 +47,7 @@ defmodule Mojentic.LLM.Broker do
   alias Mojentic.LLM.Gateway
   alias Mojentic.LLM.GatewayResponse
   alias Mojentic.LLM.Message
+  alias Mojentic.LLM.Tools.Runner
   alias Mojentic.LLM.Tools.SerialToolRunner
   alias Mojentic.LLM.Tools.Tool
   alias Mojentic.LLM.Tools.ToolCallExecution
@@ -67,7 +68,8 @@ defmodule Mojentic.LLM.Broker do
     :gateway,
     :correlation_id,
     tracer: Tracer.null_tracer(),
-    tool_runner: SerialToolRunner
+    tool_runner: SerialToolRunner,
+    tool_context: nil
   ]
 
   @doc """
@@ -100,7 +102,8 @@ defmodule Mojentic.LLM.Broker do
       gateway: gateway,
       correlation_id: Keyword.get(opts, :correlation_id) || generate_correlation_id(),
       tracer: Keyword.get(opts, :tracer, Tracer.null_tracer()),
-      tool_runner: Keyword.get(opts, :tool_runner, SerialToolRunner)
+      tool_runner: Keyword.get(opts, :tool_runner, SerialToolRunner),
+      tool_context: Keyword.get(opts, :tool_context)
     }
   end
 
@@ -146,7 +149,9 @@ defmodule Mojentic.LLM.Broker do
     do_generate(broker, messages, tools, config, config.max_tool_iterations)
   end
 
-  defp do_generate(broker, messages, tools, config, iterations_remaining) do
+  @doc "Returns one native response without executing tools or changing caller context."
+  def generate_response(broker, messages, tools \\ nil, config \\ nil) do
+    config = config || %CompletionConfig{}
     # Record LLM call in tracer
     tools_for_tracer = if tools, do: Enum.map(tools, &tool_descriptor/1), else: nil
 
@@ -181,6 +186,12 @@ defmodule Mojentic.LLM.Broker do
         correlation_id: broker.correlation_id
       )
 
+      {:ok, response}
+    end
+  end
+
+  defp do_generate(broker, messages, tools, config, iterations_remaining) do
+    with {:ok, response} <- generate_response(broker, messages, tools, config) do
       case response.tool_calls do
         [] ->
           {:ok, response.content || ""}
@@ -578,7 +589,13 @@ defmodule Mojentic.LLM.Broker do
         ToolCallExecution.new(tool_call_id(tc, idx), tc.name, tc.arguments)
       end)
 
-    outcomes = broker.tool_runner.run_batch(executions, tools)
+    outcomes =
+      Runner.run_batch(
+        broker.tool_runner,
+        executions,
+        tools,
+        broker.tool_context
+      )
 
     append_outcome_messages(broker, tool_calls, outcomes, messages)
   end
@@ -612,7 +629,13 @@ defmodule Mojentic.LLM.Broker do
             ToolCallExecution.new(id, tool_call.name, tool_call.arguments)
           end)
 
-        outcomes = broker.tool_runner.run_batch(executions, tools)
+        outcomes =
+          Runner.run_batch(
+            broker.tool_runner,
+            executions,
+            tools,
+            broker.tool_context
+          )
 
         final_messages =
           append_outcome_messages(broker, response.tool_calls, outcomes, new_messages)

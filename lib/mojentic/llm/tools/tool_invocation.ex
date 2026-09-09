@@ -40,7 +40,7 @@ defmodule Mojentic.LLM.Tools.ToolInvocation do
           execute(tool, call, ctx, start)
       end
 
-    fire_on_complete(ctx, outcome)
+    notify_complete(ctx, outcome)
     outcome
   end
 
@@ -110,7 +110,7 @@ defmodule Mojentic.LLM.Tools.ToolInvocation do
 
   defp fire_on_start(_, _), do: :ok
 
-  defp fire_on_complete(%RunContext{on_call_complete: fun}, outcome) when is_function(fun, 1) do
+  def notify_complete(%RunContext{on_call_complete: fun}, outcome) when is_function(fun, 1) do
     try do
       fun.(outcome)
     rescue
@@ -118,5 +118,5 @@ defmodule Mojentic.LLM.Tools.ToolInvocation do
     end
   end
 
-  defp fire_on_complete(_, _), do: :ok
+  def notify_complete(_, _), do: :ok
 end

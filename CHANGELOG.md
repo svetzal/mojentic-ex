@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add a single-response broker API for caller-owned context and native tool requests.
+- Support explicit unlimited tool rounds while retaining finite defaults.
+- The broker accepts configured runner structs and a `tool_context`. Timeout and cancelled outcomes retain call identity and notify completion observers.
+
 ### Changed
 
 - Updated `req` 0.6.3→0.7.1 (constraint broadened to `~> 0.7`).
@@ -114,6 +118,7 @@ This release marks the first stable version of Mojentic for Elixir, released sim
 ### Added
 
 #### Layer 1: LLM Integration
+
 - `Mojentic.LLM.Broker` - Main interface for LLM interactions with recursive tool calling
 - `Mojentic.LLM.Gateway` behaviour - Abstract interface for LLM providers
 - `Mojentic.LLM.Gateways.Ollama` - Full Ollama implementation with streaming
@@ -123,12 +128,14 @@ This release marks the first stable version of Mojentic for Elixir, released sim
 - `Mojentic.LLM.EmbeddingsGateway` - Vector embeddings support
 
 #### Layer 2: Tracer System
+
 - `Mojentic.Tracer.System` - GenServer-based event recording
 - `Mojentic.Tracer.EventStore` - Event persistence and querying
 - `Mojentic.Tracer.Events` - LLM call, response, and tool events
 - Correlation ID tracking across requests
 
 #### Layer 3: Agent System
+
 - `Mojentic.Agents.BaseLLMAgent` - LLM-enabled agent foundation
 - `Mojentic.Agents.AsyncLLMAgent` - Async agent with GenServer
 - `Mojentic.Agents.AsyncAggregatorAgent` - Result aggregation
@@ -140,6 +147,7 @@ This release marks the first stable version of Mojentic for Elixir, released sim
 - ReAct pattern implementation
 
 #### Tools
+
 - `Mojentic.LLM.Tools.DateResolver` - Natural language date parsing
 - `Mojentic.LLM.Tools.CurrentDatetime` - Current time access
 - `Mojentic.LLM.Tools.ToolWrapper` - Agent as tool delegation
@@ -149,6 +157,7 @@ This release marks the first stable version of Mojentic for Elixir, released sim
 - `Mojentic.LLM.Tools.WebSearch` - Organic web search
 
 #### Infrastructure
+
 - 625 tests with 81.56% coverage
 - Zero Credo warnings
 - ExDoc documentation
