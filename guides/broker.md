@@ -425,3 +425,16 @@ The broker accepts configured runner structs and a `tool_context`. Timeout and c
 Native responses preserve the fields supplied by the gateway. Missing provider
 usage or termination evidence must remain unknown; configured model names and
 text length are not substitutes for reported metadata.
+
+## Reported usage in response traces
+
+`LLMResponseTracerEvent` retains the gateway's optional `usage`, `provider_model`,
+`finish_reason`, and `metadata` fields for ordinary and structured responses.
+The event's `model` remains the configured request model. Missing provider usage
+stays `nil`; the tracer does not estimate tokens from message text.
+
+Use a response trace to recover usage omitted by a downstream receipt projection.
+A receipt and its matching response trace describe the same call: do not add them
+together. Provider metadata can also distinguish whole-call totals from usage for
+only the last internal model response. Streaming gateways that do not report
+usage still produce traces with unknown usage.

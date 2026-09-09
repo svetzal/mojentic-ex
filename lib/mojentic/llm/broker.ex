@@ -179,6 +179,10 @@ defmodule Mojentic.LLM.Broker do
       # Record LLM response in tracer
       Tracer.record_llm_response(broker.tracer,
         model: broker.model,
+        usage: response.usage,
+        provider_model: response.model,
+        finish_reason: response.finish_reason,
+        metadata: response.metadata,
         content: response.content || "",
         tool_calls: response.tool_calls,
         call_duration_ms: call_duration_ms,
@@ -273,6 +277,10 @@ defmodule Mojentic.LLM.Broker do
       # Record LLM response in tracer with object representation
       Tracer.record_llm_response(broker.tracer,
         model: broker.model,
+        usage: response.usage,
+        provider_model: response.model,
+        finish_reason: response.finish_reason,
+        metadata: response.metadata,
         content: inspect(response.object),
         tool_calls: [],
         call_duration_ms: call_duration_ms,

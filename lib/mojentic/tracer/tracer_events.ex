@@ -83,7 +83,8 @@ end
 
 defmodule Mojentic.Tracer.TracerEvents.LLMResponseTracerEvent do
   @moduledoc """
-  Records when an LLM responds to a call.
+  Records when an LLM responds to a call. Optional usage and provider metadata
+  retain reported evidence unchanged; absent usage is nil, never an estimate.
   """
 
   defstruct [
@@ -93,7 +94,11 @@ defmodule Mojentic.Tracer.TracerEvents.LLMResponseTracerEvent do
     :model,
     :content,
     :tool_calls,
-    :call_duration_ms
+    :call_duration_ms,
+    :usage,
+    :provider_model,
+    :finish_reason,
+    :metadata
   ]
 
   def printable_summary(%__MODULE__{} = event) do

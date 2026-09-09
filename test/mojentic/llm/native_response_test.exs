@@ -59,6 +59,32 @@ defmodule Mojentic.LLM.NativeResponseTest do
     refute_received {:gateway_tools, _}
   end
 
+  defmodule MeteredGateway do
+    def complete(_, _, _, _) do
+      {:ok,
+       %GatewayResponse{
+         content: "done",
+         usage: %{"input_tokens" => 123, "output_tokens" => 4},
+         model: "reported-model",
+         finish_reason: "stop",
+         metadata: %{usage_provenance: "provider"}
+       }}
+    end
+  end
+
+  test "response trace preserves provider usage independently of the returned receipt" do
+    alias Mojentic.Tracer.TracerEvents.LLMResponseTracerEvent
+    tracer = start_supervised!(Mojentic.Tracer.TracerSystem)
+    broker = Broker.new("configured-model", MeteredGateway, tracer: tracer)
+    assert {:ok, response} = Broker.generate_response(broker, [Message.user("hello")])
+    [event] = Mojentic.Tracer.get_events(tracer, event_type: LLMResponseTracerEvent)
+    assert event.usage == response.usage
+    assert event.provider_model == "reported-model"
+    assert event.model == "configured-model"
+    assert event.finish_reason == "stop"
+    assert event.metadata == response.metadata
+  end
+
   test "broker accepts a configured runner and forwards completion context" do
     owner = self()
     context = RunContext.new(on_call_complete: &send(owner, {:outcome, &1}))

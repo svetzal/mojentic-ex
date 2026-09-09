@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Preserve reported usage, provider model, finish reason and metadata in ordinary
+  and structured broker response traces. Missing provider usage remains unknown.
+
 - Add a single-response broker API for caller-owned context and native tool requests.
 - Support explicit unlimited tool rounds while retaining finite defaults.
 - The broker accepts configured runner structs and a `tool_context`. Timeout and cancelled outcomes retain call identity and notify completion observers.

@@ -140,6 +140,9 @@ defmodule Mojentic.Tracer.TracerSystem do
   @doc """
   Records an LLM response event.
 
+  Optional `:usage`, `:provider_model`, `:finish_reason`, and `:metadata` preserve
+  gateway evidence unchanged. Missing usage remains nil.
+
   ## Options
 
   - `:model` - The LLM model that responded (required)
@@ -407,6 +410,10 @@ defmodule Mojentic.Tracer.TracerSystem do
           model: Keyword.fetch!(opts, :model),
           content: Keyword.fetch!(opts, :content),
           tool_calls: Keyword.get(opts, :tool_calls),
+          usage: Keyword.get(opts, :usage),
+          provider_model: Keyword.get(opts, :provider_model),
+          finish_reason: Keyword.get(opts, :finish_reason),
+          metadata: Keyword.get(opts, :metadata),
           call_duration_ms: Keyword.get(opts, :call_duration_ms)
         }
 
