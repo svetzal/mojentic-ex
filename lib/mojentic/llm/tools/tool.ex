@@ -154,7 +154,8 @@ defmodule Mojentic.LLM.Tools.Tool do
   Returns the descriptor for a tool.
 
   Handles both module-based tools (with descriptor/0) and
-  struct-based tools (with descriptor/1).
+  struct-based tools (with descriptor/1). The struct module is loaded before
+  checking for an instance descriptor, including on the first request.
 
   ## Examples
 
@@ -172,6 +173,7 @@ defmodule Mojentic.LLM.Tools.Tool do
   end
 
   def descriptor(%module{} = tool) do
+    Code.ensure_loaded!(module)
     # Struct-based tool: try descriptor/1, fall back to descriptor/0
     if function_exported?(module, :descriptor, 1) do
       module.descriptor(tool)
