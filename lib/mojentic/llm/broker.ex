@@ -198,7 +198,14 @@ defmodule Mojentic.LLM.Broker do
     with {:ok, response} <- generate_response(broker, messages, tools, config) do
       case response.tool_calls do
         [] ->
-          {:ok, response.content || ""}
+          finish_generation(
+            broker,
+            messages,
+            response,
+            tools,
+            config,
+            iterations_remaining
+          )
 
         _tool_calls ->
           handle_tool_calls(
@@ -212,6 +219,40 @@ defmodule Mojentic.LLM.Broker do
       end
     end
   end
+
+  defp finish_generation(_broker, _messages, response, _tools, _config, _iterations_remaining)
+       when response.finish_reason in [nil, "stop"],
+       do: {:ok, response.content || ""}
+
+  defp finish_generation(
+         broker,
+         messages,
+         %{finish_reason: "length"} = response,
+         tools,
+         config,
+         iterations_remaining
+       ) do
+    Logger.warning(
+      "LLM response reached its completion-token limit; continuing the same conversation"
+    )
+
+    continuation =
+      Message.user(
+        "The provider ended the previous response because it reached its completion-token limit. " <>
+          "Continue from the existing conversation and finish the requested work."
+      )
+
+    do_generate(
+      broker,
+      messages ++ [build_assistant_message(response), continuation],
+      tools,
+      config,
+      iterations_remaining
+    )
+  end
+
+  defp finish_generation(_broker, _messages, response, _tools, _config, _iterations_remaining),
+    do: {:error, {:incomplete_completion, response.finish_reason}}
 
   @doc """
   Generates structured object response from the LLM.

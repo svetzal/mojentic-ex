@@ -161,6 +161,47 @@ defmodule Mojentic.LLM.BrokerTest do
       assert {:ok, ""} = Broker.generate(broker, messages)
     end
 
+    test "continues the same conversation after a length-limited response" do
+      broker = Broker.new("test-model", MockGateway)
+      messages = [Message.user("Implement the feature")]
+      Process.put(:call_count, 0)
+
+      Process.put(:mock_response, fn ->
+        count = Process.get(:call_count)
+        Process.put(:call_count, count + 1)
+
+        if count == 0 do
+          {:ok,
+           %GatewayResponse{
+             content: "Partial reasoning",
+             finish_reason: "length"
+           }}
+        else
+          {:ok, %GatewayResponse{content: "Finished work", finish_reason: "stop"}}
+        end
+      end)
+
+      assert {:ok, "Finished work"} = Broker.generate(broker, messages)
+      assert Process.get(:call_count) == 2
+
+      continued = Process.get(:last_complete_call).messages
+      assert Enum.map(continued, & &1.role) == [:user, :assistant, :user]
+      assert Enum.at(continued, 1).content == "Partial reasoning"
+      assert Enum.at(continued, 2).content =~ "completion-token limit"
+    end
+
+    test "returns a provider completion reason that cannot be continued" do
+      broker = Broker.new("test-model", MockGateway)
+
+      Process.put(
+        :mock_response,
+        {:ok, %GatewayResponse{content: "", finish_reason: "content_filter"}}
+      )
+
+      assert {:error, {:incomplete_completion, "content_filter"}} =
+               Broker.generate(broker, [Message.user("Hello")])
+    end
+
     test "accepts custom config" do
       broker = Broker.new("test-model", MockGateway)
       messages = [Message.user("Hello")]
