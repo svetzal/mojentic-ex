@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Updated `req` 0.6.3→0.7.1 (constraint broadened to `~> 0.7`).
+- Updated locked `mint` 1.10.0→1.10.1 (and `hpax`) for EEF-CVE-2026-82672, an
+  unvalidated chunk-size line tail in the HTTP/1 client.
 
 ## [1.5.0] - 2026-05-21
 
