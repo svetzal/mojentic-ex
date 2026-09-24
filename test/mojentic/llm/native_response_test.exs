@@ -167,6 +167,17 @@ defmodule Mojentic.LLM.NativeResponseTest do
       end
     end
 
+    test "a gateway without event support fails before any request or trace" do
+      tracer = start_supervised!(Mojentic.Tracer.TracerSystem, id: make_ref())
+      broker = Broker.new("configured-model", Gateway, tracer: tracer)
+
+      assert [{:error, :stream_events_unsupported}] =
+               broker |> Broker.generate_stream_events([Message.user("hi")]) |> Enum.to_list()
+
+      refute_received {:gateway_tools, _}
+      assert [] = Mojentic.Tracer.get_events(tracer, event_type: LLMCallTracerEvent)
+    end
+
     defp trace_stream(scenario) do
       tracer = start_supervised!(Mojentic.Tracer.TracerSystem, id: make_ref())
       broker = Broker.new("configured-model", EventGateway, tracer: tracer)

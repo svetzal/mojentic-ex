@@ -31,6 +31,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
   alias Mojentic.LLM.Gateway
   alias Mojentic.LLM.GatewayResponse
+  alias Mojentic.LLM.Gateways.OllamaStream
   alias Mojentic.LLM.Message
   alias Mojentic.LLM.ToolCall
   alias Mojentic.LLM.Tools.Tool
@@ -181,20 +182,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   def complete_stream(model, messages, tools, config) do
     host = get_host()
     timeout = get_timeout()
-
-    ollama_messages = adapt_messages(messages)
-    options = extract_options(config)
-
-    body = %{
-      model: model,
-      messages: ollama_messages,
-      options: options,
-      stream: true
-    }
-
-    body = maybe_add_tools(body, tools)
-    body = maybe_add_format(body, config)
-    body = maybe_add_thinking(body, config)
+    body = stream_request_body(model, messages, tools, config)
 
     Stream.resource(
       fn ->
@@ -246,6 +234,49 @@ defmodule Mojentic.LLM.Gateways.Ollama do
         _ -> :ok
       end
     )
+  end
+
+  @doc """
+  Streams one non-executing turn as content and terminal events.
+
+  Yields `{:content, text}` events, then exactly one terminal event. Completion
+  requires a final frame with `done: true` and a `done_reason` of `"stop"`,
+  which yields `{:completed, %{finish_reason:, usage:, model:}}`. Any other
+  `done_reason` yields `{:error, {:incomplete_completion, evidence}}` with the
+  same evidence. End of stream without a final frame is
+  `{:error, :incomplete_stream}`. Native tool calls, provider error frames and
+  malformed frames are errors. The request supplies no tools and makes one HTTP
+  request; halting enumeration cancels it. Use it through
+  `Mojentic.LLM.Broker.generate_stream_events/3`.
+  """
+  @impl Gateway
+  def complete_stream_events(model, messages, config) do
+    body = stream_request_body(model, messages, nil, config)
+    client = http_client()
+    host = get_host()
+    timeout = get_timeout()
+
+    OllamaStream.events(fn ->
+      client.post_stream(
+        "#{host}/api/chat",
+        Jason.encode!(body),
+        [{"content-type", "application/json"}],
+        recv_timeout: timeout,
+        timeout: timeout
+      )
+    end)
+  end
+
+  defp stream_request_body(model, messages, tools, config) do
+    %{
+      model: model,
+      messages: adapt_messages(messages),
+      options: extract_options(config),
+      stream: true
+    }
+    |> maybe_add_tools(tools)
+    |> maybe_add_format(config)
+    |> maybe_add_thinking(config)
   end
 
   @doc """

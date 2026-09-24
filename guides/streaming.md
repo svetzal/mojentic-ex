@@ -45,32 +45,65 @@ For integration with Phoenix LiveView or other async processes, you can consume
 the stream asynchronously. The stream implements the `Enumerable` protocol, so
 it works with standard Elixir stream functions.
 
-## Single-turn completion evidence
+## Single-turn streaming with terminal completion evidence
 
 Use `Broker.generate_stream_events(broker, messages, config)` when incomplete
-output must never authorize an action. This additive Elixir API yields content
-as `{:content, text}` and requires a terminal `{:completed, metadata}` event.
-The OpenAI gateway requires both `finish_reason: "stop"` and `[DONE]`. Metadata
-includes the provider model and token usage when supplied. An error or EOF
-without completion is a failed turn, even if the partial content is valid JSON.
+output must never authorize an action. It streams one turn and yields:
+
+- `{:content, text}`: visible assistant content, in order.
+- `{:completed, %{finish_reason: finish_reason, usage: usage, model: model}}`:
+  terminal success. `usage` and `model` are `nil` when the provider does not
+  report them.
+- `{:error, reason}`: terminal failure.
+
+Exactly one terminal event ends every stream. Nothing follows it.
+
+```elixir
+broker
+|> Broker.generate_stream_events(messages)
+|> Enum.reduce_while("", fn
+  {:content, text}, acc -> {:cont, acc <> text}
+  {:completed, _evidence}, acc -> {:halt, {:ok, acc}}
+  {:error, reason}, _acc -> {:halt, {:error, reason}}
+end)
+```
+
+The OpenAI and Ollama gateways support this API. Their completion rules:
+
+| Outcome | OpenAI-compatible | Ollama |
+| ------- | ----------------- | ------ |
+| `{:completed, evidence}` | `finish_reason: "stop"` and `data: [DONE]` | final frame with `done: true` and `done_reason: "stop"` |
+| `{:error, {:incomplete_completion, evidence}}` | `[DONE]` with any other finish reason | any other `done_reason` |
+| `{:error, :incomplete_stream}` | end of stream without `[DONE]` | end of stream without a `done: true` frame |
+| `{:error, {:provider_error, error}}` | an `error` event | an `error` frame |
+| `{:error, :unexpected_tool_calls}` | a tool-call delta | a message with `tool_calls` |
+| `{:error, :invalid_stream_event}` | a malformed event | a malformed frame |
+
+`evidence` for an incomplete completion has the same shape as for completion:
+finish reason, usage and provider model. Transport errors such as
+`{:http_error, status}` and `:timeout` are also terminal errors.
+
+Content yielded before an error is evidence, not a result. A failed turn stays
+failed even if the partial content is valid JSON.
 
 This API supplies no executable tools, forces zero tool iterations, and performs
-no retry. Native tool requests are rejected. Existing `generate_stream` remains
-a string-stream API for interactive consumers; it does not provide this terminal
-proof. Gateways that do not implement event streaming fail before dispatch.
+no retry or recursion. It makes one HTTP request. Halting enumeration, or
+stopping the consuming process, cancels that request. A gateway that does not
+implement `complete_stream_events/3` yields
+`{:error, :stream_events_unsupported}` before it sends any request.
 
-Keep received content as evidence on failure, and halt enumeration to cancel the
-request. The Req transport uses one HTTP request, disables redirects and
-retries,
-and applies its configured timeout as an absolute streaming deadline.
-Applications
-must also bound the entire call, including connection initialization; a
-streaming
-provider can emit reasoning for a long time before it emits answer content.
+The broker records the call in the tracer when the request starts. It records
+the response, with the content received so far and the terminal evidence, when
+the stream reaches its terminal event. See the broker guide for the trace
+fields.
 
-This event API is currently an Elixir-specific safety extension; the other ports
-retain their existing streaming interfaces. It does not change their parity
-claims.
+The Req transport disables redirects and retries, and applies its configured
+timeout as an absolute streaming deadline. Applications must also bound the
+entire call, including connection initialization; a streaming provider can emit
+reasoning for a long time before it emits answer content.
+
+Existing `generate_stream` remains a string-stream API for interactive
+consumers. It does not provide this terminal proof.
 
 ## Structured output in streaming requests
 

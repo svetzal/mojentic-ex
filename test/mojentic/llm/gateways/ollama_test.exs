@@ -1005,6 +1005,21 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
         assert_format(body, expected)
       end
     end
+
+    test "single-turn event requests carry the configured format and omit it for text" do
+      for {format, expected} <- @formats do
+        expect_stream_body()
+
+        "qwen3:32b"
+        |> Ollama.complete_stream_events([Message.user("hi")], format_config(format))
+        |> Enum.to_list()
+
+        assert_received {:body, body}
+        assert_format(body, expected)
+        assert body["stream"] == true
+        refute Map.has_key?(body, "tools")
+      end
+    end
   end
 
   describe "response evidence" do

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The Ollama gateway implements `complete_stream_events/3`, so
+  `Broker.generate_stream_events/3` works with Ollama as well as OpenAI.
+  Completion requires a final frame with `done: true` and `done_reason: "stop"`;
+  any other `done_reason` is `{:incomplete_completion, evidence}`, end of stream
+  without a final frame is `:incomplete_stream`, and native tool calls are
+  `:unexpected_tool_calls`. One HTTP request; halting enumeration cancels it.
+
 - The OpenAI gateway forwards `CompletionConfig.response_format` in non-streaming
   `complete/4` requests, as it already did in streaming requests. The Ollama
   gateway already forwarded `format` in both. Forwarding records the request; it
