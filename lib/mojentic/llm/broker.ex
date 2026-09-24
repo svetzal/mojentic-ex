@@ -409,20 +409,25 @@ defmodule Mojentic.LLM.Broker do
         {[event], %{state | continuation: continuation, content: state.content <> text}}
 
       {:element, {kind, _} = event, continuation} when kind in [:completed, :error] ->
-        record_stream_response(state)
+        record_stream_response(state, event)
         {[event], %{state | continuation: continuation, terminal: true}}
 
       :done ->
-        record_stream_response(state)
-        {[{:error, :incomplete_stream}], %{state | terminal: true}}
+        event = {:error, :incomplete_stream}
+        record_stream_response(state, event)
+        {[event], %{state | terminal: true}}
     end
   end
 
-  defp record_stream_response(state) do
+  defp record_stream_response(state, terminal_event) do
     broker = state.broker
+    evidence = terminal_evidence(terminal_event)
 
     Tracer.record_llm_response(broker.tracer,
       model: broker.model,
+      usage: evidence[:usage],
+      provider_model: evidence[:model],
+      finish_reason: evidence[:finish_reason],
       content: state.content,
       tool_calls: [],
       call_duration_ms: System.monotonic_time(:millisecond) - state.started,
@@ -430,6 +435,12 @@ defmodule Mojentic.LLM.Broker do
       correlation_id: broker.correlation_id
     )
   end
+
+  # Only completion and incomplete-completion terminals carry provider evidence.
+  # Every other failure leaves usage, provider model and finish reason unknown.
+  defp terminal_evidence({:completed, evidence}), do: evidence
+  defp terminal_evidence({:error, {:incomplete_completion, evidence}}), do: evidence
+  defp terminal_evidence(_), do: %{}
 
   defp close_event_stream(%{continuation: continuation}), do: continuation.({:halt, nil})
   defp close_event_stream(_), do: :ok

@@ -1007,6 +1007,76 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
     end
   end
 
+  describe "response evidence" do
+    @reported %{
+      "model" => "qwen3:32b",
+      "message" => %{"role" => "assistant", "content" => "{\"answer\":\"4\"}"},
+      "done" => true,
+      "done_reason" => "stop",
+      "prompt_eval_count" => 26,
+      "eval_count" => 290,
+      "total_duration" => 5_191_566_416,
+      "load_duration" => 2_154_458,
+      "prompt_eval_duration" => 383_809_000,
+      "eval_duration" => 4_799_921_000
+    }
+
+    @expected_metadata %{
+      "total_duration" => 5_191_566_416,
+      "load_duration" => 2_154_458,
+      "prompt_eval_duration" => 383_809_000,
+      "eval_duration" => 4_799_921_000
+    }
+
+    test "ordinary responses carry reported usage, model, done reason and timings" do
+      expect_completion(@reported)
+
+      assert {:ok, response} =
+               Ollama.complete("qwen3:32b", [Message.user("hi")], nil, CompletionConfig.new())
+
+      assert response.usage == %{"prompt_eval_count" => 26, "eval_count" => 290}
+      assert response.model == "qwen3:32b"
+      assert response.finish_reason == "stop"
+      assert response.metadata == @expected_metadata
+    end
+
+    test "structured responses carry reported usage, model, done reason and timings" do
+      expect_completion(@reported)
+
+      assert {:ok, response} =
+               Ollama.complete_object(
+                 "qwen3:32b",
+                 [Message.user("hi")],
+                 %{"type" => "object"},
+                 CompletionConfig.new()
+               )
+
+      assert response.object == %{"answer" => "4"}
+      assert response.usage == %{"prompt_eval_count" => 26, "eval_count" => 290}
+      assert response.model == "qwen3:32b"
+      assert response.finish_reason == "stop"
+      assert response.metadata == @expected_metadata
+    end
+
+    test "responses without reported counts leave usage unknown" do
+      expect_completion(%{"message" => %{"content" => "{}"}, "done" => true})
+
+      assert {:ok, response} =
+               Ollama.complete("qwen3:32b", [Message.user("hi")], nil, CompletionConfig.new())
+
+      assert response.usage == nil
+      assert response.model == nil
+      assert response.finish_reason == nil
+      assert response.metadata == %{}
+    end
+  end
+
+  defp expect_completion(reported) do
+    expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
+      {:ok, %{status_code: 200, body: Jason.encode!(reported)}}
+    end)
+  end
+
   defp format_config(format), do: CompletionConfig.new(response_format: format)
 
   defp expect_stream_body do

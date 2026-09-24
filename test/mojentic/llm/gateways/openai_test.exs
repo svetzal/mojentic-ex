@@ -70,6 +70,37 @@ defmodule Mojentic.LLM.Gateways.OpenAITest do
     end
   end
 
+  describe "response evidence" do
+    test "structured responses carry reported usage, model and finish reason" do
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
+        {:ok, %{status_code: 200, body: @completion}}
+      end)
+
+      assert {:ok, response} =
+               OpenAI.complete_object("gpt-4o", [Message.user("hi")], @schema, config(nil))
+
+      assert response.object == %{}
+      assert response.usage == %{"prompt_tokens" => 7, "completion_tokens" => 2}
+      assert response.model == "gpt-4o-2024-08-06"
+      assert response.finish_reason == "stop"
+    end
+
+    test "structured responses without reported usage leave usage unknown" do
+      body = Jason.encode!(%{"choices" => [%{"message" => %{"content" => "{}"}}]})
+
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
+        {:ok, %{status_code: 200, body: body}}
+      end)
+
+      assert {:ok, response} =
+               OpenAI.complete_object("gpt-4o", [Message.user("hi")], @schema, config(nil))
+
+      assert response.usage == nil
+      assert response.model == nil
+      assert response.finish_reason == nil
+    end
+  end
+
   defp config(format), do: CompletionConfig.new(response_format: format)
 
   defp expect_stream_body do

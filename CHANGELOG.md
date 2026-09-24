@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Preserve reported usage, provider model, finish reason and metadata in ordinary
   and structured broker response traces. Missing provider usage remains unknown.
 
+- `generate_stream_events/3` response traces carry the terminal event's usage,
+  provider model and finish reason, for completion and incomplete-completion
+  terminals. Other failures record them as unknown.
+- The Ollama gateway fills `usage` (`prompt_eval_count`, `eval_count`),
+  `model`, `finish_reason` (`done_reason`) and duration `metadata` on ordinary and
+  structured responses. Because `done_reason` is now reported, `Broker.generate/4`
+  returns an incomplete-completion error for Ollama responses that stop for any
+  reason other than `"stop"`.
+- The OpenAI gateway fills `usage`, `model` and `finish_reason` on structured
+  responses.
+
 - Add a single-response broker API for caller-owned context and native tool requests.
 - Support explicit unlimited tool rounds while retaining finite defaults.
 - The broker accepts configured runner structs and a `tool_context`. Timeout and cancelled outcomes retain call identity and notify completion observers.

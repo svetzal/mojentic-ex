@@ -40,6 +40,8 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   @default_host "http://localhost:11434"
   # 5 minutes for larger models
   @default_timeout 300_000
+  @usage_fields ["prompt_eval_count", "eval_count"]
+  @timing_fields ["total_duration", "load_duration", "prompt_eval_duration", "eval_duration"]
 
   defp http_client do
     Application.get_env(:mojentic, :http_client, Mojentic.HTTP.ReqClient)
@@ -511,16 +513,13 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
   defp parse_response(body) do
     case Jason.decode(body) do
-      {:ok, %{"message" => message}} ->
-        content = Map.get(message, "content")
-        tool_calls = parse_tool_calls(message)
-        thinking = Map.get(message, "thinking")
-
+      {:ok, %{"message" => message} = reported} ->
         {:ok,
-         %GatewayResponse{
-           content: content,
-           tool_calls: tool_calls,
-           thinking: thinking
+         %{
+           reported_evidence(reported)
+           | content: Map.get(message, "content"),
+             tool_calls: parse_tool_calls(message),
+             thinking: Map.get(message, "thinking")
          }}
 
       _ ->
@@ -530,15 +529,10 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
   defp parse_object_response(body) do
     case Jason.decode(body) do
-      {:ok, %{"message" => %{"content" => content}}} ->
+      {:ok, %{"message" => %{"content" => content}} = reported} ->
         case Jason.decode(content) do
           {:ok, object} ->
-            {:ok,
-             %GatewayResponse{
-               content: content,
-               object: object,
-               tool_calls: []
-             }}
+            {:ok, %{reported_evidence(reported) | content: content, object: object}}
 
           {:error, _} ->
             {:error, :invalid_json_object}
@@ -546,6 +540,25 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
       _ ->
         {:error, :invalid_response}
+    end
+  end
+
+  # Provider evidence exactly as Ollama reports it. Missing counts stay unknown.
+  defp reported_evidence(reported) do
+    %GatewayResponse{
+      usage: reported_usage(reported),
+      model: reported["model"],
+      finish_reason: reported["done_reason"],
+      metadata: Map.take(reported, @timing_fields)
+    }
+  end
+
+  @doc false
+  @spec reported_usage(map()) :: map() | nil
+  def reported_usage(reported) do
+    case Map.take(reported, @usage_fields) do
+      usage when map_size(usage) == 0 -> nil
+      usage -> usage
     end
   end
 

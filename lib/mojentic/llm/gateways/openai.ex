@@ -450,14 +450,17 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
 
   defp parse_object_response(body) do
     case Jason.decode(body) do
-      {:ok, %{"choices" => [%{"message" => %{"content" => content}} | _]}} ->
+      {:ok, %{"choices" => [%{"message" => %{"content" => content}} = choice | _]} = response} ->
         case Jason.decode(content) do
           {:ok, object} ->
             {:ok,
              %GatewayResponse{
                content: content,
                object: object,
-               tool_calls: []
+               tool_calls: [],
+               model: response["model"],
+               usage: response["usage"],
+               finish_reason: choice["finish_reason"]
              }}
 
           {:error, _} ->

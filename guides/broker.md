@@ -426,15 +426,38 @@ Native responses preserve the fields supplied by the gateway. Missing provider
 usage or termination evidence must remain unknown; configured model names and
 text length are not substitutes for reported metadata.
 
-## Reported usage in response traces
+## Provider evidence in response traces
 
-`LLMResponseTracerEvent` retains the gateway's optional `usage`, `provider_model`,
-`finish_reason`, and `metadata` fields for ordinary and structured responses.
-The event's `model` remains the configured request model. Missing provider usage
-stays `nil`; the tracer does not estimate tokens from message text.
+`LLMResponseTracerEvent` has four optional evidence fields:
+
+| Field | Source | When absent |
+| ----- | ------ | ----------- |
+| `usage` | gateway response usage, exactly as reported | `nil` |
+| `provider_model` | model name the provider reported | `nil` |
+| `finish_reason` | provider finish reason | `nil` |
+| `metadata` | gateway response metadata map | `nil` or `%{}` |
+
+The event's `model` field stays the configured request model.
+
+The broker fills these fields for ordinary responses (`generate/4`,
+`generate_response/4`), structured responses (`generate_object/4`) and
+single-turn streams (`generate_stream_events/3`). For a single-turn stream, the
+broker records the response when the stream reaches its terminal event, success
+or failure. The content is the content received so far. `{:completed, evidence}`
+and `{:error, {:incomplete_completion, evidence}}` supply usage, provider model
+and finish reason. Other failures leave them `nil`.
+
+Each gateway reports what its provider reports:
+
+- OpenAI: `usage` is the response `usage` object. Single-turn stream requests set
+  `stream_options: %{include_usage: true}` so the provider reports usage.
+- Ollama: `usage` holds `prompt_eval_count` and `eval_count`, `finish_reason` is
+  `done_reason`, and `metadata` holds the reported durations in nanoseconds.
+
+Unknown stays unknown. The tracer never estimates tokens from text length or a
+tokenizer.
 
 Use a response trace to recover usage omitted by a downstream receipt projection.
 A receipt and its matching response trace describe the same call: do not add them
 together. Provider metadata can also distinguish whole-call totals from usage for
-only the last internal model response. Streaming gateways that do not report
-usage still produce traces with unknown usage.
+only the last internal model response.

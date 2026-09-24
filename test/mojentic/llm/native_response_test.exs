@@ -85,6 +85,98 @@ defmodule Mojentic.LLM.NativeResponseTest do
     assert event.metadata == response.metadata
   end
 
+  defmodule MeteredObjectGateway do
+    def complete_object(_, _, _, _) do
+      {:ok,
+       %GatewayResponse{
+         content: "{}",
+         object: %{},
+         usage: %{"prompt_tokens" => 9, "completion_tokens" => 1},
+         model: "reported-model",
+         finish_reason: "stop",
+         metadata: %{"total_duration" => 42}
+       }}
+    end
+  end
+
+  test "structured response trace preserves provider evidence unchanged" do
+    alias Mojentic.Tracer.TracerEvents.LLMResponseTracerEvent
+    tracer = start_supervised!(Mojentic.Tracer.TracerSystem)
+    broker = Broker.new("configured-model", MeteredObjectGateway, tracer: tracer)
+    assert {:ok, %{}} = Broker.generate_object(broker, [Message.user("hello")], %{})
+    [event] = Mojentic.Tracer.get_events(tracer, event_type: LLMResponseTracerEvent)
+    assert event.usage == %{"prompt_tokens" => 9, "completion_tokens" => 1}
+    assert event.provider_model == "reported-model"
+    assert event.model == "configured-model"
+    assert event.finish_reason == "stop"
+    assert event.metadata == %{"total_duration" => 42}
+  end
+
+  defmodule EventGateway do
+    @evidence %{finish_reason: "stop", usage: %{"total_tokens" => 12}, model: "reported-model"}
+
+    def complete_stream_events(_, [%Message{content: scenario}], _) do
+      case scenario do
+        "completed" ->
+          [{:content, "par"}, {:content, "tial"}, {:completed, @evidence}]
+
+        "truncated" ->
+          [
+            {:content, "partial"},
+            {:error, {:incomplete_completion, %{@evidence | finish_reason: "length"}}}
+          ]
+
+        "provider error" ->
+          [{:content, "partial"}, {:error, {:provider_error, %{"code" => "overloaded"}}}]
+
+        "eof" ->
+          [{:content, "partial"}]
+      end
+    end
+  end
+
+  describe "single-turn stream traces" do
+    alias Mojentic.Tracer.TracerEvents.{LLMCallTracerEvent, LLMResponseTracerEvent}
+
+    test "completion records call and response with the terminal evidence" do
+      assert %{call: call, response: response} = trace_stream("completed")
+      assert call.model == "configured-model"
+      assert call.tools == nil
+      assert response.model == "configured-model"
+      assert response.content == "partial"
+      assert response.usage == %{"total_tokens" => 12}
+      assert response.provider_model == "reported-model"
+      assert response.finish_reason == "stop"
+    end
+
+    test "incomplete completion records content so far with its evidence" do
+      assert %{response: response} = trace_stream("truncated")
+      assert response.content == "partial"
+      assert response.usage == %{"total_tokens" => 12}
+      assert response.provider_model == "reported-model"
+      assert response.finish_reason == "length"
+    end
+
+    test "failures without completion evidence record unknown evidence" do
+      for scenario <- ["provider error", "eof"] do
+        assert %{response: response} = trace_stream(scenario)
+        assert response.content == "partial"
+        assert response.usage == nil
+        assert response.provider_model == nil
+        assert response.finish_reason == nil
+      end
+    end
+
+    defp trace_stream(scenario) do
+      tracer = start_supervised!(Mojentic.Tracer.TracerSystem, id: make_ref())
+      broker = Broker.new("configured-model", EventGateway, tracer: tracer)
+      broker |> Broker.generate_stream_events([Message.user(scenario)]) |> Stream.run()
+      [call] = Mojentic.Tracer.get_events(tracer, event_type: LLMCallTracerEvent)
+      [response] = Mojentic.Tracer.get_events(tracer, event_type: LLMResponseTracerEvent)
+      %{call: call, response: response}
+    end
+  end
+
   test "broker accepts a configured runner and forwards completion context" do
     owner = self()
     context = RunContext.new(on_call_complete: &send(owner, {:outcome, &1}))
