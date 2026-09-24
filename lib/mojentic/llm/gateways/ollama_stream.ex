@@ -77,6 +77,7 @@ defmodule Mojentic.LLM.Gateways.OllamaStream do
     do: %{
       finish_reason: frame["done_reason"],
       usage: Ollama.reported_usage(frame),
-      model: state.model
+      model: state.model,
+      metadata: Ollama.reported_timings(frame)
     }
 end

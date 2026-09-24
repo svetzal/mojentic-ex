@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `generate_stream_events/3` response traces carry the terminal event's usage,
   provider model and finish reason, for completion and incomplete-completion
   terminals. Other failures record them as unknown.
+- `generate_stream_events/3` terminal evidence (`{:completed, evidence}` and
+  `{:incomplete_completion, evidence}`) carries a nullable provider `metadata`
+  map. Ollama puts the final frame's durations there; OpenAI reports `nil`. The
+  stream response trace records it as its `metadata`.
 - The Ollama gateway fills `usage` (`prompt_eval_count`, `eval_count`),
   `model`, `finish_reason` (`done_reason`) and duration `metadata` on ordinary and
   structured responses. Because `done_reason` is now reported, `Broker.generate/4`

@@ -357,7 +357,7 @@ defmodule Mojentic.LLM.Broker do
   @doc """
   Streams one non-executing turn with explicit terminal evidence.
 
-  Yields `{:content, text}`, then `{:completed, metadata}` on proven completion,
+  Yields `{:content, text}`, then `{:completed, evidence}` on proven completion,
   or `{:error, reason}` on failure. Partial content is not a successful result.
   No tools are supplied and no retry or recursive generation occurs. Gateways
   without terminal-event support return an error without making a request.
@@ -428,6 +428,7 @@ defmodule Mojentic.LLM.Broker do
       usage: evidence[:usage],
       provider_model: evidence[:model],
       finish_reason: evidence[:finish_reason],
+      metadata: evidence[:metadata],
       content: state.content,
       tool_calls: [],
       call_duration_ms: System.monotonic_time(:millisecond) - state.started,
@@ -437,7 +438,8 @@ defmodule Mojentic.LLM.Broker do
   end
 
   # Only completion and incomplete-completion terminals carry provider evidence.
-  # Every other failure leaves usage, provider model and finish reason unknown.
+  # Every other failure leaves usage, provider model, finish reason and
+  # provider metadata unknown.
   defp terminal_evidence({:completed, evidence}), do: evidence
   defp terminal_evidence({:error, {:incomplete_completion, evidence}}), do: evidence
   defp terminal_evidence(_), do: %{}

@@ -113,7 +113,12 @@ defmodule Mojentic.LLM.NativeResponseTest do
   end
 
   defmodule EventGateway do
-    @evidence %{finish_reason: "stop", usage: %{"total_tokens" => 12}, model: "reported-model"}
+    @evidence %{
+      finish_reason: "stop",
+      usage: %{"total_tokens" => 12},
+      model: "reported-model",
+      metadata: %{"total_duration" => 99}
+    }
 
     def complete_stream_events(_, [%Message{content: scenario}], _) do
       case scenario do
@@ -147,6 +152,7 @@ defmodule Mojentic.LLM.NativeResponseTest do
       assert response.usage == %{"total_tokens" => 12}
       assert response.provider_model == "reported-model"
       assert response.finish_reason == "stop"
+      assert response.metadata == %{"total_duration" => 99}
     end
 
     test "incomplete completion records content so far with its evidence" do
@@ -155,6 +161,7 @@ defmodule Mojentic.LLM.NativeResponseTest do
       assert response.usage == %{"total_tokens" => 12}
       assert response.provider_model == "reported-model"
       assert response.finish_reason == "length"
+      assert response.metadata == %{"total_duration" => 99}
     end
 
     test "failures without completion evidence record unknown evidence" do
@@ -164,6 +171,7 @@ defmodule Mojentic.LLM.NativeResponseTest do
         assert response.usage == nil
         assert response.provider_model == nil
         assert response.finish_reason == nil
+        assert response.metadata == nil
       end
     end
 

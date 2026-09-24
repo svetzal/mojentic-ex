@@ -241,7 +241,8 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
   Yields `{:content, text}` events, then exactly one terminal event. Completion
   requires a final frame with `done: true` and a `done_reason` of `"stop"`,
-  which yields `{:completed, %{finish_reason:, usage:, model:}}`. Any other
+  which yields `{:completed, %{finish_reason:, usage:, model:, metadata:}}`.
+  `metadata` holds the final frame's reported durations, or `nil`. Any other
   `done_reason` yields `{:error, {:incomplete_completion, evidence}}` with the
   same evidence. End of stream without a final frame is
   `{:error, :incomplete_stream}`. Native tool calls, provider error frames and
@@ -580,16 +581,22 @@ defmodule Mojentic.LLM.Gateways.Ollama do
       usage: reported_usage(reported),
       model: reported["model"],
       finish_reason: reported["done_reason"],
-      metadata: Map.take(reported, @timing_fields)
+      metadata: reported_timings(reported) || %{}
     }
   end
 
   @doc false
   @spec reported_usage(map()) :: map() | nil
-  def reported_usage(reported) do
-    case Map.take(reported, @usage_fields) do
-      usage when map_size(usage) == 0 -> nil
-      usage -> usage
+  def reported_usage(reported), do: take_reported(reported, @usage_fields)
+
+  @doc false
+  @spec reported_timings(map()) :: map() | nil
+  def reported_timings(reported), do: take_reported(reported, @timing_fields)
+
+  defp take_reported(reported, fields) do
+    case Map.take(reported, fields) do
+      taken when map_size(taken) == 0 -> nil
+      taken -> taken
     end
   end
 

@@ -51,9 +51,11 @@ Use `Broker.generate_stream_events(broker, messages, config)` when incomplete
 output must never authorize an action. It streams one turn and yields:
 
 - `{:content, text}`: visible assistant content, in order.
-- `{:completed, %{finish_reason: finish_reason, usage: usage, model: model}}`:
-  terminal success. `usage` and `model` are `nil` when the provider does not
-  report them.
+- `{:completed, %{finish_reason: finish_reason, usage: usage, model: model, metadata: metadata}}`:
+  terminal success. `usage`, `model` and `metadata` are `nil` when the provider
+  does not report them. For Ollama, `metadata` holds the final frame's
+  `total_duration`, `load_duration`, `prompt_eval_duration` and `eval_duration`
+  (nanoseconds). For OpenAI, `metadata` is `nil`.
 - `{:error, reason}`: terminal failure.
 
 Exactly one terminal event ends every stream. Nothing follows it.
@@ -80,7 +82,7 @@ The OpenAI and Ollama gateways support this API. Their completion rules:
 | `{:error, :invalid_stream_event}` | a malformed event | a malformed frame |
 
 `evidence` for an incomplete completion has the same shape as for completion:
-finish reason, usage and provider model. Transport errors such as
+finish reason, usage, provider model and provider metadata. Transport errors such as
 `{:http_error, status}` and `:timeout` are also terminal errors.
 
 Content yielded before an error is evidence, not a result. A failed turn stays

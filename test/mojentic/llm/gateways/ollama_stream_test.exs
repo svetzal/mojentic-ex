@@ -31,10 +31,12 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
       assert [
                {:content, "Hel"},
                {:content, "lo"},
-               {:completed, %{finish_reason: "stop", usage: usage, model: @model}}
+               {:completed,
+                %{finish_reason: "stop", usage: usage, model: @model, metadata: metadata}}
              ] = parse([wire])
 
       assert usage == %{"prompt_eval_count" => 26, "eval_count" => 290}
+      assert metadata == %{"total_duration" => 5_000, "eval_duration" => 4_000}
     end
 
     test "a done frame split across chunks, without a trailing newline, still completes" do
@@ -42,8 +44,8 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
       assert [{:content, "ok"}, {:completed, _}] = parse([first, String.trim_trailing(rest)])
     end
 
-    test "done frames without usage report unknown usage" do
-      assert [{:completed, %{usage: nil}}] = parse([done("stop")])
+    test "done frames without usage or durations report them as unknown" do
+      assert [{:completed, %{usage: nil, metadata: nil}}] = parse([done("stop")])
     end
 
     test "any other done_reason is an incomplete completion carrying its evidence" do
@@ -54,7 +56,8 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
                  %{
                    finish_reason: "length",
                    usage: %{"prompt_eval_count" => 26, "eval_count" => 290},
-                   model: @model
+                   model: @model,
+                   metadata: %{"total_duration" => 5_000, "eval_duration" => 4_000}
                  }}}
              ] = parse([content("par") <> done("length", usage())])
 
@@ -169,6 +172,7 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
       assert response.usage == %{"prompt_eval_count" => 26, "eval_count" => 290}
       assert response.provider_model == @model
       assert response.finish_reason == "stop"
+      assert response.metadata == %{"total_duration" => 5_000, "eval_duration" => 4_000}
     end
   end
 
@@ -186,7 +190,8 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
     System.put_env("OLLAMA_HOST", "http://127.0.0.1:#{port}")
   end
 
-  defp usage, do: %{prompt_eval_count: 26, eval_count: 290}
+  defp usage,
+    do: %{prompt_eval_count: 26, eval_count: 290, total_duration: 5_000, eval_duration: 4_000}
 
   defp content(text),
     do: frame(%{model: @model, message: %{role: "assistant", content: text}, done: false})

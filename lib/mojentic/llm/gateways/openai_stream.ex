@@ -70,5 +70,10 @@ defmodule Mojentic.LLM.Gateways.OpenAIStream do
   end
 
   defp evidence(state),
-    do: %{finish_reason: state.finish_reason, usage: state.usage, model: state.model}
+    do: %{
+      finish_reason: state.finish_reason,
+      usage: state.usage,
+      model: state.model,
+      metadata: nil
+    }
 end

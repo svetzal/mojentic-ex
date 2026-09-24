@@ -444,15 +444,18 @@ The broker fills these fields for ordinary responses (`generate/4`,
 single-turn streams (`generate_stream_events/3`). For a single-turn stream, the
 broker records the response when the stream reaches its terminal event, success
 or failure. The content is the content received so far. `{:completed, evidence}`
-and `{:error, {:incomplete_completion, evidence}}` supply usage, provider model
-and finish reason. Other failures leave them `nil`.
+and `{:error, {:incomplete_completion, evidence}}` supply usage, provider model,
+finish reason and provider metadata. Other failures leave them `nil`.
 
 Each gateway reports what its provider reports:
 
 - OpenAI: `usage` is the response `usage` object. Single-turn stream requests set
   `stream_options: %{include_usage: true}` so the provider reports usage.
 - Ollama: `usage` holds `prompt_eval_count` and `eval_count`, `finish_reason` is
-  `done_reason`, and `metadata` holds the reported durations in nanoseconds.
+  `done_reason`, and `metadata` holds the reported durations in nanoseconds. On a
+  single-turn stream the durations come from the final frame.
+- OpenAI streams report no provider metadata, so their stream traces record
+  `nil` metadata.
 
 Unknown stays unknown. The tracer never estimates tokens from text length or a
 tokenizer.

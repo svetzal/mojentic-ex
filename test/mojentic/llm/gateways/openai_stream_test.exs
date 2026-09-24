@@ -34,7 +34,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
     assert [
              {:content, _},
              {:content, _},
-             {:completed, %{finish_reason: "stop", usage: %{"total_tokens" => 12}}}
+             {:completed, %{finish_reason: "stop", usage: %{"total_tokens" => 12}, metadata: nil}}
            ] = events
 
     assert_receive {:request, request}
@@ -133,9 +133,10 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
   test "missing finish proof, length exhaustion, malformed SSE and native tools fail closed" do
     for {wire, reason} <- [
           {"data: [DONE]\n\n",
-           {:incomplete_completion, %{finish_reason: nil, usage: nil, model: nil}}},
+           {:incomplete_completion, %{finish_reason: nil, usage: nil, model: nil, metadata: nil}}},
           {finish("length") <> "data: [DONE]\n\n",
-           {:incomplete_completion, %{finish_reason: "length", usage: nil, model: nil}}},
+           {:incomplete_completion,
+            %{finish_reason: "length", usage: nil, model: nil, metadata: nil}}},
           {"data: invalid\n\n", :invalid_stream_event},
           {"data: {\"error\":{\"code\":\"timeout\"}}\n\n",
            {:provider_error, %{"code" => "timeout"}}},
