@@ -361,7 +361,9 @@ defmodule Mojentic.LLM.Broker do
   or `{:error, reason}` on failure. Partial content is not a successful result.
   No tools are supplied and no retry or recursive generation occurs. Gateways
   without terminal-event support return an error without making a request.
-  Halting enumeration cancels the underlying stream.
+  Halting enumeration cancels the underlying stream. The call is always traced;
+  the response is traced only when the stream reaches its terminal event, so an
+  early stop records the call and no response.
   """
   def generate_stream_events(broker, messages, config \\ nil) do
     config = %{(config || %CompletionConfig{}) | max_tool_iterations: 0}
@@ -413,7 +415,7 @@ defmodule Mojentic.LLM.Broker do
         {[event], %{state | continuation: continuation, terminal: true}}
 
       :done ->
-        event = {:error, :incomplete_stream}
+        event = {:error, {:incomplete_stream, nil}}
         record_stream_response(state, event)
         {[event], %{state | terminal: true}}
     end
@@ -426,7 +428,7 @@ defmodule Mojentic.LLM.Broker do
     Tracer.record_llm_response(broker.tracer,
       model: broker.model,
       usage: evidence[:usage],
-      provider_model: evidence[:model],
+      provider_model: evidence[:provider_model],
       finish_reason: evidence[:finish_reason],
       metadata: evidence[:metadata],
       content: state.content,
@@ -437,11 +439,15 @@ defmodule Mojentic.LLM.Broker do
     )
   end
 
-  # Only completion and incomplete-completion terminals carry provider evidence.
-  # Every other failure leaves usage, provider model, finish reason and
-  # provider metadata unknown.
+  # Completion, incomplete-completion and incomplete-stream terminals carry
+  # provider evidence. Every other failure leaves usage, provider model, finish
+  # reason and provider metadata unknown.
   defp terminal_evidence({:completed, evidence}), do: evidence
   defp terminal_evidence({:error, {:incomplete_completion, evidence}}), do: evidence
+
+  defp terminal_evidence({:error, {:incomplete_stream, evidence}}) when is_map(evidence),
+    do: evidence
+
   defp terminal_evidence(_), do: %{}
 
   defp close_event_stream(%{continuation: continuation}), do: continuation.({:halt, nil})

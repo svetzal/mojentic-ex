@@ -14,6 +14,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   without a final frame is `:incomplete_stream`, and native tool calls are
   `:unexpected_tool_calls`. One HTTP request; halting enumeration cancels it.
 
+- `generate_stream_events/3` evidence names the reported model `provider_model`,
+  matching the trace field (was `model`), in both `{:completed, evidence}` and
+  `{:incomplete_completion, evidence}`.
+- End of stream without a terminal marker is now
+  `{:incomplete_stream, evidence}` (was `:incomplete_stream`). `evidence` holds
+  whatever arrived first, in the same shape, or is `nil` when nothing did. The
+  stream trace records it.
+- `generate_stream_events/3` reports a non-2xx HTTP status as
+  `{:provider_error, %{status: status}}` (was `{:http_error, status}`) and any
+  other transport failure, including the streaming deadline, as
+  `{:request_failed, reason}` (was the bare reason, such as `:timeout`).
+
 - The OpenAI gateway forwards `CompletionConfig.response_format` in non-streaming
   `complete/4` requests, as it already did in streaming requests. The Ollama
   gateway already forwarded `format` in both. Forwarding records the request; it

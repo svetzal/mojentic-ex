@@ -26,7 +26,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIStream do
 
   # An SSE event is complete only when its line ends; a partial line is dropped.
   @impl TerminalEventStream
-  def finish(_state), do: []
+  def finish(state), do: {[], evidence(state)}
 
   defp parse_line("data: [DONE]", %{finish_reason: "stop"} = state),
     do: {[{:completed, evidence(state)}], state}
@@ -73,7 +73,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIStream do
     do: %{
       finish_reason: state.finish_reason,
       usage: state.usage,
-      model: state.model,
+      provider_model: state.model,
       metadata: nil
     }
 end

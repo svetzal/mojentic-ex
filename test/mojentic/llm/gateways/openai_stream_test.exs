@@ -92,7 +92,34 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
 
   test "complete-looking JSON followed by EOF remains failed and retains content" do
     serve([event("{}")])
-    assert [{:content, "{}"}, {:error, :incomplete_stream}] = Enum.to_list(stream())
+    assert [{:content, "{}"}, {:error, {:incomplete_stream, nil}}] = Enum.to_list(stream())
+  end
+
+  test "EOF after a finish reason and usage attaches that partial evidence" do
+    wire =
+      "data: " <>
+        Jason.encode!(%{
+          model: "gpt-4o-2024-08-06",
+          choices: [%{delta: %{content: "{}"}, finish_reason: "stop"}]
+        }) <>
+        "\n\n" <> ~s(data: {"choices":[],"usage":{"total_tokens":12}}\n\n)
+
+    assert [
+             {:content, "{}"},
+             {:error,
+              {:incomplete_stream,
+               %{
+                 finish_reason: "stop",
+                 usage: %{"total_tokens" => 12},
+                 provider_model: "gpt-4o-2024-08-06",
+                 metadata: nil
+               }}}
+           ] = Enum.to_list(OpenAIStream.events(fn -> {:ok, [{:data, wire}]} end))
+  end
+
+  test "a failed connection is a request failure" do
+    assert [{:error, {:request_failed, :econnrefused}}] =
+             Enum.to_list(OpenAIStream.events(fn -> {:error, :econnrefused} end))
   end
 
   test "halting after first chunk cancels real HTTP response" do
@@ -118,7 +145,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
 
   test "HTTP errors are observable and are never retried" do
     serve([], false, 504)
-    assert [{:error, {:http_error, 504}}] = Enum.to_list(stream())
+    assert [{:error, {:provider_error, %{status: 504}}}] = Enum.to_list(stream())
     assert_receive {:request, _}
     refute_receive {:request, _}
   end
@@ -126,17 +153,21 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
   test "absolute transport deadline preserves partial response then cancels" do
     System.put_env("OPENAI_TIMEOUT", "50")
     serve([event("partial")], true)
-    assert [{:content, "partial"}, {:error, :timeout}] = Enum.to_list(stream())
+
+    assert [{:content, "partial"}, {:error, {:request_failed, :timeout}}] =
+             Enum.to_list(stream())
+
     assert_receive {:cancel_result, {:error, :closed}}, 2000
   end
 
   test "missing finish proof, length exhaustion, malformed SSE and native tools fail closed" do
     for {wire, reason} <- [
           {"data: [DONE]\n\n",
-           {:incomplete_completion, %{finish_reason: nil, usage: nil, model: nil, metadata: nil}}},
+           {:incomplete_completion,
+            %{finish_reason: nil, usage: nil, provider_model: nil, metadata: nil}}},
           {finish("length") <> "data: [DONE]\n\n",
            {:incomplete_completion,
-            %{finish_reason: "length", usage: nil, model: nil, metadata: nil}}},
+            %{finish_reason: "length", usage: nil, provider_model: nil, metadata: nil}}},
           {"data: invalid\n\n", :invalid_stream_event},
           {"data: {\"error\":{\"code\":\"timeout\"}}\n\n",
            {:provider_error, %{"code" => "timeout"}}},

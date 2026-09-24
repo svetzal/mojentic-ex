@@ -2,8 +2,9 @@ defmodule Mojentic.LLM.Gateways.OllamaStream do
   @moduledoc false
 
   # Ollama newline-delimited JSON chat frames. Completion requires a final frame
-  # with `done: true` and a `done_reason` of "stop". Thinking text is not visible
-  # assistant content and is not yielded.
+  # with `done: true` and a `done_reason` of "stop". A final frame without
+  # `done_reason` (servers too old to send it) is an incomplete completion.
+  # Thinking text is not visible assistant content and is not yielded.
 
   @behaviour Mojentic.LLM.Gateways.TerminalEventStream
 
@@ -22,11 +23,13 @@ defmodule Mojentic.LLM.Gateways.OllamaStream do
     parse_lines(complete, %{state | buffer: buffer})
   end
 
-  # Ollama may end the body without a newline after the final frame.
+  # Ollama may end the body without a newline after the final frame. Usage,
+  # done_reason and durations arrive only in the final frame, so a body that
+  # ends early can only have reported the model.
   @impl TerminalEventStream
   def finish(state) do
-    {events, _state} = parse_lines([state.buffer], %{state | buffer: ""})
-    events
+    {events, state} = parse_lines([state.buffer], %{state | buffer: ""})
+    {events, evidence(%{}, state)}
   end
 
   defp parse_lines(lines, state) do
@@ -77,7 +80,7 @@ defmodule Mojentic.LLM.Gateways.OllamaStream do
     do: %{
       finish_reason: frame["done_reason"],
       usage: Ollama.reported_usage(frame),
-      model: state.model,
+      provider_model: state.model,
       metadata: Ollama.reported_timings(frame)
     }
 end

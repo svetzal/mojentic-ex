@@ -241,11 +241,14 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
   Yields `{:content, text}` events, then exactly one terminal event. Completion
   requires a final frame with `done: true` and a `done_reason` of `"stop"`,
-  which yields `{:completed, %{finish_reason:, usage:, model:, metadata:}}`.
+  which yields
+  `{:completed, %{finish_reason:, usage:, provider_model:, metadata:}}`.
   `metadata` holds the final frame's reported durations, or `nil`. Any other
-  `done_reason` yields `{:error, {:incomplete_completion, evidence}}` with the
-  same evidence. End of stream without a final frame is
-  `{:error, :incomplete_stream}`. Native tool calls, provider error frames and
+  `done_reason`, or none, yields `{:error, {:incomplete_completion, evidence}}`
+  with the same evidence. Ollama servers too old to send `done_reason` cannot
+  use this API. End of stream without a final frame is
+  `{:error, {:incomplete_stream, evidence}}`, carrying the reported model, or
+  `nil` when nothing arrived. Native tool calls, provider error frames and
   malformed frames are errors. The request supplies no tools and makes one HTTP
   request; halting enumeration cancels it. Use it through
   `Mojentic.LLM.Broker.generate_stream_events/3`.

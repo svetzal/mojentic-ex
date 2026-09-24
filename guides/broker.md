@@ -443,9 +443,11 @@ The broker fills these fields for ordinary responses (`generate/4`,
 `generate_response/4`), structured responses (`generate_object/4`) and
 single-turn streams (`generate_stream_events/3`). For a single-turn stream, the
 broker records the response when the stream reaches its terminal event, success
-or failure. The content is the content received so far. `{:completed, evidence}`
-and `{:error, {:incomplete_completion, evidence}}` supply usage, provider model,
-finish reason and provider metadata. Other failures leave them `nil`.
+or failure. The content is the content received so far. `{:completed, evidence}`,
+`{:error, {:incomplete_completion, evidence}}` and
+`{:error, {:incomplete_stream, evidence}}` supply usage, provider model, finish
+reason and provider metadata, as far as they arrived. Other failures leave them
+`nil`. If the consumer stops before the terminal event, no response is traced.
 
 Each gateway reports what its provider reports:
 

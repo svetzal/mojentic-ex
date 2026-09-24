@@ -116,7 +116,7 @@ defmodule Mojentic.LLM.NativeResponseTest do
     @evidence %{
       finish_reason: "stop",
       usage: %{"total_tokens" => 12},
-      model: "reported-model",
+      provider_model: "reported-model",
       metadata: %{"total_duration" => 99}
     }
 
@@ -136,6 +136,15 @@ defmodule Mojentic.LLM.NativeResponseTest do
 
         "eof" ->
           [{:content, "partial"}]
+
+        "eof with evidence" ->
+          [
+            {:content, "partial"},
+            {:error, {:incomplete_stream, %{@evidence | finish_reason: nil, usage: nil}}}
+          ]
+
+        "early stop" ->
+          [{:content, "partial"}, {:content, "more"}, {:completed, @evidence}]
       end
     end
   end
@@ -173,6 +182,34 @@ defmodule Mojentic.LLM.NativeResponseTest do
         assert response.finish_reason == nil
         assert response.metadata == nil
       end
+    end
+
+    test "incomplete stream records whatever evidence arrived" do
+      assert %{response: response} = trace_stream("eof with evidence")
+      assert response.provider_model == "reported-model"
+      assert response.usage == nil
+      assert response.finish_reason == nil
+      assert response.metadata == %{"total_duration" => 99}
+    end
+
+    test "a gateway stream that ends without a terminal event is an incomplete stream" do
+      broker = Broker.new("configured-model", EventGateway)
+
+      assert [{:content, "partial"}, {:error, {:incomplete_stream, nil}}] =
+               broker |> Broker.generate_stream_events([Message.user("eof")]) |> Enum.to_list()
+    end
+
+    test "stopping early records the call and no response" do
+      tracer = start_supervised!(Mojentic.Tracer.TracerSystem, id: make_ref())
+      broker = Broker.new("configured-model", EventGateway, tracer: tracer)
+
+      assert [{:content, "partial"}] =
+               broker
+               |> Broker.generate_stream_events([Message.user("early stop")])
+               |> Enum.take(1)
+
+      assert [_call] = Mojentic.Tracer.get_events(tracer, event_type: LLMCallTracerEvent)
+      assert [] = Mojentic.Tracer.get_events(tracer, event_type: LLMResponseTracerEvent)
     end
 
     test "a gateway without event support fails before any request or trace" do

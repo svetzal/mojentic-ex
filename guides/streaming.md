@@ -51,9 +51,10 @@ Use `Broker.generate_stream_events(broker, messages, config)` when incomplete
 output must never authorize an action. It streams one turn and yields:
 
 - `{:content, text}`: visible assistant content, in order.
-- `{:completed, %{finish_reason: finish_reason, usage: usage, model: model, metadata: metadata}}`:
-  terminal success. `usage`, `model` and `metadata` are `nil` when the provider
-  does not report them. For Ollama, `metadata` holds the final frame's
+- `{:completed, evidence}`: terminal success. `evidence` is
+  `%{finish_reason: finish_reason, usage: usage, provider_model: provider_model, metadata: metadata}`.
+  `usage`, `provider_model` and `metadata` are `nil` when the provider does not
+  report them. For Ollama, `metadata` holds the final frame's
   `total_duration`, `load_duration`, `prompt_eval_duration` and `eval_duration`
   (nanoseconds). For OpenAI, `metadata` is `nil`.
 - `{:error, reason}`: terminal failure.
@@ -75,15 +76,23 @@ The OpenAI and Ollama gateways support this API. Their completion rules:
 | Outcome | OpenAI-compatible | Ollama |
 | ------- | ----------------- | ------ |
 | `{:completed, evidence}` | `finish_reason: "stop"` and `data: [DONE]` | final frame with `done: true` and `done_reason: "stop"` |
-| `{:error, {:incomplete_completion, evidence}}` | `[DONE]` with any other finish reason | any other `done_reason` |
-| `{:error, :incomplete_stream}` | end of stream without `[DONE]` | end of stream without a `done: true` frame |
+| `{:error, {:incomplete_completion, evidence}}` | `[DONE]` with any other finish reason | any other `done_reason`, or none |
+| `{:error, {:incomplete_stream, evidence}}` | end of stream without `[DONE]` | end of stream without a `done: true` frame |
 | `{:error, {:provider_error, error}}` | an `error` event | an `error` frame |
+| `{:error, {:provider_error, %{status: status}}}` | a non-2xx HTTP status | a non-2xx HTTP status |
+| `{:error, {:request_failed, reason}}` | the connection or body read failed, including `:timeout` | the same |
 | `{:error, :unexpected_tool_calls}` | a tool-call delta | a message with `tool_calls` |
 | `{:error, :invalid_stream_event}` | a malformed event | a malformed frame |
 
 `evidence` for an incomplete completion has the same shape as for completion:
-finish reason, usage, provider model and provider metadata. Transport errors such as
-`{:http_error, status}` and `:timeout` are also terminal errors.
+finish reason, usage, provider model and provider metadata. For an incomplete
+stream, `evidence` holds whatever arrived before the stream ended, in the same
+shape, or is `nil` when nothing arrived. An OpenAI stream can have reported the
+model, a finish reason and usage; an Ollama stream reports usage only in its
+final frame, so it can have reported only the model.
+
+Ollama servers too old to send `done_reason` cannot use this API: their final
+frame is an incomplete completion with a `nil` finish reason.
 
 Content yielded before an error is evidence, not a result. A failed turn stays
 failed even if the partial content is valid JSON.
@@ -98,6 +107,9 @@ The broker records the call in the tracer when the request starts. It records
 the response, with the content received so far and the terminal evidence, when
 the stream reaches its terminal event. See the broker guide for the trace
 fields.
+
+Stopping early is not an error. If the consumer halts before the terminal
+event, the broker cancels the request and records the call but no response.
 
 The Req transport disables redirects and retries, and applies its configured
 timeout as an absolute streaming deadline. Applications must also bound the

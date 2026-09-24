@@ -32,7 +32,7 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
                {:content, "Hel"},
                {:content, "lo"},
                {:completed,
-                %{finish_reason: "stop", usage: usage, model: @model, metadata: metadata}}
+                %{finish_reason: "stop", usage: usage, provider_model: @model, metadata: metadata}}
              ] = parse([wire])
 
       assert usage == %{"prompt_eval_count" => 26, "eval_count" => 290}
@@ -56,7 +56,7 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
                  %{
                    finish_reason: "length",
                    usage: %{"prompt_eval_count" => 26, "eval_count" => 290},
-                   model: @model,
+                   provider_model: @model,
                    metadata: %{"total_duration" => 5_000, "eval_duration" => 4_000}
                  }}}
              ] = parse([content("par") <> done("length", usage())])
@@ -65,8 +65,20 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
                parse([frame(%{done: true})])
     end
 
-    test "end of stream without a done frame is an incomplete stream" do
-      assert [{:content, "{}"}, {:error, :incomplete_stream}] = parse([content("{}")])
+    test "end of stream without a done frame is an incomplete stream with partial evidence" do
+      assert [
+               {:content, "{}"},
+               {:error,
+                {:incomplete_stream,
+                 %{finish_reason: nil, usage: nil, provider_model: @model, metadata: nil}}}
+             ] = parse([content("{}")])
+
+      assert [{:error, {:incomplete_stream, nil}}] = parse([])
+    end
+
+    test "a done frame without done_reason, from an older server, is incomplete" do
+      assert [{:error, {:incomplete_completion, %{finish_reason: nil, provider_model: @model}}}] =
+               parse([frame(%{model: @model, message: %{content: ""}, done: true})])
     end
 
     test "a native tool call is rejected" do
@@ -95,7 +107,7 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
     end
 
     test "transport errors are terminal" do
-      assert [{:content, "par"}, {:error, :timeout}] =
+      assert [{:content, "par"}, {:error, {:request_failed, :timeout}}] =
                Enum.to_list(
                  OllamaStream.events(fn ->
                    {:ok, [{:data, content("par")}, {:error, :timeout}, {:data, done("stop")}]}
@@ -152,7 +164,7 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
 
     test "HTTP errors are observable and never retried" do
       serve([], false, 500)
-      assert [{:error, {:http_error, 500}}] = Enum.to_list(stream())
+      assert [{:error, {:provider_error, %{status: 500}}}] = Enum.to_list(stream())
       assert_receive {:request, _}
       refute_receive {:request, _}
     end
