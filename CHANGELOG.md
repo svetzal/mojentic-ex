@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- The OpenAI gateway forwards `CompletionConfig.response_format` in non-streaming
+  `complete/4` requests, as it already did in streaming requests. The Ollama
+  gateway already forwarded `format` in both. Forwarding records the request; it
+  does not prove the provider enforced the format.
+
 - `Broker.generate/4` returns `{:error, {:incomplete_completion, reason}}` for any
   finish reason other than `"stop"`, including `"length"`. Truncated content is an
   error, never a result. The broker does not continue truncated responses; callers

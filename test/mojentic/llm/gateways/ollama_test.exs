@@ -967,6 +967,58 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
     end
   end
 
+  describe "response format forwarding" do
+    @schema %{"type" => "object", "properties" => %{"answer" => %{"type" => "string"}}}
+
+    @formats [
+      {nil, nil},
+      {%{type: :text}, nil},
+      {%{type: :json_object}, "json"},
+      {%{type: :json_object, schema: nil}, "json"},
+      {%{type: :json_object, schema: @schema}, @schema}
+    ]
+
+    test "non-streaming requests carry the configured format and omit it for text" do
+      for {format, expected} <- @formats do
+        expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
+          send(self(), {:body, Jason.decode!(body)})
+          {:ok, %{status_code: 200, body: ~s({"message":{"content":"{}"},"done":true})}}
+        end)
+
+        assert {:ok, _} =
+                 Ollama.complete("qwen3:32b", [Message.user("hi")], nil, format_config(format))
+
+        assert_received {:body, body}
+        assert_format(body, expected)
+      end
+    end
+
+    test "legacy streaming requests carry the configured format and omit it for text" do
+      for {format, expected} <- @formats do
+        expect_stream_body()
+
+        "qwen3:32b"
+        |> Ollama.complete_stream([Message.user("hi")], nil, format_config(format))
+        |> Enum.to_list()
+
+        assert_received {:body, body}
+        assert_format(body, expected)
+      end
+    end
+  end
+
+  defp format_config(format), do: CompletionConfig.new(response_format: format)
+
+  defp expect_stream_body do
+    expect(Mojentic.HTTPMock, :post_stream, fn _url, body, _headers, _opts ->
+      send(self(), {:body, Jason.decode!(body)})
+      {:ok, []}
+    end)
+  end
+
+  defp assert_format(body, nil), do: refute(Map.has_key?(body, "format"))
+  defp assert_format(body, expected), do: assert(body["format"] == expected)
+
   describe "edge cases" do
     test "handles empty tool_calls in message" do
       messages = [%Message{role: :assistant, content: "test", tool_calls: []}]

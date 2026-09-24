@@ -72,8 +72,22 @@ This event API is currently an Elixir-specific safety extension; the other ports
 retain their existing streaming interfaces. It does not change their parity
 claims.
 
-Set `CompletionConfig.new(response_format: %{type: :json_object})` to request
-JSON object mode in an OpenAI-compatible streaming request. Supplying a `schema`
-map requests `json_schema` mode with that schema. Both streaming APIs forward
-this configuration. This records a provider request, not proof that a particular
-provider enforces the format; validate the returned content locally as well.
+## Structured output in streaming requests
+
+`CompletionConfig.response_format` carries an optional response format. Every
+gateway forwards it the same way in streaming and non-streaming requests:
+
+| `response_format` | OpenAI-compatible body | Ollama body |
+| ----------------- | ---------------------- | ----------- |
+| `nil` | no `response_format` | no `format` |
+| `%{type: :text}` | `response_format: %{type: "text"}` | no `format` |
+| `%{type: :json_object}` | `response_format: %{type: "json_object"}` | `format: "json"` |
+| `%{type: :json_object, schema: schema}` | `response_format: %{type: "json_schema", json_schema: %{name: "response", schema: schema}}` | `format: schema` |
+
+```elixir
+config = CompletionConfig.new(response_format: %{type: :json_object, schema: schema})
+Broker.generate_stream_events(broker, messages, config)
+```
+
+This records what was requested. It is not proof that the provider enforced
+the format. Validate the returned content yourself.
