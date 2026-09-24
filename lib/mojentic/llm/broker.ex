@@ -198,14 +198,7 @@ defmodule Mojentic.LLM.Broker do
     with {:ok, response} <- generate_response(broker, messages, tools, config) do
       case response.tool_calls do
         [] ->
-          finish_generation(
-            broker,
-            messages,
-            response,
-            tools,
-            config,
-            iterations_remaining
-          )
+          finish_generation(response)
 
         _tool_calls ->
           handle_tool_calls(
@@ -220,38 +213,12 @@ defmodule Mojentic.LLM.Broker do
     end
   end
 
-  defp finish_generation(_broker, _messages, response, _tools, _config, _iterations_remaining)
-       when response.finish_reason in [nil, "stop"],
-       do: {:ok, response.content || ""}
+  # A truncated or otherwise unfinished response is an error, never a result.
+  # Callers that want to resume own that policy through generate_response/4.
+  defp finish_generation(%{finish_reason: reason} = response) when reason in [nil, "stop"],
+    do: {:ok, response.content || ""}
 
-  defp finish_generation(
-         broker,
-         messages,
-         %{finish_reason: "length"} = response,
-         tools,
-         config,
-         iterations_remaining
-       ) do
-    Logger.warning(
-      "LLM response reached its completion-token limit; continuing the same conversation"
-    )
-
-    continuation =
-      Message.user(
-        "The provider ended the previous response because it reached its completion-token limit. " <>
-          "Continue from the existing conversation and finish the requested work."
-      )
-
-    do_generate(
-      broker,
-      messages ++ [build_assistant_message(response), continuation],
-      tools,
-      config,
-      iterations_remaining
-    )
-  end
-
-  defp finish_generation(_broker, _messages, response, _tools, _config, _iterations_remaining),
+  defp finish_generation(response),
     do: {:error, {:incomplete_completion, response.finish_reason}}
 
   @doc """

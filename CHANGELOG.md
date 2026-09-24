@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- `Broker.generate/4` returns `{:error, {:incomplete_completion, reason}}` for any
+  finish reason other than `"stop"`, including `"length"`. Truncated content is an
+  error, never a result. The broker does not continue truncated responses; callers
+  that want to resume do so with `generate_response/4`.
+
 - Preserve reported usage, provider model, finish reason and metadata in ordinary
   and structured broker response traces. Missing provider usage remains unknown.
 
