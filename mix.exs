@@ -121,6 +121,7 @@ defmodule Mojentic.MixProject do
         "guides/streaming.md": [title: "Streaming"],
         "guides/embeddings.md": [title: "Embeddings"],
         "guides/openai_model_registry.md": [title: "OpenAI Model Registry"],
+        "guides/omlx.md": [title: "oMLX Gateway"],
         "AGENTS.md": [title: "AI Assistant Guidelines"]
       ],
       groups_for_extras: [
@@ -152,6 +153,7 @@ defmodule Mojentic.MixProject do
         ],
         Gateways: [
           Mojentic.LLM.Gateways.Ollama,
+          Mojentic.LLM.Gateways.OMLX,
           Mojentic.LLM.Gateways.TokenizerGateway
         ],
         Tools: [

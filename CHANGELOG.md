@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add `Mojentic.LLM.Gateways.OMLX`, a gateway for oMLX (an LLM server for Apple
+  Silicon). Configure it with `OMLX_HOST` (default `http://localhost:8000`; the
+  gateway adds `/v1`), `OMLX_API_KEY` (a bearer token, sent only when set) and
+  `OMLX_TIMEOUT` (milliseconds, default 60000). It sends every configured
+  parameter unchanged for any model name (no OpenAI model registry), always as
+  `max_tokens`, and forwards `top_k` and `reasoning_effort`. `reasoning_content`
+  becomes `thinking`, and usage is kept exactly as reported. A `Warning` header
+  on a structured-output request goes into metadata as
+  `"response_format_warning"` and is logged. Both streaming APIs drop oMLX
+  keep-alive frames, and `Broker.generate_stream_events/3` supports oMLX. New
+  public functions `OMLX.load_model/1` and `OMLX.unload_model/1`.
+  `calculate_embeddings/2` requires a model and sends one request.
+- The OpenAI legacy stream parser reads deltas that omit the `finish_reason`
+  key. OpenAI always sends it, so OpenAI streams are unchanged; OpenAI-compatible
+  servers that omit it no longer lose content and tool calls.
+
 - The Ollama gateway implements `complete_stream_events/3`, so
   `Broker.generate_stream_events/3` works with Ollama as well as OpenAI.
   Completion requires a final frame with `done: true` and `done_reason: "stop"`;

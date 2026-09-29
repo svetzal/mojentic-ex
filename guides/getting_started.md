@@ -38,6 +38,15 @@ ollama pull phi4:14b
 
 3. Start the Ollama service (runs on `http://localhost:11434` by default)
 
+### Setting up oMLX (Local LLMs on Apple Silicon)
+
+1. Install and start [oMLX](https://github.com/jundot/omlx). It listens on
+   `http://localhost:8000` by default.
+2. Set `OMLX_HOST` if the server is somewhere else, and `OMLX_API_KEY` if it
+   requires a key.
+3. Use `Mojentic.LLM.Gateways.OMLX` as the broker's gateway. See the
+   [oMLX Gateway](omlx.md) guide.
+
 ### Setting up OpenAI (Planned)
 
 ```elixir
