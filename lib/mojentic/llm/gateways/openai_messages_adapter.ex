@@ -6,6 +6,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIMessagesAdapter do
   OpenAI's API format, including multimodal content with images.
   """
 
+  alias Mojentic.LLM.CompletionConfig
   alias Mojentic.LLM.Message
   alias Mojentic.LLM.ToolCall
 
@@ -52,6 +53,35 @@ defmodule Mojentic.LLM.Gateways.OpenAIMessagesAdapter do
       }
     end)
   end
+
+  @doc """
+  Converts a configured response format to the OpenAI-compatible
+  `response_format` request value.
+
+  Returns `nil` when no format is configured, so the request leaves it out.
+
+  ## Examples
+
+      iex> OpenAIMessagesAdapter.adapt_response_format(nil)
+      nil
+
+      iex> OpenAIMessagesAdapter.adapt_response_format(%{type: :text})
+      %{type: "text"}
+
+      iex> OpenAIMessagesAdapter.adapt_response_format(%{type: :json_object, schema: nil})
+      %{type: "json_object"}
+
+      iex> OpenAIMessagesAdapter.adapt_response_format(%{type: :json_object, schema: %{"type" => "object"}})
+      %{type: "json_schema", json_schema: %{name: "response", schema: %{"type" => "object"}}}
+
+  """
+  @spec adapt_response_format(CompletionConfig.response_format() | nil) :: map() | nil
+  def adapt_response_format(%{type: :json_object, schema: schema}) when is_map(schema),
+    do: %{type: "json_schema", json_schema: %{name: "response", schema: schema}}
+
+  def adapt_response_format(%{type: :json_object}), do: %{type: "json_object"}
+  def adapt_response_format(%{type: :text}), do: %{type: "text"}
+  def adapt_response_format(nil), do: nil
 
   # Private functions
 

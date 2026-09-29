@@ -254,20 +254,12 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
     end
   end
 
-  defp put_response_format(body, %{type: :json_object, schema: schema}) when is_map(schema),
-    do:
-      Map.put(body, :response_format, %{
-        type: "json_schema",
-        json_schema: %{name: "response", schema: schema}
-      })
-
-  defp put_response_format(body, %{type: :json_object}),
-    do: Map.put(body, :response_format, %{type: "json_object"})
-
-  defp put_response_format(body, %{type: :text}),
-    do: Map.put(body, :response_format, %{type: "text"})
-
-  defp put_response_format(body, nil), do: body
+  defp put_response_format(body, format) do
+    case OpenAIMessagesAdapter.adapt_response_format(format) do
+      nil -> body
+      response_format -> Map.put(body, :response_format, response_format)
+    end
+  end
 
   defp build_headers do
     api_key = get_api_key()
