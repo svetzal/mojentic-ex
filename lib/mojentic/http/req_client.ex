@@ -9,8 +9,10 @@ defmodule Mojentic.HTTP.ReqClient do
   def get(url, headers, opts) do
     timeout = Keyword.get(opts, :recv_timeout, 30_000)
 
+    # Mojentic.HTTP promises a binary body; Req would decode JSON into a map.
     case Req.get(url,
            headers: headers,
+           decode_body: false,
            receive_timeout: timeout,
            connect_options: [timeout: timeout]
          ) do

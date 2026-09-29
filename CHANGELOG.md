@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The OpenAI legacy stream parser reads deltas that omit the `finish_reason`
   key. OpenAI always sends it, so OpenAI streams are unchanged; OpenAI-compatible
   servers that omit it no longer lose content and tool calls.
+- `Mojentic.HTTP.ReqClient.get/3` returns the response body as a binary, as
+  the `Mojentic.HTTP` behaviour says. It returned Req's decoded map for JSON
+  responses, so `get_available_models/0` raised against a real server in the
+  OpenAI, Ollama and oMLX gateways. Mocked tests could not see it.
 
 - The Ollama gateway implements `complete_stream_events/3`, so
   `Broker.generate_stream_events/3` works with Ollama as well as OpenAI.
