@@ -123,7 +123,10 @@ defmodule Mojentic.LLM.Gateways.OpenAILegacyStream do
 
   defp parse_streaming_json(json, acc_results, acc_tools) do
     case json do
-      %{"choices" => [%{"delta" => delta, "finish_reason" => finish_reason} | _]} ->
+      %{"choices" => [%{"delta" => delta} = choice | _]} ->
+        # OpenAI-compatible servers may omit a null finish_reason.
+        finish_reason = choice["finish_reason"]
+
         # Handle content
         acc_results =
           case Map.get(delta, "content") do

@@ -129,6 +129,45 @@ defmodule Mojentic.LLM.Gateways.OpenAITest do
                |> Enum.to_list()
     end
 
+    test "reads deltas that omit the finish_reason key" do
+      wire =
+        Enum.map_join(
+          [
+            %{choices: [%{index: 0, delta: %{content: "Checking"}}]},
+            %{
+              choices: [
+                %{
+                  index: 0,
+                  delta: %{
+                    tool_calls: [
+                      %{
+                        index: 0,
+                        id: "call_1",
+                        function: %{name: "resolve_date", arguments: "{}"}
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            %{choices: [%{index: 0, delta: %{}, finish_reason: "tool_calls"}]}
+          ],
+          fn frame -> "data: " <> Jason.encode!(frame) <> "\n\n" end
+        ) <> "data: [DONE]\n\n"
+
+      expect(Mojentic.HTTPMock, :post_stream, fn _url, _body, _headers, _opts ->
+        {:ok, [{:data, wire}]}
+      end)
+
+      assert [
+               {:content, "Checking"},
+               {:tool_calls, [%Mojentic.LLM.ToolCall{id: "call_1", name: "resolve_date"}]}
+             ] =
+               "gpt-4o"
+               |> OpenAI.complete_stream([Message.user("hi")], nil, config(nil))
+               |> Enum.to_list()
+    end
+
     test "yields a transport failure as an error element" do
       expect(Mojentic.HTTPMock, :post_stream, fn _url, _body, _headers, _opts ->
         {:error, :econnrefused}
