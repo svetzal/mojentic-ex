@@ -70,6 +70,77 @@ defmodule Mojentic.LLM.Gateways.OpenAITest do
     end
   end
 
+  describe "legacy streaming" do
+    test "accumulates a tool call split across deltas and yields it once" do
+      wire =
+        Enum.map_join(
+          [
+            %{choices: [%{delta: %{content: "Checking"}, finish_reason: nil}]},
+            %{
+              choices: [
+                %{
+                  delta: %{
+                    tool_calls: [
+                      %{
+                        index: 0,
+                        id: "call_1",
+                        function: %{name: "resolve_date", arguments: "{\"rel"}
+                      }
+                    ]
+                  },
+                  finish_reason: nil
+                }
+              ]
+            },
+            %{
+              choices: [
+                %{
+                  delta: %{
+                    tool_calls: [%{index: 0, function: %{arguments: "ative\": \"today\"}"}}]
+                  },
+                  finish_reason: nil
+                }
+              ]
+            },
+            %{choices: [%{delta: %{}, finish_reason: "tool_calls"}]}
+          ],
+          fn frame -> "data: " <> Jason.encode!(frame) <> "\n\n" end
+        ) <> "data: [DONE]\n\n"
+
+      <<first::binary-size(40), rest::binary>> = wire
+
+      expect(Mojentic.HTTPMock, :post_stream, fn _url, _body, _headers, _opts ->
+        {:ok, [{:data, first}, {:data, rest}]}
+      end)
+
+      assert [
+               {:content, "Checking"},
+               {:tool_calls,
+                [
+                  %Mojentic.LLM.ToolCall{
+                    id: "call_1",
+                    name: "resolve_date",
+                    arguments: %{"relative" => "today"}
+                  }
+                ]}
+             ] =
+               "gpt-4o"
+               |> OpenAI.complete_stream([Message.user("hi")], nil, config(nil))
+               |> Enum.to_list()
+    end
+
+    test "yields a transport failure as an error element" do
+      expect(Mojentic.HTTPMock, :post_stream, fn _url, _body, _headers, _opts ->
+        {:error, :econnrefused}
+      end)
+
+      assert [{:error, :econnrefused}] =
+               "gpt-4o"
+               |> OpenAI.complete_stream([Message.user("hi")], nil, config(nil))
+               |> Enum.to_list()
+    end
+  end
+
   describe "response evidence" do
     test "structured responses carry reported usage, model and finish reason" do
       expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
