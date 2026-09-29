@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add `Mojentic.LLM.Gateways.OMLX`, a gateway for oMLX (an LLM server for Apple
   Silicon). Configure it with `OMLX_HOST` (default `http://localhost:8000`; the
   gateway adds `/v1`), `OMLX_API_KEY` (a bearer token, sent only when set) and
-  `OMLX_TIMEOUT` (milliseconds, default 60000). It sends every configured
+  `OMLX_TIMEOUT` (milliseconds, default 600000, for every request including load). It sends every configured
   parameter unchanged for any model name (no OpenAI model registry), always as
   `max_tokens`, and forwards `top_k` and `reasoning_effort`. `reasoning_content`
   becomes `thinking`, and usage is kept exactly as reported. A `Warning` header

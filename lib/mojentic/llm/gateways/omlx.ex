@@ -14,9 +14,12 @@ defmodule Mojentic.LLM.Gateways.OMLX do
 
       export OMLX_HOST=http://localhost:8000  # default; the gateway adds /v1
       export OMLX_API_KEY=...                 # optional; sent as a bearer token
-      export OMLX_TIMEOUT=60000               # milliseconds (default)
+      export OMLX_TIMEOUT=600000              # milliseconds (default)
 
-  Without `OMLX_API_KEY`, requests carry no authorization header.
+  Without `OMLX_API_KEY`, requests carry no authorization header. The one
+  timeout covers every request, including `load_model/1`. Its ten-minute
+  default is longer than the other gateways use, because local models are
+  slow: a 16384-token reply at 16 tokens a second takes about 17 minutes.
 
   ## Request parameters
 
@@ -76,10 +79,7 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   require Logger
 
   @default_host "http://localhost:8000"
-  @default_timeout 60_000
-  # Loading reads a whole model into memory; 31 GB took seconds from oMLX's
-  # SSD cache and longer from cold.
-  @minimum_load_timeout 600_000
+  @default_timeout 600_000
   @keepalive_model "keepalive"
   @warning_key "response_format_warning"
 
@@ -176,12 +176,12 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   @doc """
   Loads a model into memory ahead of its first request.
 
-  Blocks until the model is loaded, with a timeout of at least ten minutes.
+  Blocks until the model is loaded, within the `OMLX_TIMEOUT` timeout.
   A chat request loads its model automatically; this is for warming up.
   Returns `:ok`, or `{:error, reason}` as the other requests do.
   """
   @spec load_model(String.t()) :: :ok | Gateway.error()
-  def load_model(model), do: post_model_action(model, "load", load_timeout())
+  def load_model(model), do: post_model_action(model, "load")
 
   @doc """
   Unloads a model from memory.
@@ -190,7 +190,7 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   (`{:error, {:http_error, 400, body}}`).
   """
   @spec unload_model(String.t()) :: :ok | Gateway.error()
-  def unload_model(model), do: post_model_action(model, "unload", get_timeout())
+  def unload_model(model), do: post_model_action(model, "unload")
 
   # Request building
 
@@ -246,10 +246,10 @@ defmodule Mojentic.LLM.Gateways.OMLX do
     end
   end
 
-  defp post_model_action(model, action, timeout) do
+  defp post_model_action(model, action) do
     path = "/models/#{URI.encode(model, &URI.char_unreserved?/1)}/#{action}"
 
-    case http_client().post(url(path), "", auth_headers(), timeout_opts(timeout)) do
+    case http_client().post(url(path), "", auth_headers(), timeout_opts(get_timeout())) do
       {:ok, %{status_code: 200}} -> :ok
       other -> failure(other)
     end
@@ -341,7 +341,7 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   defp data_element([]), do: []
   defp data_element(lines), do: [{:data, Enum.map_join(lines, &(&1 <> "\n"))}]
 
-  defp keepalive_line?("data: " <> data) do
+  defp keepalive_line?("data:" <> data) do
     String.contains?(data, @keepalive_model) and
       match?({:ok, %{"model" => @keepalive_model}}, Jason.decode(data))
   end
@@ -377,8 +377,6 @@ defmodule Mojentic.LLM.Gateways.OMLX do
       _ -> @default_timeout
     end
   end
-
-  defp load_timeout, do: max(get_timeout(), @minimum_load_timeout)
 
   defp timeout_opts(timeout), do: [recv_timeout: timeout, timeout: timeout]
 end

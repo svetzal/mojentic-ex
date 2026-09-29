@@ -64,7 +64,7 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
   end
 
   describe "configuration" do
-    test "defaults to localhost:8000 under /v1, the OpenAI timeout, and no authorization" do
+    test "defaults to localhost:8000 under /v1, a ten-minute timeout, and no authorization" do
       expect_post(fixture("chat_thinking.json"))
 
       assert {:ok, _} = OMLX.complete(@model, [Message.user("hi")], nil, CompletionConfig.new())
@@ -73,7 +73,7 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
       assert url == "http://localhost:8000/v1/chat/completions"
       assert header(headers, "authorization") == nil
       assert header(headers, "content-type") == "application/json"
-      assert opts[:recv_timeout] == 60_000
+      assert opts[:recv_timeout] == 600_000
     end
 
     test "OMLX_HOST, OMLX_API_KEY and OMLX_TIMEOUT configure every request" do
@@ -107,7 +107,7 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
       assert {:ok, _} = OMLX.get_available_models()
 
       assert_received {:get, _url, _headers, opts}
-      assert opts[:recv_timeout] == 60_000
+      assert opts[:recv_timeout] == 600_000
     end
   end
 
@@ -450,6 +450,13 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
       assert events() == [{:error, {:incomplete_stream, nil}}]
     end
 
+    test "a keep-alive frame without a space after data: is dropped too" do
+      "data: " <> json = keepalive_frame()
+      expect_stream(["data:" <> json])
+
+      assert events() == [{:error, {:incomplete_stream, nil}}]
+    end
+
     test "a keep-alive frame after the first real frame does not replace the reported model" do
       frame =
         "data: " <>
@@ -576,7 +583,7 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
       assert {:error, {:request_failed, :econnrefused}} = OMLX.get_available_models()
     end
 
-    test "load_model posts to the model's load path with a long timeout" do
+    test "load_model posts to the model's load path with the ten-minute default timeout" do
       System.put_env("OMLX_API_KEY", "local-key")
       expect_post(fixture("model_load.json"))
 
@@ -585,7 +592,7 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
       assert_received {:post, url, _body, headers, opts}
       assert url == "http://localhost:8000/v1/models/#{@model}/load"
       assert header(headers, "authorization") == "Bearer local-key"
-      assert opts[:recv_timeout] >= 600_000
+      assert opts[:recv_timeout] == 600_000
     end
 
     test "unload_model posts to the model's unload path" do

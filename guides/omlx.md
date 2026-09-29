@@ -17,7 +17,7 @@ The gateway reads three environment variables.
 | -------- | ------- | ------- |
 | `OMLX_HOST` | `http://localhost:8000` | Server address, without `/v1`. The gateway adds `/v1` to each path. |
 | `OMLX_API_KEY` | none | Sent as `Authorization: Bearer <key>`. When it is not set, requests have no authorization header. |
-| `OMLX_TIMEOUT` | `60000` | Request timeout in milliseconds. |
+| `OMLX_TIMEOUT` | `600000` | Timeout in milliseconds for every request, including model load. |
 
 ```bash
 export OMLX_HOST=http://localhost:8000
@@ -103,8 +103,8 @@ completion rules: success needs a `finish_reason` of `"stop"` and the
 :ok = OMLX.unload_model("Qwen3.8-27B-MLX-8bit")
 ```
 
-- `load_model/1` blocks until the model is in memory. Its timeout is the
-  larger of `OMLX_TIMEOUT` and ten minutes. A chat request loads its model
+- `load_model/1` blocks until the model is in memory, within
+  `OMLX_TIMEOUT`. A chat request loads its model
   automatically, so use `load_model/1` only to warm up a model before its first
   request.
 - `unload_model/1` on a model that is not loaded returns
