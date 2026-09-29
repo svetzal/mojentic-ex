@@ -169,7 +169,7 @@ _A code generation and project patching framework_
 mix format --check-formatted && \
 mix credo --strict && \
 mix test && \
-mix audit
+mix deps.audit
 ```
 
 **Why this matters**: Examples and tests must pass compilation and linting. When examples fail, users cannot learn from them. Always validate the entire project, not just the code you changed.
@@ -254,7 +254,7 @@ Before creating a release:
 - [ ] All tests pass: `mix test`
 - [ ] Format check passes: `mix format --check-formatted`
 - [ ] Credo passes: `mix credo --strict`
-- [ ] Security audit clean: `mix audit`
+- [ ] Security audit clean: `mix deps.audit`
 - [ ] Docs build: `mix docs`
 - [ ] Version updated in `mix.exs`
 - [ ] CHANGELOG.md updated
@@ -296,7 +296,7 @@ mix test --cover                   # With coverage
 mix format                    # Format code
 mix format --check-formatted  # Check formatting
 mix credo --strict            # Linting
-mix audit                     # Security audit
+mix deps.audit                # Security audit
 ```
 
 ### Documentation
@@ -306,7 +306,7 @@ mix docs        # Generate documentation
 
 ### Before Committing
 ```bash
-mix format --check-formatted && mix credo --strict && mix test && mix audit
+mix format --check-formatted && mix credo --strict && mix test && mix deps.audit
 ```
 
 <!-- usage-rules-end -->
