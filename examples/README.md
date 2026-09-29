@@ -53,6 +53,21 @@ Demonstrates:
 - Querying available models
 - Error handling for gateway connection issues
 
+#### `omlx.exs`
+Run one chat turn against a local [oMLX](https://github.com/jundot/omlx) server
+on Apple Silicon.
+
+```bash
+export OMLX_HOST=http://localhost:8000   # default
+export OMLX_API_KEY=your-omlx-key        # only when the server requires a key
+mix run examples/omlx.exs
+```
+
+Demonstrates:
+- Creating a broker with the oMLX gateway
+- Reading the model's thinking separately from its answer
+- Reporting finish reason, provider model and usage
+
 #### `structured_output.exs`
 Generate structured JSON output using a schema.
 
@@ -128,6 +143,10 @@ You can customize behavior using these environment variables:
 
 - `OLLAMA_HOST` - Ollama server URL (default: `http://localhost:11434`)
 - `OLLAMA_TIMEOUT` - Request timeout in milliseconds (default: `300000` = 5 minutes)
+- `OMLX_HOST` - oMLX server URL, without `/v1` (default: `http://localhost:8000`)
+- `OMLX_API_KEY` - oMLX bearer token (default: none)
+- `OMLX_TIMEOUT` - oMLX request timeout in milliseconds (default: `60000`)
+- `OMLX_MODEL` - Model for `omlx.exs` (default: the first model the server lists)
 
 Example:
 ```bash
