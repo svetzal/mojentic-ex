@@ -24,6 +24,49 @@ defmodule Mojentic.HTTP.ReqClientTest do
     assert Jason.decode!(body) == %{"ok" => true}
   end
 
+  test "idle stream timeout allows consumption beyond its initial timeout" do
+    alias Mojentic.TestSupport.ChunkedHTTPServer
+    start_supervised!({ChunkedHTTPServer, {self(), ["one", "two"], false, 200}})
+    assert_receive {:port, port}
+
+    {:ok, stream} =
+      ReqClient.post_stream("http://127.0.0.1:#{port}/stream", "{}", [],
+        recv_timeout: 100,
+        stream_timeout: :idle
+      )
+
+    events =
+      Enum.to_list(
+        Stream.map(stream, fn event ->
+          receive do
+            :unused -> :ok
+          after
+            150 -> :ok
+          end
+
+          event
+        end)
+      )
+
+    assert Enum.all?(events, &match?({:data, _}, &1))
+    assert Enum.map_join(events, fn {:data, text} -> text end) == "onetwo"
+  end
+
+  test "idle stream timeout still cancels a stalled response" do
+    alias Mojentic.TestSupport.ChunkedHTTPServer
+    start_supervised!({ChunkedHTTPServer, {self(), ["partial"], true, 200}})
+    assert_receive {:port, port}
+
+    {:ok, stream} =
+      ReqClient.post_stream("http://127.0.0.1:#{port}/stream", "{}", [],
+        recv_timeout: 100,
+        stream_timeout: :idle
+      )
+
+    assert [{:data, "partial"}, {:error, :timeout}] = Enum.to_list(stream)
+    assert_receive {:cancel_result, {:error, :closed}}, 2000
+  end
+
   defp serve_json(json) do
     {:ok, listener} =
       :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true, ip: {127, 0, 0, 1}])

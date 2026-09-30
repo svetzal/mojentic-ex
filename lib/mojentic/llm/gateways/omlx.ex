@@ -124,7 +124,7 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   Calculates an embedding with one request to `/v1/embeddings`.
 
   The model is required: oMLX has no standard embedding model. A `nil` or
-  empty model raises `ArgumentError` before any request. The text is sent
+  blank model raises `ArgumentError` before any request. The text is sent
   whole, with no client-side chunking. Using a chat model is a provider error.
   """
   @impl Gateway
@@ -133,6 +133,10 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   end
 
   def calculate_embeddings(text, model) do
+    if not is_binary(model) or String.trim(model) == "" do
+      raise ArgumentError, "oMLX embeddings require a model; there is no default embedding model"
+    end
+
     body = Jason.encode!(%{model: model, input: text})
 
     case http_client().post(url("/embeddings"), body, json_headers(), timeout_opts(get_timeout())) do
@@ -240,7 +244,7 @@ defmodule Mojentic.LLM.Gateways.OMLX do
              url("/chat/completions"),
              Jason.encode!(body),
              json_headers(),
-             timeout_opts(get_timeout())
+             [stream_timeout: :idle] ++ timeout_opts(get_timeout())
            ) do
       {:ok, drop_keepalive_frames(frames)}
     end

@@ -187,6 +187,23 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
              )
   end
 
+  test "malformed delta and provider evidence yield a terminal validation error" do
+    for patch <- [
+          %{choices: [%{delta: 7}]},
+          %{choices: [%{delta: %{tool_calls: "bad"}}]},
+          %{choices: [%{delta: %{tool_calls: [%{}, 7]}}]},
+          %{model: 7},
+          %{usage: 7},
+          %{choices: [%{delta: %{}, finish_reason: 7}]}
+        ] do
+      object = Map.merge(%{choices: [%{delta: %{}}]}, patch)
+      wire = "data: " <> Jason.encode!(object) <> "\n\n"
+
+      assert [{:error, :invalid_stream_event}] =
+               Enum.to_list(OpenAIStream.events(fn -> {:ok, [{:data, wire}]} end))
+    end
+  end
+
   defp stream do
     Broker.generate_stream_events(
       Broker.new("gpt-4o", OpenAI),

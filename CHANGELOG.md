@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Reject malformed streaming delta, tool-call and provider evidence shapes with
+  terminal validation errors. OpenAI-compatible streams no longer crash on a
+  non-object delta. Ollama EOF errors preserve earlier usage and timing evidence.
+- Apply `OMLX_TIMEOUT` to connection setup and idle streaming waits, allowing
+  active streams to exceed the interval. Reject whitespace-only embedding model
+  names before any request.
+
 - Preserve HTTP and HTTPS image URLs and data URIs in OpenAI and oMLX
   requests. Match their schemes without case sensitivity and keep the original
   reference unchanged. Local file paths retain base64 encoding.

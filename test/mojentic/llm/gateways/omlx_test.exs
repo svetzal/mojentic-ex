@@ -414,7 +414,8 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
                 }}
              ]
 
-      assert_received {:post_stream, url, body, headers, _opts}
+      assert_received {:post_stream, url, body, headers, opts}
+      assert opts[:stream_timeout] == :idle
       assert url == "http://localhost:8000/v1/chat/completions"
       assert header(headers, "authorization") == nil
       assert body["stream"] == true
@@ -640,7 +641,7 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
     end
 
     test "a missing model is an argument error before any request" do
-      for model <- [nil, ""] do
+      for model <- [nil, "", " ", "\t\n"] do
         assert_raise ArgumentError, ~r/model/, fn -> OMLX.calculate_embeddings("hello", model) end
       end
     end

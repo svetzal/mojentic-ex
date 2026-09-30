@@ -188,6 +188,28 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
     end
   end
 
+  test "EOF retains usage and timing reported before the final frame" do
+    wire =
+      frame(Map.merge(%{model: @model, message: %{content: "partial"}, done: false}, usage()))
+
+    assert [{:content, "partial"}, {:error, {:incomplete_stream, evidence}}] = parse([wire])
+    assert evidence.usage == %{"prompt_eval_count" => 26, "eval_count" => 290}
+    assert evidence.metadata == %{"total_duration" => 5_000, "eval_duration" => 4_000}
+  end
+
+  test "malformed provider fields and tool calls fail closed" do
+    for patch <- [
+          %{model: 7},
+          %{done_reason: 7},
+          %{eval_count: "bad"},
+          %{message: %{tool_calls: "bad"}},
+          %{message: %{tool_calls: [%{}, 7]}}
+        ] do
+      wire = frame(Map.merge(%{done: false, message: %{}}, patch))
+      assert [{:error, :invalid_stream_event}] = parse([wire])
+    end
+  end
+
   defp parse(chunks) do
     Enum.to_list(OllamaStream.events(fn -> {:ok, Enum.map(chunks, &{:data, &1})} end))
   end

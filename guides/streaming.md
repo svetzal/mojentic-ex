@@ -88,8 +88,8 @@ The OpenAI and Ollama gateways support this API. Their completion rules:
 finish reason, usage, provider model and provider metadata. For an incomplete
 stream, `evidence` holds whatever arrived before the stream ended, in the same
 shape, or is `nil` when nothing arrived. An OpenAI stream can have reported the
-model, a finish reason and usage; an Ollama stream reports usage only in its
-final frame, so it can have reported only the model.
+model, a finish reason and usage; an Ollama stream retains any reported usage and timing fields, even when
+those fields arrive before its final frame.
 
 Ollama servers too old to send `done_reason` cannot use this API: their final
 frame is an incomplete completion with a `nil` finish reason.
@@ -111,8 +111,9 @@ fields.
 Stopping early is not an error. If the consumer halts before the terminal
 event, the broker cancels the request and records the call but no response.
 
-The Req transport disables redirects and retries, and applies its configured
-timeout as an absolute streaming deadline. Applications must also bound the
+The Req transport disables redirects and retries. OpenAI and Ollama apply
+the configured timeout as an absolute streaming deadline; oMLX applies it to
+connection setup and idle waits between chunks. Applications must also bound the
 entire call, including connection initialization; a streaming provider can emit
 reasoning for a long time before it emits answer content.
 

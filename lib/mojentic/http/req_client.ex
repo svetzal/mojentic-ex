@@ -43,13 +43,21 @@ defmodule Mojentic.HTTP.ReqClient do
     end
   end
 
+  @doc """
+  Streams a response with an absolute timeout by default.
+
+  Set `stream_timeout: :idle` to apply `recv_timeout` separately to connection
+  setup and each wait for received stream data, allowing longer active streams.
+  """
   @impl true
   def post_stream(url, body, headers, opts) do
     timeout = Keyword.get(opts, :recv_timeout, 30_000)
 
     stream =
       Stream.resource(
-        fn -> start_stream(url, body, headers, timeout) end,
+        fn ->
+          start_stream(url, body, headers, timeout, Keyword.get(opts, :stream_timeout, :absolute))
+        end,
         &next_stream/1,
         &close_stream/1
       )
@@ -57,8 +65,9 @@ defmodule Mojentic.HTTP.ReqClient do
     {:ok, stream}
   end
 
-  defp start_stream(url, body, headers, timeout) do
-    deadline = System.monotonic_time(:millisecond) + timeout
+  defp start_stream(url, body, headers, timeout, mode) do
+    deadline =
+      if mode == :idle, do: {:idle, timeout}, else: System.monotonic_time(:millisecond) + timeout
 
     case Req.post(url,
            body: body,
@@ -83,6 +92,9 @@ defmodule Mojentic.HTTP.ReqClient do
 
   defp next_stream({:error, reason}), do: {[{:error, reason}], :done}
   defp next_stream(:done), do: {:halt, :done}
+
+  defp next_stream({:streaming, response, {:idle, timeout}} = state),
+    do: receive_stream(state, response.body.ref, timeout)
 
   defp next_stream({:streaming, response, deadline} = state) do
     remaining = max(deadline - System.monotonic_time(:millisecond), 0)

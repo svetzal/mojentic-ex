@@ -14,7 +14,7 @@ defmodule Mojentic.LLM.Gateways.OllamaStream do
   def events(start), do: TerminalEventStream.events(start, __MODULE__)
 
   @impl TerminalEventStream
-  def new, do: %{buffer: "", model: nil}
+  def new, do: %{buffer: "", model: nil, finish_reason: nil, usage: nil, metadata: nil}
 
   @impl TerminalEventStream
   def parse(state, chunk) do
@@ -23,9 +23,8 @@ defmodule Mojentic.LLM.Gateways.OllamaStream do
     parse_lines(complete, %{state | buffer: buffer})
   end
 
-  # Ollama may end the body without a newline after the final frame. Usage,
-  # done_reason and durations arrive only in the final frame, so a body that
-  # ends early can only have reported the model.
+  # Ollama may end the body without a newline after the final frame.
+  # Retain all evidence reported before EOF, even in nonterminal frames.
   @impl TerminalEventStream
   def finish(state) do
     {events, state} = parse_lines([state.buffer], %{state | buffer: ""})
@@ -48,16 +47,34 @@ defmodule Mojentic.LLM.Gateways.OllamaStream do
         {[{:error, {:provider_error, error}}], state}
 
       {:ok, %{"done" => done} = frame} when is_boolean(done) ->
-        state = %{state | model: frame["model"] || state.model}
-        {content_events(Map.get(frame, "message", %{})) ++ done_events(frame, state), state}
+        if valid_evidence?(frame) do
+          state = %{
+            state
+            | model: frame["model"] || state.model,
+              finish_reason: frame["done_reason"] || state.finish_reason,
+              usage: merge_evidence(state.usage, Ollama.reported_usage(frame)),
+              metadata: merge_evidence(state.metadata, Ollama.reported_timings(frame))
+          }
+
+          {content_events(Map.get(frame, "message", %{})) ++ done_events(frame, state), state}
+        else
+          {[{:error, :invalid_stream_event}], state}
+        end
 
       _ ->
         {[{:error, :invalid_stream_event}], state}
     end
   end
 
-  defp content_events(%{"tool_calls" => calls}) when is_list(calls) and calls != [],
-    do: [{:error, :unexpected_tool_calls}]
+  defp content_events(%{"tool_calls" => calls}) when is_list(calls) and calls != [] do
+    reason =
+      if Enum.all?(calls, &is_map/1), do: :unexpected_tool_calls, else: :invalid_stream_event
+
+    [{:error, reason}]
+  end
+
+  defp content_events(%{"tool_calls" => calls}) when not is_nil(calls) and calls != [],
+    do: [{:error, :invalid_stream_event}]
 
   defp content_events(%{"content" => text}) when is_binary(text) and text != "",
     do: [{:content, text}]
@@ -76,11 +93,23 @@ defmodule Mojentic.LLM.Gateways.OllamaStream do
   defp done_events(frame, state),
     do: [{:error, {:incomplete_completion, evidence(frame, state)}}]
 
-  defp evidence(frame, state),
+  defp valid_evidence?(frame) do
+    fields = Map.merge(Ollama.reported_usage(frame) || %{}, Ollama.reported_timings(frame) || %{})
+
+    (is_nil(frame["model"]) or is_binary(frame["model"])) and
+      (is_nil(frame["done_reason"]) or is_binary(frame["done_reason"])) and
+      Enum.all?(fields, fn {_key, value} -> is_integer(value) and value >= 0 end)
+  end
+
+  defp merge_evidence(nil, reported), do: reported
+  defp merge_evidence(previous, nil), do: previous
+  defp merge_evidence(previous, reported), do: Map.merge(previous, reported)
+
+  defp evidence(_frame, state),
     do: %{
-      finish_reason: frame["done_reason"],
-      usage: Ollama.reported_usage(frame),
+      finish_reason: state.finish_reason,
+      usage: state.usage,
       provider_model: state.model,
-      metadata: Ollama.reported_timings(frame)
+      metadata: state.metadata
     }
 end

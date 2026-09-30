@@ -133,3 +133,13 @@ oMLX errors use the OpenAI error shape. The gateway returns them unchanged:
 - A connection failure is `{:error, {:request_failed, reason}}`.
 - In `Broker.generate_stream_events/3`, a non-2xx response is
   `{:error, {:provider_error, %{status: status}}}`.
+
+## Streaming timeout
+
+`OMLX_TIMEOUT` bounds connection setup and idle waits between received stream
+chunks. An active stream can run longer than that interval. Both streaming APIs
+cancel the HTTP request when the consumer stops. Non-streaming requests,
+including model loading, retain their configured request timeout.
+
+Embedding requests require a nonblank model name. Empty or whitespace-only
+names raise `ArgumentError` before any request.
