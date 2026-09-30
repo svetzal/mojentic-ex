@@ -4,7 +4,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIToolRoundtripTest do
   import Mox
 
   alias Mojentic.LLM.Broker
-  alias Mojentic.LLM.Gateways.OpenAI
+  alias Mojentic.LLM.Gateways.{OMLX, OpenAI}
   alias Mojentic.LLM.Message
 
   setup :verify_on_exit!
@@ -71,6 +71,65 @@ defmodule Mojentic.LLM.Gateways.OpenAIToolRoundtripTest do
     assert response.finish_reason == "tool_calls"
     assert [%{id: "call_fixture_get_weather"}] = response.tool_calls
     refute_received {:weather_tool_called, _}
+  end
+
+  for {gateway, model} <- [{OpenAI, "gpt-4o"}, {OMLX, "Qwen3.8-27B-MLX-8bit"}] do
+    @gateway gateway
+    @model model
+
+    test "#{inspect(gateway)} carries the first streamed delta's id into the tool follow-up" do
+      id = "call_split_get_weather"
+
+      deltas = [
+        %{tool_calls: [%{index: 0, id: id, function: %{name: "get_weather", arguments: ""}}]},
+        %{tool_calls: [%{index: 0, function: %{arguments: "{\"location\":"}}]},
+        %{tool_calls: [%{index: 0, function: %{arguments: "\"Paris\"}"}}]}
+      ]
+
+      chunks =
+        Enum.map(deltas, fn delta ->
+          frame = %{choices: [%{delta: delta, finish_reason: nil}]}
+          {:data, "data: " <> Jason.encode!(frame) <> "\n\n"}
+        end) ++
+          [
+            {:data,
+             "data: " <>
+               Jason.encode!(%{choices: [%{delta: %{}, finish_reason: "tool_calls"}]}) <>
+               "\n\ndata: [DONE]\n\n"}
+          ]
+
+      expect(Mojentic.HTTPMock, :post_stream, fn _, body, _, _ ->
+        assert Jason.decode!(body)["tools"] != []
+        {:ok, chunks}
+      end)
+
+      expect(Mojentic.HTTPMock, :post_stream, fn _, body, _, _ ->
+        messages = Jason.decode!(body)["messages"]
+        assistant = Enum.find(messages, &(&1["role"] == "assistant"))
+        assert [%{"id" => ^id, "function" => function}] = assistant["tool_calls"]
+        assert function["name"] == "get_weather"
+        assert Jason.decode!(function["arguments"]) == %{"location" => "Paris"}
+
+        tool = Enum.find(messages, &(&1["role"] == "tool"))
+        assert tool["tool_call_id"] == id
+
+        assert Jason.decode!(tool["content"]) == %{
+                 "temperature_c" => 22,
+                 "conditions" => "sunny"
+               }
+
+        frame = %{choices: [%{delta: %{content: "Sunny"}, finish_reason: "stop"}]}
+        {:ok, [{:data, "data: " <> Jason.encode!(frame) <> "\n\ndata: [DONE]\n\n"}]}
+      end)
+
+      assert ["Sunny"] =
+               @model
+               |> Broker.new(@gateway)
+               |> Broker.generate_stream([Message.user("Weather in Paris?")], [GetWeatherTool])
+               |> Enum.to_list()
+
+      assert_received {:weather_tool_called, %{"location" => "Paris"}}
+    end
   end
 
   describe "tool-call round-trip via Broker.generate/4" do
