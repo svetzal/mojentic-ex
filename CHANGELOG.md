@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Split OpenAI embedding input into parts of at most 8191 `cl100k_base` tokens.
+  Weight each vector by its part token count before normalizing the result.
+  The previous chunking stub sent long text whole and used vector dimensions
+  as weights.
+
 - Add `Mojentic.LLM.Gateways.OMLX`, a gateway for oMLX (an LLM server for Apple
   Silicon). Configure it with `OMLX_HOST` (default `http://localhost:8000`; the
   gateway adds `/v1`), `OMLX_API_KEY` (a bearer token, sent only when set) and

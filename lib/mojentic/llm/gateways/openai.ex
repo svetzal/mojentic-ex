@@ -183,15 +183,10 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
     timeout = get_timeout()
     model = model || "text-embedding-3-large"
 
-    # Chunk the text to handle token limits
-    chunks = chunk_text(text, 8191)
-
-    case process_embedding_chunks(chunks, model, endpoint, api_key, timeout) do
-      {:ok, embeddings} ->
-        {:ok, weighted_average_embeddings(embeddings)}
-
-      {:error, reason} ->
-        {:error, reason}
+    with {:ok, chunks} <- chunk_text(text, 8191),
+         {:ok, embeddings} <-
+           process_embedding_chunks(chunks, model, endpoint, api_key, timeout) do
+      {:ok, weighted_average_embeddings(embeddings)}
     end
   end
 
@@ -418,11 +413,14 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
     end
   end
 
-  defp chunk_text(text, _chunk_size) do
-    # Simple implementation - for production, use proper tokenization
-    # For now, just return the full text if it's not too long
-    [text]
+  defp chunk_text(text, chunk_size) do
+    with {:ok, tokens} <- Tiktoken.CL100K.encode_ordinary(text) do
+      {:ok, token_chunks(tokens, chunk_size)}
+    end
   end
+
+  defp token_chunks([], _chunk_size), do: [[]]
+  defp token_chunks(tokens, chunk_size), do: Enum.chunk_every(tokens, chunk_size)
 
   defp process_embedding_chunks(chunks, model, endpoint, api_key, timeout) do
     headers = [
@@ -444,7 +442,7 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
           {:ok, %{status_code: 200, body: response_body}} ->
             case Jason.decode(response_body) do
               {:ok, %{"data" => [%{"embedding" => embedding} | _]}} ->
-                {:ok, embedding}
+                {:ok, {embedding, length(chunk)}}
 
               _ ->
                 {:error, :invalid_response}
@@ -468,14 +466,14 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
     end
   end
 
-  defp weighted_average_embeddings([embedding]) do
+  defp weighted_average_embeddings([{embedding, _token_count}]) do
     # Single embedding - normalize and return
     normalize(embedding)
   end
 
   defp weighted_average_embeddings(embeddings) do
-    # Calculate weights based on embedding lengths
-    weights = Enum.map(embeddings, &length/1)
+    weights = Enum.map(embeddings, fn {_embedding, token_count} -> token_count end)
+    embeddings = Enum.map(embeddings, fn {embedding, _token_count} -> embedding end)
     total_weight = Enum.sum(weights)
 
     # Calculate weighted average

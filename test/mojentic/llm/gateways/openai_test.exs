@@ -28,6 +28,37 @@ defmodule Mojentic.LLM.Gateways.OpenAITest do
                 "usage" => %{"prompt_tokens" => 7, "completion_tokens" => 2}
               })
 
+  describe "embeddings" do
+    test "weights unequal token parts before normalization" do
+      text = String.duplicate(" a", 8291)
+
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
+        assert %{"input" => tokens, "model" => "text-embedding-3-large"} = Jason.decode!(body)
+        assert length(tokens) == 8191
+        assert Enum.uniq(tokens) == [264]
+        {:ok, %{status_code: 200, body: Jason.encode!(%{data: [%{embedding: [1.0, 0.0]}]})}}
+      end)
+
+      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
+        assert length(Jason.decode!(body)["input"]) == 100
+        {:ok, %{status_code: 200, body: Jason.encode!(%{data: [%{embedding: [0.0, 1.0]}]})}}
+      end)
+
+      assert {:ok, [first, second]} = OpenAI.calculate_embeddings(text, nil)
+      norm = :math.sqrt(8191 * 8191 + 100 * 100)
+      assert_in_delta first, 8191 / norm, 1.0e-10
+      assert_in_delta second, 100 / norm, 1.0e-10
+    end
+
+    test "normalizes a single part without averaging" do
+      expect(Mojentic.HTTPMock, :post, fn _url, _body, _headers, _opts ->
+        {:ok, %{status_code: 200, body: Jason.encode!(%{data: [%{embedding: [3.0, 4.0]}]})}}
+      end)
+
+      assert {:ok, [0.6, 0.8]} = OpenAI.calculate_embeddings("hello", nil)
+    end
+  end
+
   describe "response format forwarding" do
     test "non-streaming requests carry the configured format and omit it when absent" do
       for {format, expected} <- @formats do
