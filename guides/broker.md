@@ -466,3 +466,17 @@ Use a response trace to recover usage omitted by a downstream receipt projection
 A receipt and its matching response trace describe the same call: do not add them
 together. Provider metadata can also distinguish whole-call totals from usage for
 only the last internal model response.
+
+## Image references
+
+For OpenAI and oMLX, `Message.with_images/2` accepts local image file paths,
+HTTP or HTTPS URLs, and data URIs. Remote references pass through unchanged,
+including their original casing. Local files become base64 data URIs.
+
+```elixir
+messages = [
+  Message.user("Describe this image")
+  |> Message.with_images(["https://example.com/photo.png"])
+]
+Broker.generate(broker, messages)
+```

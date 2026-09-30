@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Preserve HTTP and HTTPS image URLs and data URIs in OpenAI and oMLX
+  requests. Match their schemes without case sensitivity and keep the original
+  reference unchanged. Local file paths retain base64 encoding.
+
 - Split OpenAI embedding input into parts of at most 8191 `cl100k_base` tokens.
   Weight each vector by its part token count before normalizing the result.
   The previous chunking stub sent long text whole and used vector dimensions

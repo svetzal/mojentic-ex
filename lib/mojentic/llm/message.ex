@@ -74,7 +74,11 @@ defmodule Mojentic.LLM.Message do
   end
 
   @doc """
-  Adds image paths to a message.
+  Adds image references to a message.
+
+  The OpenAI and oMLX gateways accept local file paths, HTTP or HTTPS URLs,
+  and data URIs. URLs and data URIs pass through unchanged; scheme matching
+  is case insensitive. Local files are encoded as base64 data URIs.
 
   ## Examples
 

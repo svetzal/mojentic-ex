@@ -162,7 +162,15 @@ defmodule Mojentic.LLM.Gateways.OpenAIMessagesAdapter do
     }
   end
 
-  defp encode_image(file_path) do
+  defp encode_image(reference) do
+    if String.starts_with?(String.downcase(reference), ["http://", "https://", "data:"]) do
+      {:ok, reference}
+    else
+      encode_local_image(reference)
+    end
+  end
+
+  defp encode_local_image(file_path) do
     case File.read(file_path) do
       {:ok, bytes} ->
         base64_data = Base.encode64(bytes)
