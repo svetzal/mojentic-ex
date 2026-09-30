@@ -1,5 +1,6 @@
 defmodule Mojentic.HTTP.ReqClientTest do
-  use ExUnit.Case, async: true
+  # These real-socket timeout checks need the scheduler without concurrent tests.
+  use ExUnit.Case, async: false
 
   alias Mojentic.HTTP.ReqClient
 
