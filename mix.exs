@@ -75,6 +75,7 @@ defmodule Mojentic.MixProject do
 
       # Tokenization (Hugging Face tokenizers via Rustler NIF)
       {:tokenizers, "~> 0.5"},
+      {:tiktoken, "~> 0.4.2"},
 
       # Development and testing
       {:mox, "~> 1.0", only: :test},
