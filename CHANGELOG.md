@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-30
+
 - Reject malformed streaming delta, tool-call and provider evidence shapes with
   terminal validation errors. OpenAI-compatible streams no longer crash on a
   non-object delta. Ollama EOF errors preserve earlier usage and timing evidence.
