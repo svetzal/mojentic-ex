@@ -151,7 +151,9 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
   end
 
   test "absolute transport deadline preserves partial response then cancels" do
-    System.put_env("OPENAI_TIMEOUT", "50")
+    # Long enough for the partial chunk to arrive under load, yet well inside
+    # the 2s the server holds the response open, so the deadline still fires.
+    System.put_env("OPENAI_TIMEOUT", "500")
     serve([event("partial")], true)
 
     assert [{:content, "partial"}, {:error, {:request_failed, :timeout}}] =
