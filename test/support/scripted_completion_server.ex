@@ -29,6 +29,10 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
 
         sockets =
           case response do
+            {:stream_hold, response} ->
+              :ok = :gen_tcp.send(socket, response)
+              [socket | state.sockets]
+
             :hold ->
               [socket | state.sockets]
 
@@ -48,6 +52,18 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
 
   @impl true
   def handle_call(:requests, _from, state), do: {:reply, state.requests, state, 0}
+
+  def handle_call(:closed_sockets, _from, state) do
+    results =
+      Enum.map(state.sockets, fn socket ->
+        case :gen_tcp.recv(socket, 0, 2000) do
+          {:error, :closed} -> :closed
+          other -> other
+        end
+      end)
+
+    {:reply, results, state, 0}
+  end
 
   def handle_call({:release, response}, _from, state) do
     Enum.each(state.sockets, fn socket ->

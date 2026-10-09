@@ -323,7 +323,8 @@ defmodule Mojentic.LLM.Broker do
 
   ## Returns
 
-  A stream that yields content strings as they arrive.
+  A stream that yields content strings as they arrive. With recovery enabled,
+  reasoning yields `{:thinking, text}` and failures yield `{:error, CompletionError.t()}`.
 
   ## Examples
 
@@ -347,8 +348,12 @@ defmodule Mojentic.LLM.Broker do
   """
   def generate_stream(broker, messages, tools \\ nil, config \\ nil) do
     config = config || %CompletionConfig{}
+    broker = recovery_stream_broker(broker, config)
     do_generate_stream(broker, messages, tools, config, config.max_tool_iterations)
   end
+
+  defp recovery_stream_broker(broker, %{recovery: nil}), do: broker
+  defp recovery_stream_broker(broker, _config), do: %{broker | tracer: :null_tracer}
 
   defp do_generate_stream(broker, messages, tools, config, iterations_remaining) do
     Stream.resource(
@@ -363,14 +368,18 @@ defmodule Mojentic.LLM.Broker do
 
   Yields `{:content, text}`, then `{:completed, evidence}` on proven completion,
   or `{:error, reason}` on failure. Partial content is not a successful result.
-  No tools are supplied and no retry or recursive generation occurs. Gateways
+  No tools are supplied and no recursive generation occurs. Opt-in recovery can
+  resend only before semantic output, subject to admission. Gateways
   without terminal-event support return an error without making a request.
-  Halting enumeration cancels the underlying stream. The call is always traced;
+  Halting enumeration cancels the underlying stream. Recovery-enabled streaming
+  suppresses default payload tracing; use the safe recovery observer for lifecycle
+  metadata. With recovery disabled, the call is always traced;
   the response is traced only when the stream reaches its terminal event, so an
   early stop records the call and no response.
   """
   def generate_stream_events(broker, messages, config \\ nil) do
     config = %{(config || %CompletionConfig{}) | max_tool_iterations: 0}
+    broker = recovery_stream_broker(broker, config)
 
     Stream.resource(
       fn -> start_event_stream(broker, messages, config) end,
@@ -508,6 +517,14 @@ defmodule Mojentic.LLM.Broker do
 
       {:element, {:tool_calls, tool_calls}, next_cont} ->
         {[], {next_cont, acc_tool_calls ++ tool_calls, acc_content, iterations_remaining}}
+
+      {:element, {:thinking, text}, next_cont} when not is_nil(config.recovery) ->
+        {[{:thinking, text}], {next_cont, acc_tool_calls, acc_content, iterations_remaining}}
+
+      {:element, {:error, %Mojentic.LLM.CompletionError{} = error}, next_cont}
+      when not is_nil(config.recovery) ->
+        next_cont.({:halt, nil})
+        {[{:error, error}], :halt}
 
       {:element, {:error, reason}, _next_cont} ->
         Logger.error("Streaming error: #{inspect(reason)}")

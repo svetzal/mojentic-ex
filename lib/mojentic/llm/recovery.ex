@@ -1,6 +1,6 @@
 defmodule Mojentic.LLM.Recovery do
   @moduledoc """
-  Bounded, opt-in recovery of a single immutable non-streaming completion.
+  Bounded, opt-in recovery of a single immutable provider completion.
 
   Admission receives safe failure metadata, correlation IDs, progress, and a
   `reply_to` PID and `ref`. Return `:allow`, `:reject`, or `:pending`; resolve
@@ -20,7 +20,7 @@ defmodule Mojentic.LLM.Recovery do
     retryable_statuses: [429, 500, 502, 503, 504]
   ]
 
-  @doc "Capabilities implemented by this non-streaming adapter boundary."
+  @doc "Capabilities implemented by the adapter completion boundaries."
   @spec capabilities(:openai | :ollama | :omlx) :: map()
   def capabilities(provider) when provider in [:openai, :ollama, :omlx] do
     %{
@@ -36,7 +36,7 @@ defmodule Mojentic.LLM.Recovery do
   def run(opts, provider, operation, attempt) do
     ids = %{logical_request_id: UUID.uuid4(), attempt_id: UUID.uuid4(), wire_attempt: 0}
 
-    if valid?(opts) do
+    if valid_options?(opts) do
       policy = Keyword.merge(@defaults, opts)
       state = %{ids: ids, history: [], deadline: policy[:deadline], error: nil, retry_minimum: 0}
       loop(policy, provider, operation, attempt, state)
@@ -45,11 +45,12 @@ defmodule Mojentic.LLM.Recovery do
     end
   end
 
-  defp valid?(opts) when is_list(opts) do
+  @doc false
+  def valid_options?(opts) when is_list(opts) do
     Keyword.keyword?(opts) and Enum.all?(opts, &valid_option?/1)
   end
 
-  defp valid?(_), do: false
+  def valid_options?(_), do: false
   defp valid_option?({:max_attempts, n}), do: is_integer(n) and n > 0
 
   defp valid_option?({key, n}) when key in [:base_delay, :delay_ceiling, :budget],
@@ -128,10 +129,18 @@ defmodule Mojentic.LLM.Recovery do
   end
 
   defp eligible?(opts, error) do
-    error.category in opts[:retryable_categories] and
+    error.reason != :stream_interrupted and safe_stream_failure?(error) and
+      error.category in opts[:retryable_categories] and
       (error.category != :http or error.http_status in opts[:retryable_statuses]) and
       (error.retry_eligible or error.category in [:http, :client_timeout])
   end
+
+  defp safe_stream_failure?(%{operation: operation} = error)
+       when operation in [:complete_stream, :complete_stream_events] do
+    error.retry_eligible or error.category == :client_timeout
+  end
+
+  defp safe_stream_failure?(_error), do: true
 
   defp retry(opts, provider, operation, attempt, state) do
     with :ok <- guard_send(opts, state.deadline),
@@ -333,10 +342,17 @@ defmodule Mojentic.LLM.Recovery do
     end
   end
 
-  defp await_request(opts, ref, pid, monitor, started, dispatched) do
+  defp await_request(opts, ref, pid, monitor, started, dispatched, progress \\ nil) do
     cancel = opts[:cancel_ref]
 
     receive do
+      {:stream_delivery, ^pid, updated, owner, delivery_ref} ->
+        send(owner, {:stream_delivery_ack, delivery_ref})
+        await_request(opts, ref, pid, monitor, started, dispatched, updated)
+
+      {:stream_progress, ^pid, updated} ->
+        await_request(opts, ref, pid, monitor, started, dispatched, updated)
+
       {^ref, :dispatch_ready} ->
         # The worker's final guard has completed. Account only after the caller
         # has checked cancellation, before authorizing the HTTP boundary.
@@ -357,7 +373,11 @@ defmodule Mojentic.LLM.Recovery do
         {:error, :rejected}
 
       {:cancel, ^cancel} ->
-        if dispatched, do: {:error, :cancelled}, else: {:not_sent, :cancelled}
+        cond do
+          not dispatched -> {:not_sent, :cancelled}
+          progress != nil -> {:error, {:stream_cancelled, progress}}
+          true -> {:error, :cancelled}
+        end
     end
   end
 

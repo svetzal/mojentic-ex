@@ -139,3 +139,32 @@ In this tutorial, we've learned how to:
 3.  Customize the session with system prompts and tools.
 
 By leveraging chat sessions, you can create engaging conversational experiences that maintain context across multiple interactions.
+
+### Streaming recovery and failed finalization
+
+Use `send_stream/3` to opt in without changing legacy session streaming:
+
+```elixir
+{:ok, stream, handle} = ChatSession.send_stream(session, "Tell me a story",
+  recovery: [max_attempts: 2, base_delay: 100]
+)
+
+Enum.each(stream, fn
+  text when is_binary(text) -> IO.write(text)
+  {:thinking, _text} -> :ok
+  {:error, error} -> IO.inspect(error)
+end)
+
+case ChatSession.finalize_stream(handle) do
+  {:error, error} -> {:error, error, session}
+  updated_session -> {:ok, updated_session}
+end
+```
+
+Always finalize the handle to release its accumulation process. An interrupted or
+consumer-halted stream returns an error and cannot append an assistant response
+to successful history. The original immutable session remains available. Tool
+effects already completed are not rolled back or replayed, so retrying the whole
+session send is an application decision. Recovery applies to the failed provider
+request only; local providers require an admission policy as described in the
+streaming guide.

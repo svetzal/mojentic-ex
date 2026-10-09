@@ -47,7 +47,7 @@ defmodule Mojentic.LLM.CompletionError do
   @type t :: %__MODULE__{
           category: category(),
           provider: :openai | :ollama | :omlx,
-          operation: :complete | :complete_object,
+          operation: :complete | :complete_object | :complete_stream | :complete_stream_events,
           http_status: integer() | nil,
           provider_code: String.t() | nil,
           provider_request_id: String.t() | nil,

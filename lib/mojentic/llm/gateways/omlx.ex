@@ -152,6 +152,22 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   end
 
   @impl Gateway
+  def complete_stream(model, messages, tools, %CompletionConfig{recovery: recovery} = config)
+      when not is_nil(recovery) do
+    body = model |> chat_body(messages, tools, config) |> Map.put(:stream, true)
+
+    Mojentic.LLM.StreamRecovery.stream(
+      http_client(),
+      url("/chat/completions"),
+      Jason.encode!(body),
+      json_headers(),
+      [recv_timeout: get_timeout()],
+      recovery,
+      :omlx,
+      :legacy
+    )
+  end
+
   def complete_stream(model, messages, tools, config) do
     body = model |> chat_body(messages, tools, config) |> Map.put(:stream, true)
 
@@ -168,6 +184,24 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   `Mojentic.LLM.Broker.generate_stream_events/3`.
   """
   @impl Gateway
+  def complete_stream_events(model, messages, %CompletionConfig{recovery: recovery} = config)
+      when not is_nil(recovery) do
+    tools = nil
+    body = model |> chat_body(messages, tools, config) |> Map.put(:stream, true)
+    body = Map.put(body, :stream_options, %{include_usage: true})
+
+    Mojentic.LLM.StreamRecovery.stream(
+      http_client(),
+      url("/chat/completions"),
+      Jason.encode!(body),
+      json_headers(),
+      [recv_timeout: get_timeout()],
+      recovery,
+      :omlx,
+      :events
+    )
+  end
+
   def complete_stream_events(model, messages, config) do
     body =
       model

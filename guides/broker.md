@@ -496,4 +496,7 @@ and does not rerun tools or replenish the broker's tool-depth budget. Recovery
 limits do not time out active generation. To cancel locally, configure
 `cancel_ref: ref` and send `{:cancel, ref}` to the process running the completion.
 See `Mojentic.LLM.Recovery` and RECOVERY-CONFORMANCE.md for policy and capability
-limits. Streaming recovery remains unimplemented.
+limits. Both streaming APIs also support opt-in request recovery; see the
+[streaming guide](streaming.md) for interruption, progress and tool safety.
+Recovery-enabled streaming suppresses default payload tracing and exposes safe
+lifecycle metadata through the recovery observer.

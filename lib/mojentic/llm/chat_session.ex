@@ -243,6 +243,59 @@ defmodule Mojentic.LLM.ChatSession do
     {:ok, wrapped_stream, {session, agent}}
   end
 
+  @doc "Streams with opt-in recovery; failed or halted streams cannot finalize successfully."
+  def send_stream(session, query, opts) do
+    case Keyword.get(opts, :recovery) do
+      nil -> send_stream(session, query)
+      recovery -> recovery_stream(session, query, recovery)
+    end
+  end
+
+  defp recovery_stream(session, query, recovery) do
+    session = insert_message(session, Message.user(query))
+    {:ok, agent} = Agent.start_link(fn -> %{chunks: [], status: :running} end)
+    config = CompletionConfig.new(temperature: session.temperature, recovery: recovery)
+    messages = Enum.map(session.messages, & &1.message)
+    stream = Broker.generate_stream(session.broker, messages, session.tools, config)
+
+    wrapped =
+      Stream.resource(
+        fn -> &Enumerable.reduce(stream, &1, fn item, _ -> {:suspend, item} end) end,
+        fn continuation ->
+          case continuation.({:cont, nil}) do
+            {:suspended, item, rest} ->
+              Agent.update(agent, fn state ->
+                case item do
+                  {:error, error} -> %{state | status: {:error, error}}
+                  text when is_binary(text) -> %{state | chunks: [text | state.chunks]}
+                  _ -> state
+                end
+              end)
+
+              {[item], rest}
+
+            {done, _} when done in [:done, :halted] ->
+              Agent.update(agent, fn
+                %{status: :running} = state -> %{state | status: :completed}
+                state -> state
+              end)
+
+              {:halt, continuation}
+          end
+        end,
+        fn continuation ->
+          continuation.({:halt, nil})
+
+          Agent.update(agent, fn
+            %{status: :running} = state -> %{state | status: {:error, :consumer_halted}}
+            state -> state
+          end)
+        end
+      )
+
+    {:ok, wrapped, {session, agent}}
+  end
+
   @doc """
   Finalizes a streaming send by recording the accumulated response in the session.
 
@@ -263,18 +316,18 @@ defmodule Mojentic.LLM.ChatSession do
       session = ChatSession.finalize_stream(handle)
 
   """
-  @spec finalize_stream(stream_handle()) :: t()
+  @spec finalize_stream(stream_handle()) :: t() | {:error, term()}
   def finalize_stream({session, agent}) do
     # Get accumulated chunks and stop the agent
     chunks = Agent.get(agent, & &1)
     Agent.stop(agent)
 
-    # Ensure messages are sized
-    session = ensure_all_messages_are_sized(session)
-
-    # Insert the assembled response
-    full_response = Enum.join(chunks, "")
-    insert_message(session, Message.assistant(full_response))
+    case chunks do
+      %{status: {:error, error}} -> {:error, error}
+      %{status: :running} -> {:error, :stream_not_consumed}
+      %{status: :completed, chunks: chunks} -> finalize_chunks(session, Enum.reverse(chunks))
+      chunks when is_list(chunks) -> finalize_chunks(session, chunks)
+    end
   end
 
   @doc """
@@ -309,6 +362,11 @@ defmodule Mojentic.LLM.ChatSession do
   end
 
   # Private functions
+
+  defp finalize_chunks(session, chunks) do
+    session = ensure_all_messages_are_sized(session)
+    insert_message(session, Message.assistant(Enum.join(chunks, "")))
+  end
 
   defp insert_message(session, message) do
     # Build sized message

@@ -114,7 +114,8 @@ defmodule Mojentic.LLM.CompletionRequest do
     end
   end
 
-  defp build(response, cause, provider, operation, ids) do
+  @doc false
+  def build(response, cause, provider, operation, ids) do
     {category, status, phase, acceptance, reason, eligible} = classify(response, cause)
     {headers, body} = evidence(response)
 

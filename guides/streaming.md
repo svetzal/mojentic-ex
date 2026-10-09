@@ -139,3 +139,66 @@ Broker.generate_stream_events(broker, messages, config)
 
 This records what was requested. It is not proof that the provider enforced
 the format. Validate the returned content yourself.
+
+## Opt-in completion recovery
+
+The behavior above describes `recovery: nil`. OpenAI, Ollama and oMLX support
+request-level recovery through both streaming entrypoints:
+
+```elixir
+config = CompletionConfig.new(
+  recovery: [max_attempts: 3, base_delay: 100, delay_ceiling: 30_000]
+)
+
+Broker.generate_stream_events(broker, messages, config)
+|> Enum.reduce_while("", fn
+  {:content, text}, partial -> {:cont, partial <> text}
+  {:completed, evidence}, text -> {:halt, {:ok, text, evidence}}
+  {:error, error}, _partial -> {:halt, {:error, error}}
+end)
+```
+
+Recovery errors are `Mojentic.LLM.CompletionError` structs, with bounded history,
+logical and wire-attempt identities, original status and Retry-After evidence.
+`progress.observed` and `progress.delivered` separately track content, reasoning,
+tool fragments and completed tool calls; `raw_bytes` counts keepalives too.
+After semantic output is observed, a failure has `reason: :stream_interrupted`:
+no replay, subsequent request or successful terminal is emitted. Terminal-event
+APIs still supply no tools and suppress reasoning. Suppressed reasoning and
+buffered tool fragments therefore count as observed but not delivered. The
+legacy adapter API delivers completed calls, and opt-in reasoning as
+`{:thinking, text}`; incomplete calls are never emitted for execution.
+
+OpenAI permits eligible pre-output recovery under its remote-provider policy.
+Ollama and oMLX require explicit admission when prior acceptance is unknown.
+An asynchronous `admission` callback returns `:allow`, `:reject` or `:pending`;
+resolve pending decisions with
+`send(context.reply_to, {:recovery_admission, context.ref, :allow})` only after
+the application has established that resending is acceptable. Local socket
+closure is not evidence that remote inference stopped. Admission is not a wire
+attempt, and a recovery retry never replenishes broker tool depth.
+
+Send `{:cancel, cancel_ref}` to the process enumerating the stream after supplying
+that reference in recovery options. Cancellation works during the active request,
+admission and backoff. Consumer halt and consumer process termination close the
+locally owned request and recovery work. The production transport applies timeouts
+to connection setup and idle waits, without a total generation timeout. A recovery
+budget starts after the first failure; it does not truncate active generation.
+Retry-After cannot bypass the delay ceiling or recovery deadline.
+
+`Broker.generate_stream/4` remains a tool-executing stream. With recovery enabled,
+it yields `{:error, error}` to the consumer instead of silently halting on adapter
+failures, and may yield `{:thinking, text}` alongside strings. Tools execute only
+after a successful tool completion; a failed follow-up request does not replay
+tools. Handle these tuples before passing content to `IO.write/1`.
+
+Recovery-enabled broker streaming suppresses default payload tracing, including
+messages, accumulated content and tool arguments. The recovery `observer` supplies
+safe lifecycle metadata. Error inspection and JSON encoding exclude response text
+and original causes; `CompletionError.cause(error)` is the explicit private
+inspection API and must not be sent to default logs. Exact raw wire trace hooks
+remain a separate increment. Providers expose no supported status, idempotency or
+remote cancellation guarantee; see `Recovery.capabilities/1`.
+
+The deterministic production-HTTP cases and gate results are recorded in
+[RECOVERY-CONFORMANCE.md](https://github.com/svetzal/mojentic-ex/blob/main/RECOVERY-CONFORMANCE.md).

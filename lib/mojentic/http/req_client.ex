@@ -59,7 +59,15 @@ defmodule Mojentic.HTTP.ReqClient do
     stream =
       Stream.resource(
         fn ->
-          start_stream(url, body, headers, timeout, Keyword.get(opts, :stream_timeout, :absolute))
+          start_stream(
+            url,
+            body,
+            headers,
+            timeout,
+            Keyword.get(opts, :stream_timeout, :absolute),
+            Keyword.get(opts, :stream_metadata, false),
+            Keyword.get(opts, :cancel_ref)
+          )
         end,
         &next_stream/1,
         &close_stream/1
@@ -68,7 +76,7 @@ defmodule Mojentic.HTTP.ReqClient do
     {:ok, stream}
   end
 
-  defp start_stream(url, body, headers, timeout, mode) do
+  defp start_stream(url, body, headers, timeout, mode, metadata, cancel) do
     deadline =
       if mode == :idle, do: {:idle, timeout}, else: System.monotonic_time(:millisecond) + timeout
 
@@ -82,16 +90,29 @@ defmodule Mojentic.HTTP.ReqClient do
            into: :self
          ) do
       {:ok, %{status: status} = response} when status in 200..299 ->
-        {:streaming, response, deadline}
+        if metadata,
+          do: {:headers, response, {deadline, cancel}},
+          else: {:streaming, response, deadline}
 
       {:ok, response} ->
         Req.cancel_async_response(response)
-        {:error, {:http_error, response.status}}
+
+        if metadata,
+          do: {:error, {:http_response, response.status, flatten_headers(response.headers)}},
+          else: {:error, {:http_error, response.status}}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
+
+  defp next_stream({:headers, response, {deadline, cancel}}),
+    do:
+      {[{:headers, response.status, flatten_headers(response.headers)}],
+       {:recovering, response, deadline, cancel}}
+
+  defp next_stream({:recovering, response, {:idle, timeout}, cancel} = state),
+    do: receive_stream(state, response.body.ref, timeout, cancel)
 
   defp next_stream({:error, reason}), do: {[{:error, reason}], :done}
   defp next_stream(:done), do: {:halt, :done}
@@ -110,8 +131,14 @@ defmodule Mojentic.HTTP.ReqClient do
     end
   end
 
-  defp receive_stream({:streaming, response, _deadline} = state, ref, remaining) do
+  defp receive_stream(state, ref, remaining, cancel \\ nil) do
+    response = elem(state, 1)
+
     receive do
+      {:cancel, ^cancel} when not is_nil(cancel) ->
+        close_stream(state)
+        {[{:error, :cancelled}], :done}
+
       {^ref, _} = message ->
         case Req.parse_message(response, message) do
           {:ok, [:done]} ->
@@ -131,6 +158,8 @@ defmodule Mojentic.HTTP.ReqClient do
     end
   end
 
+  defp close_stream({:recovering, response, _, _}), do: Req.cancel_async_response(response)
+  defp close_stream({:headers, response, _deadline}), do: Req.cancel_async_response(response)
   defp close_stream({:streaming, response, _deadline}), do: Req.cancel_async_response(response)
   defp close_stream(_), do: :ok
 

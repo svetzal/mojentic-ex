@@ -189,6 +189,27 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   end
 
   @impl Gateway
+  def complete_stream(
+        model,
+        messages,
+        tools,
+        %Mojentic.LLM.CompletionConfig{recovery: recovery} = config
+      )
+      when not is_nil(recovery) do
+    body = stream_request_body(model, messages, tools, config)
+
+    Mojentic.LLM.StreamRecovery.stream(
+      http_client(),
+      "#{get_host()}/api/chat",
+      Jason.encode!(body),
+      [{"content-type", "application/json"}],
+      [recv_timeout: get_timeout()],
+      recovery,
+      :ollama,
+      :legacy
+    )
+  end
+
   def complete_stream(model, messages, tools, config) do
     host = get_host()
     timeout = get_timeout()
@@ -264,6 +285,27 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   `Mojentic.LLM.Broker.generate_stream_events/3`.
   """
   @impl Gateway
+  def complete_stream_events(
+        model,
+        messages,
+        %Mojentic.LLM.CompletionConfig{recovery: recovery} = config
+      )
+      when not is_nil(recovery) do
+    tools = nil
+    body = stream_request_body(model, messages, tools, config)
+
+    Mojentic.LLM.StreamRecovery.stream(
+      http_client(),
+      "#{get_host()}/api/chat",
+      Jason.encode!(body),
+      [{"content-type", "application/json"}],
+      [recv_timeout: get_timeout()],
+      recovery,
+      :ollama,
+      :events
+    )
+  end
+
   def complete_stream_events(model, messages, config) do
     body = stream_request_body(model, messages, nil, config)
     client = http_client()

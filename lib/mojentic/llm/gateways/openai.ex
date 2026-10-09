@@ -204,6 +204,29 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
   end
 
   @impl Gateway
+  def complete_stream(
+        model,
+        messages,
+        tools,
+        %Mojentic.LLM.CompletionConfig{recovery: recovery} = config
+      )
+      when not is_nil(recovery) do
+    registry = OpenAIModelRegistry.new()
+    capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
+    body = build_stream_request_body(model, messages, tools, config, registry, capabilities)
+
+    Mojentic.LLM.StreamRecovery.stream(
+      http_client(),
+      "#{get_endpoint()}/chat/completions",
+      Jason.encode!(body),
+      build_headers(),
+      [recv_timeout: get_timeout()],
+      recovery,
+      :openai,
+      :legacy
+    )
+  end
+
   def complete_stream(model, messages, tools, config) do
     registry = OpenAIModelRegistry.new()
     capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
@@ -221,6 +244,30 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
   end
 
   @impl Gateway
+  def complete_stream_events(
+        model,
+        messages,
+        %Mojentic.LLM.CompletionConfig{recovery: recovery} = config
+      )
+      when not is_nil(recovery) do
+    tools = nil
+    registry = OpenAIModelRegistry.new()
+    capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
+    body = build_stream_request_body(model, messages, tools, config, registry, capabilities)
+    body = Map.put(body, :stream_options, %{include_usage: true})
+
+    Mojentic.LLM.StreamRecovery.stream(
+      http_client(),
+      "#{get_endpoint()}/chat/completions",
+      Jason.encode!(body),
+      build_headers(),
+      [recv_timeout: get_timeout()],
+      recovery,
+      :openai,
+      :events
+    )
+  end
+
   def complete_stream_events(model, messages, config) do
     registry = OpenAIModelRegistry.new()
     capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
