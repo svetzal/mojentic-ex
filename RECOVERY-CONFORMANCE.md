@@ -8,7 +8,12 @@ payloads. No dependencies, runtime pins, ordinary completion parsing, embeddings
 realtime, model management, tool depth, release files or sibling repositories
 were changed. Exact raw wire trace hooks remain a separate increment.
 
-## Synchronization correction (c9)
+The c9 sections below describe the preserved implementation and its historical
+validation. Their original capture files are absent from this worktree; log
+references in those sections are historical, not fresh executable proof. The
+c10 evidence at the end records this run's actual commands and outcomes.
+
+## Synchronization correction (c9, historical)
 
 This validation correction starts exactly at preserved streaming increment
 `207d791961ed9565d21487ae8218925297105691`. The initial worktree was clean.
@@ -96,12 +101,11 @@ one server-observed wire request; no tool execution or successful terminal;
 explicit protocol interruption; and matching progress and actual logical request
 and attempt identities in the final error, history and failure lifecycle records.
 
-All six probes rejected the preserved production source (actual exit **2**): it
-reported zero completed calls instead of two. All six pass after the correction
-(actual exit **0**). `.foundry/proof.json` records the commands and complete logs
-in `rejecting.log` and `corrected.log`. An earlier prerequisite invocation exited
-**1** because dependencies were absent; it is not the behavioral rejection.
-Dependencies were restored using the unchanged lockfile, without upgrades.
+The historical report described a failure with zero completed calls instead of
+two, followed by a passing correction. Its rejecting and passing logs are absent
+here, so those reported exit codes are not executable evidence for this run.
+This correction retains all six probes; fresh execution is recorded below. The
+current `.foundry/proof.json` verifies project type analysis directly.
 
 Legacy streaming now observes and assembles each frame before advancing to the
 next frame. A later observation exception retains already assembled completed
@@ -181,115 +185,159 @@ trace hooks remain unavailable and are not represented by lifecycle counts or
 masked-ID evidence. Deterministic fixture equality verifies the semantic payload;
 it does not establish provider-side idempotency or remote termination.
 
-## Final validation (c9 runtime reconciliation)
+## Type-analysis prerequisite correction (c10)
 
-The prior preserved report described a passing Elixir 1.18.5 / OTP 28.5.0.7 run,
-including six completed-observation cases and 89.05% coverage. Its referenced
-logs were not present in this fresh worktree. The new evidence below comes from
-actual executions here, rather than treating those historical results as current
-proof. The default PATH selects Elixir 1.20.4 / OTP 29; that runtime is not used
-for any Mix invocation in this correction.
+This correction starts at `3f1bb3f9ed5aecd203b50ce32a07e8eaace6ad0f`.
+The initial worktree was clean. Historical c9 validation described successful
+runs but its capture files were absent here; those reports are not fresh proof.
+The obsolete rejecting-log claim above has been replaced with that distinction.
 
-`scripts/recovery-mix` selects and checks these installed executables before
-**every** Mix invocation:
+Before edits, actual `git fetch origin` failed with exit **255** because the
+worktree's external Git metadata/FETCH_HEAD is read-only (`fetch.log`).
+`pull --rebase` was not invoked: the current Foundry instruction explicitly
+prohibits rebasing and modifying refs, overriding earlier repository guidance.
+No synchronization success or conflict resolution is claimed. HEAD, all refs
+and AGENTS.md remain unchanged. Foundry owns finalization and landing on main;
+no commit, push, merge, rebase, tag, release, sibling edit, live-model request or
+benchmark restart was performed.
+
+### Changes and actual type analysis
+
+Added Dialyxir `~> 1.4` for development/test only, with `runtime: false`.
+The lockfile adds only Dialyxir **1.4.8** and erlex **0.2.9**; every existing
+locked dependency remains byte-for-byte unchanged. Core and project PLTs are
+configured under `priv/plts/`, ignored by Git, and cached in CI with OS,
+Elixir **1.18.5**, OTP **28.5.0.7** and lockfile identity. CI runs development
+and test analysis; both release jobs require that gate. ExUnit is added to the
+test PLT to analyze the existing compiled support assertions, without excluding
+those modules. Local registry/NIF caches used by the existing runtime wrapper
+are also ignored. No runtime dependency or runtime pin was upgraded.
+
+The first real `mix dialyzer` analyzed compiled project modules and exited **2**
+with **16** findings (`dialyzer-first.log`), rather than failing because the task
+was absent. The corrections declare the tracer event struct union and its member
+types, retain atomics handles as `:atomics.atomics_ref()` across the existing
+reference guards through a typed accessor, and remove unreachable branches in
+text-message sizing, delivered-progress fallback and the existing WebSocket
+upgrade call. Text sizing is only called for binary-content constructors;
+delivered progress is always a map; `WebSocket.new/4` receives unchanged empty
+headers and cannot return success. The existing transport error remains unchanged;
+this does not implement a WebSocket handshake. No completion behavior, recovery
+policy, thresholds, exclusions or suppressions were changed.
+
+Intermediate development analyses exited **2** with three then two remaining
+findings; the next passed. Test analysis initially exited **2** with **12** findings
+(including one built-in skipped warning), revealing absent ExUnit PLT entries and
+an error formatter contract that omitted the already accepted `CompletionError`.
+Adding ExUnit to the test PLT and that exact error type resolves these findings.
+Final development and test analyses both exit **0**, with **Total errors: 0,
+Skipped: 0, Unnecessary Skips: 0**, and `done (passed successfully)`.
+No task absence, skip-analysis flags, ignored warnings, weakened type contracts,
+advisory allowlists or threshold changes are used as acceptance evidence.
+
+### Runtime and commands
+
+Every Mix invocation uses the unchanged `scripts/recovery-mix` wrapper, which
+checks the exact installed versions before running Mix. The default PATH's
+Elixir 1.20.4 / OTP 29 was inspected but never used to run Mix in this correction.
+The selected executable identities are:
 
 - `/home/svetzal/.local/share/mise/installs/elixir/1.18.5-otp-27/bin/elixir`
 - `/home/svetzal/.local/share/mise/installs/elixir/1.18.5-otp-27/bin/mix`
 - `/home/svetzal/.local/share/mise/installs/erlang/28.5.0.7/bin/erl`
 
-The Elixir distribution was compiled on OTP 27 but executes on the selected
-OTP **28.5.0.7**. `executable-paths.log` records executable paths, Elixir output,
-and the OTP_VERSION file resolved from the running Erlang `code:root_dir()`;
-`runtime.log` also records Mix 1.18.5 and the installed patch version. The wrapper
-checks System.version(), running OTP release and installed OTP_VERSION, and fails
-before Mix on a mismatch. `RECOVERY_RUNTIME_ROOT` may relocate these same exact
-installed versions; it does not select different versions.
+`runtime-version.log` records Mix **1.18.5** and running OTP **28**.
+`runtime.log` records System.version(), running OTP release, `code:root_dir()`,
+the installed OTP_VERSION **28.5.0.7**, and in-VM executable resolution (Erlang
+resolves to that installation's `erts-16.4.0.6/bin/erl`). Elixir was compiled on
+OTP 27 and executes on the pinned OTP **28.5.0.7**. Dependency sources and
+artifacts were rebuilt here. The existing read-only Hex cache was copied into
+worktree-local HEX_HOME before `deps.get`, which succeeded without updating
+existing dependency versions. No global cache was edited.
 
-Reproduce validation from this worktree with:
+All builds/tests were executed through `foundry capture -- …`. Complete stdout
+and stderr are preserved, separately labelled, in `.foundry/logs/<name>.log`;
+matching `.command` and `.exit` sidecars record the exact command and actual
+capture process exit. Foundry's original separate capture files are also retained
+in its tool-log directory. The table lists final evidence unless marked initial
+or intermediate; earlier successful gate executions before the error-type
+correction are retained with `-before-error-type` filenames.
 
-```bash
-foundry capture -- scripts/recovery-mix --version
-foundry capture -- scripts/recovery-mix deps.get
-foundry capture -- scripts/recovery-mix test test/mojentic/llm/stream_recovery_wire_test.exs --only completed_observation_proof --trace
-foundry capture -- scripts/recovery-mix format --check-formatted
-foundry capture -- scripts/recovery-mix compile --warnings-as-errors
-foundry capture -- env MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors
-foundry capture -- scripts/recovery-mix credo --strict
-foundry capture -- scripts/recovery-mix test --cover
-foundry capture -- scripts/recovery-mix deps.audit
-```
-
-There were no `_build/` or `deps/` directories initially. Dependency sources and
-all dev/test generated artifacts were rebuilt under the selected runtime, using
-the unchanged mix.lock. The first deps.get exited **1** because Hex attempted to
-persist `/home/svetzal/.hex/cache.ets` outside the writable roots (`deps-get.log`).
-The wrapper now defaults HEX_HOME and XDG_CACHE_HOME to ignored worktree-local
-`.foundry/runtime/` directories. Copying the existing read-only Hex cache there
-and rerunning deps.get succeeded (`deps-get-local.log`, exit **0**). No global
-cache, dependency version, runtime pin, coverage threshold, exclusion or advisory
-suppression was changed.
-
-Before editing this report or running the full suite, the fresh production-Req
-probe passed all **six** completed-observation cases (159 tests, 153 excluded).
-It exercises public `complete_stream/4` and `Broker.generate_stream/4` for OpenAI,
-Ollama and oMLX: held HTTP chunks deliver content, assemble two completed calls,
-then supply a malformed later frame. Existing assertions retain exact raw bytes,
-four observed fragments/two completed calls, earlier delivered progress, explicit
-interruption, one request, zero tool executions, and matching actual history and
-lifecycle identities. No fixture or production behavior change was needed.
-
-The full suite reproduced the preserved passing evidence: **22 doctests and
-1,337 tests**, zero failures, the existing **19 integration exclusions**, and
-**89.05%** coverage above the unchanged **80%** threshold. Strict Credo found
-zero issues. No runtime-dependent project defect was demonstrated; this correction
-changes the reproducible validation approach and evidence only. Dependency builds
-emit existing dependency deprecation warnings, while both project compile gates
-exit zero with warnings-as-errors.
-
-All listed logs are new captures in `.foundry/logs/`, including complete
-stdout/stderr and actual exit-code sidecars. Every Mix command uses the wrapper.
-
-| Mix arguments / check | Actual exit | Log |
+| Exact captured command | Actual exit | Complete log under `.foundry/logs/` |
 | --- | --- | --- |
-| `format --check-formatted` | 0 | format.log |
-| `compile --warnings-as-errors` | 0 | compile.log |
-| `MIX_ENV=test … compile --warnings-as-errors` | 0 | compile-test.log |
-| `credo --strict` | 0 | credo.log |
-| `test --cover` | 0 | coverage.log |
-| `test` | 0 | test.log |
-| `deps.audit` | 0 | deps-audit.log |
-| `hex.audit` | 0 | hex-audit.log |
-| `sobelow --config` | 0 | sobelow.log |
-| `hex.outdated --all` | 1 | hex-outdated.log |
-| `dialyzer` | 1 | dialyzer.log |
-| `docs` | 0 | docs.log |
-| production-HTTP file `--trace` | 0 | stream-cases.log |
-| completed-observation probe `--only completed_observation_proof --trace` | 0 | corrected.log |
+| `foundry capture -- git fetch origin` | 255 | [fetch.log](.foundry/logs/fetch.log) |
+| `foundry capture -- scripts/recovery-mix --version` | 0 | [runtime-version.log](.foundry/logs/runtime-version.log) |
+| `foundry capture -- scripts/recovery-mix run --no-compile --no-start -e 'IO.inspect(System.version(), label: "Elixir"); IO.inspect(System.otp_release(), label: "OTP release"); IO.inspect(:code.root_dir(), label: "OTP root"); IO.puts(File.read!(Path.join([to_string(:code.root_dir()), "releases", System.otp_release(), "OTP_VERSION"]))); for executable <- ["elixir", "mix", "erl"], do: IO.puts("#{executable}: #{System.find_executable(executable)}")'` | 0 | [runtime.log](.foundry/logs/runtime.log) |
+| `foundry capture -- scripts/recovery-mix deps.get` | 0 | [deps-get.log](.foundry/logs/deps-get.log) |
+| `foundry capture -- scripts/recovery-mix dialyzer` | 2 | [dialyzer-first.log](.foundry/logs/dialyzer-first.log) |
+| `foundry capture -- scripts/recovery-mix dialyzer` | 2 | [dialyzer-intermediate.log](.foundry/logs/dialyzer-intermediate.log) |
+| `foundry capture -- scripts/recovery-mix dialyzer` | 2 | [dialyzer-second.log](.foundry/logs/dialyzer-second.log) |
+| `foundry capture -- scripts/recovery-mix dialyzer` | 0 | [dialyzer-dev-before-error-type.log](.foundry/logs/dialyzer-dev-before-error-type.log) |
+| `foundry capture -- env MIX_ENV=test scripts/recovery-mix dialyzer` | 2 | [dialyzer-test-first.log](.foundry/logs/dialyzer-test-first.log) |
+| `foundry capture -- scripts/recovery-mix dialyzer` | 0 | [corrected.log](.foundry/logs/corrected.log) |
+| `foundry capture -- env MIX_ENV=test scripts/recovery-mix dialyzer` | 0 | [dialyzer-test.log](.foundry/logs/dialyzer-test.log) |
+| `foundry capture -- scripts/recovery-mix test test/mojentic/llm/stream_recovery_wire_test.exs --only completed_observation_proof --trace` | 0 | [completed-observation.log](.foundry/logs/completed-observation.log) |
+| `foundry capture -- scripts/recovery-mix format --check-formatted` | 0 | [format.log](.foundry/logs/format.log) |
+| `foundry capture -- scripts/recovery-mix compile --warnings-as-errors` | 0 | [compile.log](.foundry/logs/compile.log) |
+| `foundry capture -- env MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | [compile-test.log](.foundry/logs/compile-test.log) |
+| `foundry capture -- scripts/recovery-mix credo --strict` | 0 | [credo.log](.foundry/logs/credo.log) |
+| `foundry capture -- scripts/recovery-mix test` | 0 | [test.log](.foundry/logs/test.log) |
+| `foundry capture -- scripts/recovery-mix test --cover` | 0 | [coverage.log](.foundry/logs/coverage.log) |
+| `foundry capture -- scripts/recovery-mix deps.audit` | 0 | [deps-audit.log](.foundry/logs/deps-audit.log) |
+| `foundry capture -- scripts/recovery-mix hex.audit` | 0 | [hex-audit.log](.foundry/logs/hex-audit.log) |
+| `foundry capture -- scripts/recovery-mix sobelow --config` | 0 | [sobelow.log](.foundry/logs/sobelow.log) |
+| `foundry capture -- scripts/recovery-mix hex.outdated --all` | 1 | [hex-outdated.log](.foundry/logs/hex-outdated.log) |
+| `foundry capture -- scripts/recovery-mix docs` | 0 | [docs.log](.foundry/logs/docs.log) |
+| `foundry capture -- git -C /home/svetzal/.local/share/elixir-security-advisories-mirego rev-parse HEAD` | 0 | [advisory-local.log](.foundry/logs/advisory-local.log) |
+| `foundry capture -- git ls-remote https://github.com/mirego/elixir-security-advisories.git refs/heads/main` | 0 | [advisory-remote.log](.foundry/logs/advisory-remote.log) |
+| `foundry capture -- scripts/recovery-mix run --no-start -e 'config = YamlElixir.read_from_file!(".github/workflows/build.yml"); jobs = config["jobs"]; job = jobs["dialyzer"]; runs = Enum.filter(job["steps"], &Map.has_key?(&1, "run")); true = Enum.map(runs, & &1["run"]) == ["mix dialyzer", "mix dialyzer"]; true = List.last(runs)["env"]["MIX_ENV"] == "test"; for name <- ["release-build", "publish-hex"], do: true = "dialyzer" in jobs[name]["needs"]; for {_name, job} <- jobs, step <- Map.get(job, "steps", []), step["uses"] == "erlef/setup-beam@v1", do: true = step["with"] == %{"elixir-version" => "1.18.5", "otp-version" => "28.5.0.7"}; IO.puts("CI YAML parses; development/test Dialyzer gates, release prerequisites, and runtime pins verified")'` | 0 | [ci-config.log](.foundry/logs/ci-config.log) |
 
-MixAudit reports no vulnerabilities but its built-in advisory refresh encounters
-an actual read-only `.git/FETCH_HEAD` denial. That refresh remains unresolved;
-the exit-zero scan is not evidence of a successful refresh. Independent read-only
-checks of the advisory cache and upstream main both exited **0** at
-`935abf7410a2bbb18e12579dee6e31267c3ed244` (`advisory-local.log`,
-`advisory-remote.log`), establishing that the scanned cache matches upstream.
-Hex audit reports no retired or security-advisory packages. No findings were
-suppressed or allowlisted.
+### Fresh conformance, audits and limits
 
-Sobelow exits zero with no findings; this is not a Phoenix project, so its
-missing-router notice and existing quoted-keyword lockfile warnings do not
-establish Phoenix coverage. Hex outdated reports available upgrades (exit **1**,
-informational); dependencies remain unchanged. Dialyzer exits **1** because its
-task is unavailable: Dialyxir is absent. Type analysis and PLT/cache prerequisites
-remain **unresolved**, with dependency/CI additions outside this correction.
-No precommit alias exists. Docs exits zero with existing missing LICENSE/igniter
-usage-rule references and private TracerEvent type-reference warnings. Streaming,
-broker and session recovery guides were reviewed against the retained public
-contracts and required no edits.
+Before expanding this report or running the full suite, development type analysis
+was exercised through actual compiled project modules, its findings corrected,
+and the passing analysis captured. `.foundry/proof.json` uses the required
+**direct** shape: this objective establishes static analysis and CI prerequisites,
+without a demonstrated completion/recovery behavior defect to repair. Its
+acceptance command is successful project Dialyzer analysis, not task discovery.
+Initial failed analyses are independently retained; they are not fabricated
+behavioral rejections or historical rejecting logs.
 
-`.foundry/proof.json` uses the **direct** shape because the requested correction
-is runtime selection and validation reconciliation, with no demonstrated behavior
-defect to fix. Its smallest passing acceptance probe is the retained six-path
-production-Req test matrix; no artificial rejection or weakened assertion was
-introduced. `.foundry/logs/proof-validation.log` validates JSON field types,
-captured exits, log existence, required gate results, unchanged AGENTS.md and
-preserved refs. These changes remain uncommitted for Foundry review and landing.
+The retained production-Req completed-observation probe passes all six cases
+(**159 tests, 153 excluded, zero failures**). OpenAI, Ollama and oMLX public
+`complete_stream/4` and `Broker.generate_stream/4` retain exact raw bytes,
+fragmented completed calls, interrupted progress, zero tool execution and exact
+history/lifecycle identities. Test files and fixtures are unchanged. Both final
+full test executions pass **22 doctests and 1,337 tests**, zero failures, with
+the existing **19 integration exclusions**. Coverage is **89.07%**, above the
+unchanged **80%** threshold. Strict Credo reports no issues. Both project compile
+commands succeed with warnings-as-errors; existing dependency deprecation
+warnings during dependency builds are preserved in the initial capture logs.
+
+MixAudit exits zero and reports no vulnerabilities. Its automatic advisory refresh
+emits an actual read-only `.git/FETCH_HEAD` denial; that refresh did not succeed.
+Independent read-only local and upstream-main checks both succeed at
+`935abf7410a2bbb18e12579dee6e31267c3ed244`, establishing cache freshness for this
+scan without mutating the advisory checkout. Hex audit finds no retired or
+security-advisory packages. No advisory was suppressed or allowlisted.
+
+Sobelow exits zero; this is not a Phoenix project. Its missing-router notice and
+existing quoted-keyword lockfile warnings do not establish Phoenix security
+coverage. `hex.outdated --all` exits **1** for available upgrades, an informational
+result; existing dependencies were not upgraded. Docs builds successfully with
+existing missing LICENSE and igniter usage-rule link warnings. The missing tracer
+type-reference warnings are resolved. No precommit alias exists. Streaming,
+broker and chat-session guides were reviewed against their retained contracts
+and require no content changes. CI YAML is parsed by the installed YamlElixir
+and its dev/test gates, release prerequisites and every runtime pin are verified;
+GitHub-hosted CI execution is not claimed.
+
+**Exact wire trace hooks remain unverified.** Public completion conformance and
+successful type analysis do not establish exact wire trace capability, remote
+termination, provider-side idempotency or live-model results.
+
+`.foundry/validate-proof.py` validates the proof JSON shape, field types, complete
+log existence, actual exit sidecars, successful project analysis, quality-gate
+results, unchanged existing dependencies, AGENTS.md, test sources, HEAD and refs.
+Its captured output is `proof-validation.log`. Source/configuration changes remain
+in the working tree for Foundry review and finalization.

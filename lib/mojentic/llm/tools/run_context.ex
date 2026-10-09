@@ -18,7 +18,7 @@ defmodule Mojentic.LLM.Tools.RunContext do
             on_call_complete: nil
 
   @type t :: %__MODULE__{
-          cancel_ref: reference() | nil,
+          cancel_ref: :atomics.atomics_ref() | nil,
           cancelled?: boolean(),
           correlation_id: String.t() | nil,
           source: String.t() | nil,
@@ -29,6 +29,7 @@ defmodule Mojentic.LLM.Tools.RunContext do
   @doc """
   Construct a new run context.
   """
+  @spec new(keyword()) :: t()
   def new(opts \\ []) do
     %__MODULE__{
       cancel_ref: Keyword.get(opts, :cancel_ref),
@@ -45,12 +46,13 @@ defmodule Mojentic.LLM.Tools.RunContext do
   When `cancel_ref` is an `:atomics` reference we treat any non-zero
   value as cancelled. When nil, always returns false.
   """
+  @spec cancelled?(t()) :: boolean()
   def cancelled?(%__MODULE__{cancel_ref: nil}), do: false
   def cancelled?(%__MODULE__{cancelled?: true}), do: true
 
-  def cancelled?(%__MODULE__{cancel_ref: ref}) when is_reference(ref) do
+  def cancelled?(%__MODULE__{cancel_ref: ref} = context) when is_reference(ref) do
     try do
-      :atomics.get(ref, 1) != 0
+      :atomics.get(cancel_ref(context), 1) != 0
     rescue
       _ -> false
     end
@@ -59,9 +61,14 @@ defmodule Mojentic.LLM.Tools.RunContext do
   @doc """
   Signal cancellation. Subsequent `cancelled?/1` checks return true.
   """
-  def cancel(%__MODULE__{cancel_ref: ref}) when is_reference(ref) do
-    :atomics.put(ref, 1, 1)
+  @spec cancel(t()) :: :ok
+  def cancel(%__MODULE__{cancel_ref: ref} = context) when is_reference(ref) do
+    :atomics.put(cancel_ref(context), 1, 1)
   end
 
   def cancel(_ctx), do: :ok
+
+  # Preserve the opaque atomics handle across the reference dispatch guards.
+  @spec cancel_ref(t()) :: :atomics.atomics_ref() | nil
+  defp cancel_ref(context), do: context.cancel_ref
 end

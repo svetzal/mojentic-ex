@@ -40,6 +40,14 @@ defmodule Mojentic.Tracer.TracerEvents.TracerEvent do
 
   defstruct [:timestamp, :correlation_id, :source]
 
+  @type t ::
+          %__MODULE__{}
+          | Mojentic.Tracer.TracerEvents.LLMCallTracerEvent.t()
+          | Mojentic.Tracer.TracerEvents.LLMResponseTracerEvent.t()
+          | Mojentic.Tracer.TracerEvents.ToolCallTracerEvent.t()
+          | Mojentic.Tracer.TracerEvents.ToolBatchTracerEvent.t()
+          | Mojentic.Tracer.TracerEvents.AgentInteractionTracerEvent.t()
+
   def printable_summary(%__MODULE__{} = event) do
     Mojentic.Tracer.TracerEvents.format_base_summary(event, "TracerEvent")
   end
@@ -51,6 +59,8 @@ defmodule Mojentic.Tracer.TracerEvents.LLMCallTracerEvent do
   """
 
   defstruct [:timestamp, :correlation_id, :source, :model, :messages, :temperature, :tools]
+
+  @type t :: %__MODULE__{}
 
   def printable_summary(%__MODULE__{} = event) do
     base_summary = Mojentic.Tracer.TracerEvents.format_base_summary(event, "LLMCallTracerEvent")
@@ -100,6 +110,8 @@ defmodule Mojentic.Tracer.TracerEvents.LLMResponseTracerEvent do
     :finish_reason,
     :metadata
   ]
+
+  @type t :: %__MODULE__{}
 
   def printable_summary(%__MODULE__{} = event) do
     base_summary =
@@ -153,6 +165,8 @@ defmodule Mojentic.Tracer.TracerEvents.ToolCallTracerEvent do
     :caller,
     :call_duration_ms
   ]
+
+  @type t :: %__MODULE__{}
 
   def printable_summary(%__MODULE__{} = event) do
     base_summary = Mojentic.Tracer.TracerEvents.format_base_summary(event, "ToolCallTracerEvent")
@@ -222,6 +236,8 @@ defmodule Mojentic.Tracer.TracerEvents.ToolBatchTracerEvent do
     :caller
   ]
 
+  @type t :: %__MODULE__{}
+
   def printable_summary(%__MODULE__{} = event) do
     base = Mojentic.Tracer.TracerEvents.format_base_summary(event, "ToolBatchTracerEvent")
 
@@ -238,6 +254,8 @@ defmodule Mojentic.Tracer.TracerEvents.AgentInteractionTracerEvent do
   """
 
   defstruct [:timestamp, :correlation_id, :source, :from_agent, :to_agent, :event_type, :event_id]
+
+  @type t :: %__MODULE__{}
 
   def printable_summary(%__MODULE__{} = event) do
     base_summary =

@@ -492,7 +492,7 @@ defmodule Mojentic.LLM.StreamRecovery do
 
     send(
       state.owner,
-      {state.ref, :event, event, self(), snapshot(state, delivered_progress || state.progress)}
+      {state.ref, :event, event, self(), snapshot(state, delivered_progress)}
     )
 
     receive do

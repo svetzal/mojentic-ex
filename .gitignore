@@ -21,3 +21,9 @@ mojentic-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# Dialyzer PLTs are generated for the pinned Elixir/OTP runtime.
+/priv/plts/
+
+# Local registry and NIF caches used by scripts/recovery-mix.
+/.foundry/runtime/

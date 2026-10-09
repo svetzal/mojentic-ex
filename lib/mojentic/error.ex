@@ -36,7 +36,8 @@ defmodule Mojentic.Error do
           | {:config_error, String.t()}
           | {:serialization_error, String.t()}
 
-  @type error_reason :: simple_error() | tagged_error() | String.t()
+  @type error_reason ::
+          simple_error() | tagged_error() | String.t() | Mojentic.LLM.CompletionError.t()
 
   @type result(success_type) :: {:ok, success_type} | {:error, error_reason()}
 

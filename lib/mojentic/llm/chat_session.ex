@@ -385,15 +385,8 @@ defmodule Mojentic.LLM.ChatSession do
   end
 
   defp build_sized_message(tokenizer, message) do
-    token_length =
-      case message.content do
-        nil ->
-          0
-
-        content ->
-          # Dispatch via the tokenizer's struct module to support any Mojentic.LLM.Tokenizer implementation
-          tokenizer.__struct__.count_tokens(tokenizer, content)
-      end
+    # Dispatch through the tokenizer implementation for these text messages.
+    token_length = tokenizer.__struct__.count_tokens(tokenizer, message.content)
 
     %{
       message: message,

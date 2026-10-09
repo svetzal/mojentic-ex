@@ -12,6 +12,11 @@ defmodule Mojentic.MixProject do
       elixirc_paths: elixirc_paths(Mix.env()),
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      dialyzer: [
+        plt_local_path: "priv/plts",
+        plt_core_path: "priv/plts",
+        plt_add_apps: if(Mix.env() == :test, do: [:ex_unit], else: [])
+      ],
       description: "An LLM integration framework for Elixir",
       package: package(),
       name: "Mojentic",
@@ -80,6 +85,7 @@ defmodule Mojentic.MixProject do
       # Development and testing
       {:mox, "~> 1.0", only: :test},
       {:ex_doc, "~> 0.40", only: :dev, runtime: false},
+      {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:mix_audit, "~> 2.1", only: [:dev, :test], runtime: false},
       {:sobelow, "~> 0.16", only: [:dev, :test], runtime: false},

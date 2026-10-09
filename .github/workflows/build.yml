@@ -146,6 +146,52 @@ jobs:
       - name: Run Credo
         run: mix credo --strict
 
+  dialyzer:
+    runs-on: ubuntu-latest
+    needs: setup
+    # Skip job if actor is github-actions[bot] to ensure agent safety
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: '1.18.5'
+          otp-version: '28.5.0.7'
+
+      - name: Restore dependencies cache
+        uses: actions/cache/restore@v5
+        with:
+          path: deps
+          key: ${{ runner.os }}-mix-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-mix-
+
+      - name: Restore build cache
+        uses: actions/cache/restore@v5
+        with:
+          path: _build
+          key: ${{ runner.os }}-build-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-build-
+
+      - name: Cache Dialyzer PLTs
+        uses: actions/cache@v5
+        with:
+          path: priv/plts
+          key: ${{ runner.os }}-plt-otp-28.5.0.7-elixir-1.18.5-${{ hashFiles('**/mix.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-plt-otp-28.5.0.7-elixir-1.18.5-
+
+      - name: Analyze project types
+        run: mix dialyzer
+
+      - name: Analyze project test types
+        env:
+          MIX_ENV: test
+        run: mix dialyzer
+
   test:
     runs-on: ubuntu-latest
     needs: setup
@@ -216,7 +262,7 @@ jobs:
 
   release-build:
     runs-on: ubuntu-latest
-    needs: [format-check, compile, credo, test, security-audit]
+    needs: [format-check, compile, credo, dialyzer, test, security-audit]
     # Only run on release publish events
     if: github.event_name == 'release' && github.event.action == 'published'
     steps:
@@ -256,7 +302,7 @@ jobs:
 
   publish-hex:
     runs-on: ubuntu-latest
-    needs: [format-check, compile, credo, test, security-audit]
+    needs: [format-check, compile, credo, dialyzer, test, security-audit]
     # Only run on release publish events
     if: github.event_name == 'release' && github.event.action == 'published'
     steps:

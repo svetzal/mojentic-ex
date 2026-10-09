@@ -131,10 +131,9 @@ defmodule Mojentic.Realtime.MintTransport do
   defp handle_response({:headers, ref, _headers}, %{request_ref: ref} = state), do: state
 
   defp handle_response({:done, ref}, %{request_ref: ref} = state) do
-    case WebSocket.new(state.conn, ref, 101, []) do
-      {:ok, conn, ws} -> %{state | conn: conn, websocket: ws}
-      {:error, _conn, _reason} = err -> finalize_error(state, err)
-    end
+    # Empty upgrade headers cannot validate a WebSocket handshake.
+    {:error, _conn, _reason} = error = WebSocket.new(state.conn, ref, 101, [])
+    finalize_error(state, error)
   end
 
   defp handle_response({:data, ref, data}, %{request_ref: ref, websocket: ws} = state)
