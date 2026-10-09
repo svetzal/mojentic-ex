@@ -66,7 +66,10 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
         Map.put(body, :tools, tool_descriptors)
       else
         if tools && tools != [] do
-          Logger.warning("Model #{model} does not support tools, ignoring tool configuration")
+          adaptation_warning(
+            config,
+            "Model #{model} does not support tools, ignoring tool configuration"
+          )
         end
 
         body
@@ -77,23 +80,28 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
       {"Authorization", "Bearer #{api_key}"}
     ]
 
-    case http_client().post(
-           "#{endpoint}/chat/completions",
-           Jason.encode!(body),
-           headers,
-           recv_timeout: timeout,
-           timeout: timeout
-         ) do
-      {:ok, %{status_code: 200, body: response_body}} ->
-        parse_response(response_body)
+    Mojentic.LLM.CompletionRequest.run(
+      http_client(),
+      "#{endpoint}/chat/completions",
+      Jason.encode!(body),
+      headers,
+      [recv_timeout: timeout, timeout: timeout],
+      config,
+      {:openai, :complete},
+      fn result ->
+        case result do
+          {:ok, %{status_code: 200, body: response_body}} ->
+            parse_response(response_body)
 
-      {:ok, %{status_code: status, body: error_body}} ->
-        Logger.error("OpenAI API error: #{status} - #{error_body}")
-        {:error, {:http_error, status, error_body}}
+          {:ok, %{status_code: status, body: error_body}} ->
+            Logger.error("OpenAI API error: #{status} - #{error_body}")
+            {:error, {:http_error, status, error_body}}
 
-      {:error, reason} ->
-        {:error, {:request_failed, reason}}
-    end
+          {:error, reason} ->
+            {:error, {:request_failed, reason}}
+        end
+      end
+    )
   end
 
   @impl Gateway
@@ -126,23 +134,28 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
       {"Authorization", "Bearer #{api_key}"}
     ]
 
-    case http_client().post(
-           "#{endpoint}/chat/completions",
-           Jason.encode!(body),
-           headers,
-           recv_timeout: timeout,
-           timeout: timeout
-         ) do
-      {:ok, %{status_code: 200, body: response_body}} ->
-        parse_object_response(response_body)
+    Mojentic.LLM.CompletionRequest.run(
+      http_client(),
+      "#{endpoint}/chat/completions",
+      Jason.encode!(body),
+      headers,
+      [recv_timeout: timeout, timeout: timeout],
+      config,
+      {:openai, :complete_object},
+      fn result ->
+        case result do
+          {:ok, %{status_code: 200, body: response_body}} ->
+            parse_object_response(response_body)
 
-      {:ok, %{status_code: status, body: error_body}} ->
-        Logger.error("OpenAI API error: #{status} - #{error_body}")
-        {:error, {:http_error, status, error_body}}
+          {:ok, %{status_code: status, body: error_body}} ->
+            Logger.error("OpenAI API error: #{status} - #{error_body}")
+            {:error, {:http_error, status, error_body}}
 
-      {:error, reason} ->
-        {:error, {:request_failed, reason}}
-    end
+          {:error, reason} ->
+            {:error, {:request_failed, reason}}
+        end
+      end
+    )
   end
 
   @impl Gateway
@@ -300,6 +313,14 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
     end
   end
 
+  defp adaptation_warning(config, legacy_message) do
+    if config.recovery == nil do
+      Logger.warning(legacy_message)
+    else
+      Logger.warning("OpenAI completion parameter adaptation warning")
+    end
+  end
+
   defp adapt_parameters_for_model(registry, model, config) do
     capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
 
@@ -327,12 +348,16 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
 
         capabilities.supported_temperatures == [] ->
           # Model doesn't support temperature at all
-          Logger.warning("Model #{model} does not support temperature parameter at all")
+          adaptation_warning(
+            config,
+            "Model #{model} does not support temperature parameter at all"
+          )
 
           params
 
         true ->
-          Logger.warning(
+          adaptation_warning(
+            config,
             "Model #{model} does not support temperature #{config.temperature}, using default 1.0"
           )
 
@@ -353,7 +378,8 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
         Map.put(params, :reasoning_effort, Atom.to_string(config.reasoning_effort))
       else
         if config.reasoning_effort && capabilities.model_type != :reasoning do
-          Logger.warning(
+          adaptation_warning(
+            config,
             "Model #{model} is not a reasoning model, ignoring reasoning_effort parameter"
           )
         end

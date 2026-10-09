@@ -67,22 +67,27 @@ defmodule Mojentic.LLM.Gateways.Ollama do
     body = maybe_add_format(body, config)
     body = maybe_add_thinking(body, config)
 
-    case http_client().post(
-           "#{host}/api/chat",
-           Jason.encode!(body),
-           [{"Content-Type", "application/json"}],
-           recv_timeout: timeout,
-           timeout: timeout
-         ) do
-      {:ok, %{status_code: 200, body: response_body}} ->
-        parse_response(response_body)
+    Mojentic.LLM.CompletionRequest.run(
+      http_client(),
+      "#{host}/api/chat",
+      Jason.encode!(body),
+      [{"Content-Type", "application/json"}],
+      [recv_timeout: timeout, timeout: timeout],
+      config,
+      {:ollama, :complete},
+      fn result ->
+        case result do
+          {:ok, %{status_code: 200, body: response_body}} ->
+            parse_response(response_body)
 
-      {:ok, %{status_code: status}} ->
-        {:error, {:http_error, status}}
+          {:ok, %{status_code: status}} ->
+            {:error, {:http_error, status}}
 
-      {:error, reason} ->
-        {:error, {:request_failed, reason}}
-    end
+          {:error, reason} ->
+            {:error, {:request_failed, reason}}
+        end
+      end
+    )
   end
 
   @impl Gateway
@@ -101,22 +106,27 @@ defmodule Mojentic.LLM.Gateways.Ollama do
       stream: false
     }
 
-    case http_client().post(
-           "#{host}/api/chat",
-           Jason.encode!(body),
-           [{"Content-Type", "application/json"}],
-           recv_timeout: timeout,
-           timeout: timeout
-         ) do
-      {:ok, %{status_code: 200, body: response_body}} ->
-        parse_object_response(response_body)
+    Mojentic.LLM.CompletionRequest.run(
+      http_client(),
+      "#{host}/api/chat",
+      Jason.encode!(body),
+      [{"Content-Type", "application/json"}],
+      [recv_timeout: timeout, timeout: timeout],
+      config,
+      {:ollama, :complete_object},
+      fn result ->
+        case result do
+          {:ok, %{status_code: 200, body: response_body}} ->
+            parse_object_response(response_body)
 
-      {:ok, %{status_code: status}} ->
-        {:error, {:http_error, status}}
+          {:ok, %{status_code: status}} ->
+            {:error, {:http_error, status}}
 
-      {:error, reason} ->
-        {:error, {:request_failed, reason}}
-    end
+          {:error, reason} ->
+            {:error, {:request_failed, reason}}
+        end
+      end
+    )
   end
 
   @impl Gateway

@@ -6,6 +6,11 @@ defmodule Mojentic.LLM.CompletionConfig do
   returns a final response, the gateway fails, or its caller cancels execution.
   This removes only the iteration cutoff; provider request limits still apply.
 
+  `recovery: []` opts ordinary and structured completions into safe structured
+  errors with exactly one wire attempt. Supported options are `max_attempts: 1`
+  and `observer: fn event -> ... end`. Other options fail before HTTP dispatch.
+  Streaming recovery, admission, and resends are not implemented.
+
   Provides settings for temperature, context window size, and token limits.
 
   ## Examples
@@ -37,10 +42,12 @@ defmodule Mojentic.LLM.CompletionConfig do
           top_k: integer() | nil,
           response_format: response_format() | nil,
           reasoning_effort: reasoning_effort() | nil,
+          recovery: keyword() | nil,
           max_tool_iterations: non_neg_integer() | :infinity
         }
 
-  defstruct temperature: 1.0,
+  defstruct recovery: nil,
+            temperature: 1.0,
             num_ctx: 32_768,
             max_tokens: 16_384,
             num_predict: nil,

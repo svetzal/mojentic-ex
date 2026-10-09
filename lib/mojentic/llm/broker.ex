@@ -107,6 +107,10 @@ defmodule Mojentic.LLM.Broker do
     }
   end
 
+  defp private_trace_value(nil, value, _safe), do: value
+  defp private_trace_value(%CompletionConfig{recovery: nil}, value, _safe), do: value
+  defp private_trace_value(_config, _value, safe), do: safe
+
   defp generate_correlation_id do
     UUID.uuid4()
   end
@@ -156,10 +160,10 @@ defmodule Mojentic.LLM.Broker do
     tools_for_tracer = if tools, do: Enum.map(tools, &tool_descriptor/1), else: nil
 
     Tracer.record_llm_call(broker.tracer,
-      model: broker.model,
-      messages: messages,
+      model: private_trace_value(config, broker.model, "[redacted]"),
+      messages: private_trace_value(config, messages, []),
       temperature: config.temperature,
-      tools: tools_for_tracer,
+      tools: private_trace_value(config, tools_for_tracer, nil),
       source: __MODULE__,
       correlation_id: broker.correlation_id
     )
@@ -178,13 +182,13 @@ defmodule Mojentic.LLM.Broker do
 
       # Record LLM response in tracer
       Tracer.record_llm_response(broker.tracer,
-        model: broker.model,
-        usage: response.usage,
-        provider_model: response.model,
-        finish_reason: response.finish_reason,
-        metadata: response.metadata,
-        content: response.content || "",
-        tool_calls: response.tool_calls,
+        model: private_trace_value(config, broker.model, "[redacted]"),
+        usage: private_trace_value(config, response.usage, nil),
+        provider_model: private_trace_value(config, response.model, nil),
+        finish_reason: private_trace_value(config, response.finish_reason, nil),
+        metadata: private_trace_value(config, response.metadata, %{}),
+        content: private_trace_value(config, response.content || "", ""),
+        tool_calls: private_trace_value(config, response.tool_calls, []),
         call_duration_ms: call_duration_ms,
         source: __MODULE__,
         correlation_id: broker.correlation_id
@@ -262,8 +266,8 @@ defmodule Mojentic.LLM.Broker do
 
     # Record LLM call in tracer
     Tracer.record_llm_call(broker.tracer,
-      model: broker.model,
-      messages: messages,
+      model: private_trace_value(config, broker.model, "[redacted]"),
+      messages: private_trace_value(config, messages, []),
       temperature: config.temperature,
       tools: nil,
       source: __MODULE__,
@@ -284,12 +288,12 @@ defmodule Mojentic.LLM.Broker do
 
       # Record LLM response in tracer with object representation
       Tracer.record_llm_response(broker.tracer,
-        model: broker.model,
-        usage: response.usage,
-        provider_model: response.model,
-        finish_reason: response.finish_reason,
-        metadata: response.metadata,
-        content: inspect(response.object),
+        model: private_trace_value(config, broker.model, "[redacted]"),
+        usage: private_trace_value(config, response.usage, nil),
+        provider_model: private_trace_value(config, response.model, nil),
+        finish_reason: private_trace_value(config, response.finish_reason, nil),
+        metadata: private_trace_value(config, response.metadata, %{}),
+        content: private_trace_value(config, inspect(response.object), ""),
         tool_calls: [],
         call_duration_ms: call_duration_ms,
         source: __MODULE__,
@@ -673,7 +677,7 @@ defmodule Mojentic.LLM.Broker do
           )
 
         final_messages =
-          append_outcome_messages(broker, response.tool_calls, outcomes, new_messages)
+          append_outcome_messages(broker, response.tool_calls, outcomes, new_messages, config)
 
         do_generate(broker, final_messages, tools, config, next_iteration(iterations_remaining))
     end
@@ -686,14 +690,14 @@ defmodule Mojentic.LLM.Broker do
     Map.get(tool_call, :id) || "call-#{idx}"
   end
 
-  defp append_outcome_messages(broker, tool_calls, outcomes, messages) do
+  defp append_outcome_messages(broker, tool_calls, outcomes, messages, config \\ nil) do
     tool_calls
     |> Enum.zip(outcomes)
     |> Enum.reduce(messages, fn {tool_call, outcome}, acc ->
       Tracer.record_tool_call(broker.tracer,
-        tool_name: tool_call.name,
-        arguments: tool_call.arguments,
-        result: outcome_result(outcome),
+        tool_name: private_trace_value(config, tool_call.name, "[redacted]"),
+        arguments: private_trace_value(config, tool_call.arguments, %{}),
+        result: private_trace_value(config, outcome_result(outcome), nil),
         caller: "Broker",
         call_duration_ms: outcome.duration_ms,
         source: __MODULE__,
@@ -710,7 +714,11 @@ defmodule Mojentic.LLM.Broker do
             }
           ]
       else
-        Logger.error("Tool execution failed: #{Error.format_error(outcome.error)}")
+        if config == nil or config.recovery == nil do
+          Logger.error("Tool execution failed: #{Error.format_error(outcome.error)}")
+        else
+          Logger.error("Tool execution failed")
+        end
 
         acc ++
           [

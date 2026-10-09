@@ -155,14 +155,22 @@ defmodule Mojentic.LLM.ChatSession do
       # Continue conversation
       {:ok, response, session} = ChatSession.send(session, "And what about 3+3?")
 
+  Pass `recovery: []` as the third argument to opt into single-attempt safe
+  completion errors. On failure, keep the original session returned by `new/2`
+  or a prior successful send; the error does not return an updated history.
+
   """
-  @spec send(t(), String.t()) :: {:ok, String.t(), t()} | {:error, term()}
-  def send(session, query) do
+  @spec send(t(), String.t(), keyword()) :: {:ok, String.t(), t()} | {:error, term()}
+  def send(session, query, opts \\ []) do
     # Add user message
     session = insert_message(session, Message.user(query))
 
     # Generate response
-    config = %CompletionConfig{temperature: session.temperature}
+    config =
+      CompletionConfig.new(
+        temperature: session.temperature,
+        recovery: Keyword.get(opts, :recovery)
+      )
 
     # Extract just the messages (without token lengths) for broker
     messages = Enum.map(session.messages, & &1.message)

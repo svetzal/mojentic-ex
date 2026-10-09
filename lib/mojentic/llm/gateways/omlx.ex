@@ -87,9 +87,9 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   def complete(model, messages, tools, config) do
     body = chat_body(model, messages, tools, config)
 
-    with {:ok, response} <- post_chat(body) do
-      parse_completion(response, structured?(config))
-    end
+    completion_request(body, config, :complete, fn response ->
+      parse_completion(response, structured?(config), config.recovery == nil)
+    end)
   end
 
   @impl Gateway
@@ -97,10 +97,10 @@ defmodule Mojentic.LLM.Gateways.OMLX do
     config = %{config | response_format: %{type: :json_object, schema: schema}}
     body = chat_body(model, messages, nil, config)
 
-    with {:ok, response} <- post_chat(body),
-         {:ok, completion} <- parse_completion(response, true) do
-      parse_object(completion)
-    end
+    completion_request(body, config, :complete_object, fn response ->
+      with {:ok, completion} <- parse_completion(response, true, config.recovery == nil),
+           do: parse_object(completion)
+    end)
   end
 
   @impl Gateway
@@ -226,16 +226,20 @@ defmodule Mojentic.LLM.Gateways.OMLX do
 
   # Transport
 
-  defp post_chat(body) do
-    case http_client().post(
-           url("/chat/completions"),
-           Jason.encode!(body),
-           json_headers(),
-           timeout_opts(get_timeout())
-         ) do
-      {:ok, %{status_code: 200} = response} -> {:ok, response}
-      other -> failure(other)
-    end
+  defp completion_request(body, config, operation, parse) do
+    Mojentic.LLM.CompletionRequest.run(
+      http_client(),
+      url("/chat/completions"),
+      Jason.encode!(body),
+      json_headers(),
+      timeout_opts(get_timeout()),
+      config,
+      {:omlx, operation},
+      fn
+        {:ok, %{status_code: 200} = response} -> parse.(response)
+        other -> failure(other)
+      end
+    )
   end
 
   defp post_chat_stream(body) do
@@ -266,7 +270,7 @@ defmodule Mojentic.LLM.Gateways.OMLX do
 
   # Response parsing
 
-  defp parse_completion(%{body: body} = response, structured?) do
+  defp parse_completion(%{body: body} = response, structured?, log_warning?) do
     case Jason.decode(body) do
       {:ok, %{"choices" => [%{"message" => message} = choice | _]} = reported} ->
         {:ok,
@@ -277,7 +281,7 @@ defmodule Mojentic.LLM.Gateways.OMLX do
            model: reported["model"],
            usage: reported["usage"],
            finish_reason: choice["finish_reason"],
-           metadata: format_warning_metadata(response, structured?)
+           metadata: format_warning_metadata(response, structured?, log_warning?)
          }}
 
       _ ->
@@ -294,15 +298,17 @@ defmodule Mojentic.LLM.Gateways.OMLX do
 
   # oMLX reports an unenforced response format in a `Warning` header. It is
   # evidence about a structured request, not a failure.
-  defp format_warning_metadata(_response, false), do: %{}
+  defp format_warning_metadata(_response, false, _log_warning?), do: %{}
 
-  defp format_warning_metadata(response, true) do
+  defp format_warning_metadata(response, true, log_warning?) do
     case response_header(response, "warning") do
       nil ->
         %{}
 
       warning ->
-        Logger.warning("oMLX did not enforce the requested response format: #{warning}")
+        if log_warning?,
+          do: Logger.warning("oMLX did not enforce the requested response format: #{warning}")
+
         %{@warning_key => warning}
     end
   end

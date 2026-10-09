@@ -29,6 +29,9 @@ defmodule Mojentic.HTTP.ReqClient do
     timeout = Keyword.get(opts, :recv_timeout, 30_000)
 
     case Req.post(url,
+           decode_body: Keyword.get(opts, :retry) != false,
+           retry: Keyword.get(opts, :retry, :safe_transient),
+           redirect: Keyword.get(opts, :redirect, true),
            body: body,
            headers: headers,
            receive_timeout: timeout,

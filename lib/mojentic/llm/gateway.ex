@@ -43,7 +43,8 @@ defmodule Mojentic.LLM.Gateway do
   alias Mojentic.LLM.Message
 
   @type gateway :: module()
-  @type error :: {:error, atom() | String.t() | {atom(), term()}}
+  @type error ::
+          {:error, Mojentic.LLM.CompletionError.t() | atom() | String.t() | {atom(), term()}}
 
   @doc """
   Completes an LLM request with text response.
