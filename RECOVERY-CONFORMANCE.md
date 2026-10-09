@@ -10,23 +10,25 @@ were changed. Exact raw wire trace hooks remain a separate increment.
 
 ## Synchronization correction
 
-This correction starts from the preserved streaming increment at `41a0829`
-(`foundry-task/mojentic-ex-mojentic-ex-transient-recovery-v1-c6-ed8481`). The
-initial working tree was clean. AGENTS.md, including the coordinator's release
-authorization, remains unchanged. No release work is part of this correction.
+This correction starts from the preserved c7 streaming increment at
+`55390244b01402d62664b0849764618f819245ec`
+(`foundry-task/mojentic-ex-mojentic-ex-transient-recovery-v1-c7-7afd22`).
+The initial working tree was clean; its empty binary diff was saved before work.
+AGENTS.md was copied for preservation and remains byte-for-byte unchanged,
+including the coordinator's release authorization. No release work is authorized
+in this Foundry correction.
 
-The plan requests fetch and pull/rebase, but the later Foundry-specific
-requirement prohibits modifying refs, rebasing, committing, pushing or merging.
-Neither fetch nor pull/rebase was attempted. Read-only `git ls-remote origin
-refs/heads/main` exited **0**, reporting remote main at
-`a985c7b7303cecd0b864f697f8a4099b2e1522d9`; local origin/main is at that same
-commit. `git rev-list --left-right --count HEAD...origin/main` exited **0**,
-returning **1 0**: HEAD contains the preserved increment above main. No new
-remote main commit was observed; no rebase conflict resolution was attempted.
-These are read-only comparisons, not a successful fetch or pull/rebase.
-Actual synchronization evidence is in `.foundry/logs/synchronization.log`.
-Changes stay in this worktree for Foundry to finalize. No refs, release,
-dependencies, runtime pins, sibling checkouts or harness files were changed.
+`git fetch --dry-run --no-write-fetch-head origin main` was actually attempted
+and exited **0**. It contacted origin without writing refs or FETCH_HEAD. The
+later Foundry restriction prohibits rebasing and modifying refs, so
+`pull --rebase origin main` was not run. This is a successful dry-run fetch,
+not a completed pull/rebase. No conflicts arose or were resolved.
+`git ls-remote origin refs/heads/main` exited **0**, reporting remote main at
+`a985c7b7303cecd0b864f697f8a4099b2e1522d9`.
+`git rev-list --left-right --count HEAD...origin/main` exited **0**, returning
+**2 0**. Actual synchronization evidence is in
+`.foundry/logs/synchronization.log`. No refs were changed; Foundry owns
+finalization and all source changes remain uncommitted in this worktree.
 
 ## Characterized boundaries and licensed changes
 
@@ -79,41 +81,37 @@ by default.
 
 ## Proof first
 
-Before expanding fixtures, documentation or running the full gates, two public
-production-Req cases rejected the preserved source: `OpenAI broker failing tool
-protects default observability without replay` exposed `sentinel-tool-error`
-in captured default logs; `OpenAI legacy parser exception retains same-chunk
-semantic observations and bytes` reported **0** raw bytes for a **378**-byte
-chunk. The actual rejecting exit was **2** and the corrected exit was **0**.
-The first invocation could not start because dependencies were absent; that
-prerequisite failure is not used as behavioral evidence. Dependencies were
-restored from the unchanged lockfile.
+Before changing production code, expanding documentation or running full gates,
+six new public-boundary probes exercised the remaining completed-tool loss through
+the production ReqClient and deterministic scripted TCP responses. The cases are
+`#{gateway} #{entrypoint} retains fragmented completed tools before observation failure`,
+for OpenAI, Ollama and oMLX, with `adapter` invoking `complete_stream/4` and
+`broker` invoking `Broker.generate_stream/4`.
 
-After those proof cases passed, the matrix expanded to **21** correction cases.
-It was exercised against the preserved source via temporary source snapshots
-without changing refs or touching AGENTS.md, then against the corrections.
-The preserved source rejected **19** cases (exit **2**); the two Ollama EOF
-cases already passed and remain regression guards. All **21** cases pass with
-the corrections (exit **0**). `.foundry/proof.json` records this expanded
-behavioral probe and its actual commands, exit codes and full logs. The initial
-proof logs are retained separately as `initial-rejecting.log` and
-`initial-corrected.log`. JSON types, exit codes and log existence are checked
-in `.foundry/logs/proof-validation.log`.
+The first chunk delivers sentinel content and starts two tool argument fragments.
+The test waits for actual delivery before releasing a second chunk containing both
+argument suffixes, their completion marker, then `tool_calls: 7`. Each case asserts
+exactly four observed fragments and two completed calls; zero delivered fragments
+or completed calls; unchanged previously delivered content; actual raw bytes;
+one server-observed wire request; no tool execution or successful terminal;
+explicit protocol interruption; and matching progress and actual logical request
+and attempt identities in the final error, history and failure lifecycle records.
 
-The broker now passes its completion config through
-`execute_and_append_tool_results/5` to `append_outcome_messages/5`, as ordinary
-generation already does. Recovery-enabled streaming keeps the existing null
-payload tracer and generic failure log. Tool-result messages retain the actual
-error for model follow-up; execution counts, payloads and tool depth are
-unchanged. Recovery-disabled behavior keeps the existing raw logs and tracing.
+All six probes rejected the preserved production source (actual exit **2**): it
+reported zero completed calls instead of two. All six pass after the correction
+(actual exit **0**). `.foundry/proof.json` records the commands and complete logs
+in `rejecting.log` and `corrected.log`. An earlier prerequisite invocation exited
+**1** because dependencies were absent; it is not the behavioral rejection.
+Dependencies were restored using the unchanged lockfile, without upgrades.
 
-StreamRecovery counts bytes before entering the rescuable chunk stage. It
-rescues observation and legacy parsing at each frame, retaining the latest
-semantic state and completed-call count. Terminal parser and EOF paths use the
-same error-state contract. Parsing remains atomic for chunk delivery: events
-buffered in a failing chunk were not delivered. Acknowledged output from earlier
-chunks remains delivered in the final error, failure history and lifecycle
-metadata. No parser exception is converted into a successful terminal or resend.
+Legacy streaming now observes and assembles each frame before advancing to the
+next frame. A later observation exception retains already assembled completed
+calls and fragment counts. Parsing remains atomic for chunk delivery, so none
+of the failing chunk's tools or terminal events reach the adapter or broker.
+Earlier acknowledged content remains delivered. EOF uses the same frame path;
+terminal-event APIs retain their observation and parsing contract. Existing
+parsing-failure, EOF, privacy, cancellation, payload and broker/session safety
+regressions remain intact. Recovery-disabled behavior is unchanged.
 
 ## Named production-HTTP cases
 
@@ -165,6 +163,7 @@ No gateway mock or live-model request establishes this correction's evidence.
 | `observation exception retains valid same-chunk semantics` | All three providers, `complete_stream/4` and `complete_stream_events/3`; valid content/reasoning/tool frames before malformed tool data, exact raw bytes and independently specified observed versus delivered progress, exact identities/history/lifecycle, no resend or successful terminal |
 | `parser exception preserves previously delivered output` | All six completion paths; server releases malformed chunk only after public content delivery, exact cumulative bytes, prior content remains delivered while later reasoning is observed only, interruption/history/lifecycle retain progress |
 | `legacy parsing exception preserves completed but undelivered tools` | All three `Broker.generate_stream/4` paths; valid completed tool frame before malformed arguments in the same chunk, one observed completed call and zero delivered/executed calls, exact raw bytes and no successful terminal |
+| `retains fragmented completed tools before observation failure` | All three `complete_stream/4` and `Broker.generate_stream/4` paths; two calls assembled across held HTTP chunks, exact four fragments/two completions, preserved earlier delivery, zero tool delivery/execution, actual bytes, one request, protocol interruption and exact error/history/lifecycle identity correspondence |
 | `EOF observation exception retains progress without synthetic bytes` | Ollama both completion APIs; malformed final frame without newline, prior content and applicable reasoning delivery retained, actual bytes only, one request and interrupted error |
 
 Terminal-event APIs do not support tool execution; their malformed-frame cases
@@ -185,19 +184,19 @@ it does not establish provider-side idempotency or remote termination.
 
 ## Final validation
 
-Final command results are recorded below and in `.foundry/gates.json`. Commands
-run through `foundry capture` and `/tmp/mojentic-mix`, selecting the unchanged
-CI-pinned Elixir **1.18.5** and OTP **28.5.0.7**. Full logs include stdout and
-stderr, rather than just the bounded capture tail. No threshold, exclusions,
-advisory suppression or package/runtime pin was changed.
+All commands used `foundry capture` and `/tmp/mojentic-mix`, selecting unchanged
+CI-pinned Elixir **1.18.5** and OTP **28.5.0.7**. Runtime selection was verified
+with `mix --version` and the installed OTP_VERSION file. Full stdout/stderr are
+included in each gate log. No package/runtime pins, coverage threshold,
+exclusions or advisory suppressions changed.
 
-The final full suite passes **22 doctests and 1,331 tests**, zero failures,
+The final full suite passes **22 doctests and 1,337 tests**, zero failures,
 with the existing **19 integration exclusions**. Coverage is **89.05%**, above
-the unchanged **80%** threshold. The focused production-HTTP file passes
-**153 cases**, including all **21** new correction cases. Strict Credo initially
-found ABC size 106 in the new tool-privacy assertion helper (exit **8**,
-`credo-initial.log`). Splitting payload and lifecycle assertions resolved it
-without suppressions; final strict Credo reports zero issues.
+the unchanged **80%** threshold. The production-HTTP file passes **159 cases**.
+The final focused proof passes all **six** new cases (153 others excluded).
+Strict Credo initially rejected two single-clause `with` expressions (exit
+**4**, `credo-initial.log`). Converting them to `case` resolved the findings
+without suppressions; all required checks were rerun successfully.
 
 | Command | Actual exit | Log in `.foundry/logs/` |
 | --- | --- | --- |
@@ -207,34 +206,36 @@ without suppressions; final strict Credo reports zero issues.
 | `mix credo --strict` | 0 | credo.log |
 | `mix test --cover` | 0 | coverage.log |
 | `mix test` | 0 | test.log |
-| `mix test test/mojentic/llm/stream_recovery_wire_test.exs --trace` | 0 | stream-cases.log |
 | `mix deps.audit` | 0 | deps-audit.log |
 | `mix hex.audit` | 0 | hex-audit.log |
 | `mix sobelow --config` | 0 | sobelow.log |
 | `mix hex.outdated --all` | 1 | hex-outdated.log |
 | `mix dialyzer` | 1 | dialyzer.log |
 | `mix docs` | 0 | docs.log |
+| `mix test test/mojentic/llm/stream_recovery_wire_test.exs --trace` | 0 | stream-cases.log |
+| `mix test test/mojentic/llm/stream_recovery_wire_test.exs --only completed_observation_proof --trace` (preserved source) | 2 | rejecting.log |
+| `mix test test/mojentic/llm/stream_recovery_wire_test.exs --only completed_observation_proof --trace` (final source) | 0 | corrected.log |
 
-MixAudit reports no vulnerabilities, but its attempted refresh of the shared
-advisory repository failed with a read-only FETCH_HEAD. Independent read-only
-checks confirm local HEAD and upstream main both at
-`935abf7410a2bbb18e12579dee6e31267c3ed244` (advisory-local.log and
-advisory-remote.log). The refresh failure is not represented as successful
-synchronization. Hex audit reports no retired/security-advisory packages.
-Sobelow passes the existing configuration with no findings and existing
-quoted-keyword lockfile warnings; this is not a Phoenix application.
+MixAudit reports no vulnerabilities, but its advisory refresh failed on a
+read-only FETCH_HEAD. Independent read-only checks exited **0**, confirming
+local HEAD and upstream main both at
+`935abf7410a2bbb18e12579dee6e31267c3ed244` (`advisory-local.log` and
+`advisory-remote.log`). The refresh itself is not claimed as successful.
+Hex audit reports no retired or security-advisory packages. Sobelow completes
+with no security findings and existing quoted-keyword lockfile warnings;
+this is not a Phoenix application.
 
-`mix hex.outdated --all` reports available upgrades (informational, exit 1).
-Dialyzer exits 1 because the task is unavailable: Dialyxir is absent. Dialyzer
-and its PLT/cache prerequisite are **not** claimed as passing; adding a dependency
-or changing CI is outside this authorized increment. No precommit alias exists.
-Docs build succeeds with existing LICENSE, igniter usage-rule and private
-TracerEvent type-reference warnings outside this scope; the streaming, broker and session guides were reviewed and remain aligned
-with the preserved public contracts. This correction updates conformance
-evidence rather than adding public API or guide scope.
+`mix hex.outdated --all` reports available upgrades (informational, exit **1**).
+Dialyzer exits **1** because its task is unavailable: Dialyxir is absent.
+Dialyzer and its PLT/cache prerequisites are **not** claimed as passing; adding
+that dependency or changing CI is outside this correction. No precommit alias
+exists. Docs build succeeds with existing missing LICENSE/igniter usage-rule
+references and private TracerEvent type-reference warnings outside this scope.
+Streaming, broker and session guides were reviewed; their public contracts
+remain aligned. Only conformance evidence required documentation changes.
 
-`.foundry/logs/proof-validation.log` validates the behavioral evidence shape,
-field types, captured exit codes and log existence. Changes remain in the working
-tree for Foundry review and finalization. All recorded required gates passed on
-the final production source and tests. Dialyzer remains unavailable; no
-Dialyxir dependency or PLT/CI configuration was added within this correction.
+`.foundry/proof.json` records the rejecting and passing behavioral probes.
+`.foundry/logs/proof-validation.log` validates JSON fields and types, actual
+captured exit codes, all gate logs, and unchanged AGENTS.md. The completed
+source, tests and conformance changes remain in the working tree for Foundry
+review and finalization; no commit, push, merge, rebase, tag or release occurred.

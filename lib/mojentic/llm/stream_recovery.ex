@@ -221,14 +221,15 @@ defmodule Mojentic.LLM.StreamRecovery do
   defp finish(%{provider: :ollama, buffer: buffer} = state) when buffer != "" do
     {frames, state} = frames("\n", state)
 
-    with {:ok, state} <- observe_frames(frames, state),
-         {:ok, events, state} <- finish_events(frames, state) do
-      case deliver(events, state) do
-        {:continue, state} -> failure(:incomplete_stream, state)
-        result -> result
-      end
-    else
-      {:parser_error, exception, state} -> failure({:parser_failure, exception}, state)
+    case parse_frames(nil, frames, state) do
+      {:ok, events, state} ->
+        case deliver(events, state) do
+          {:continue, state} -> failure(:incomplete_stream, state)
+          result -> result
+        end
+
+      {:parser_error, exception, state} ->
+        failure({:parser_failure, exception}, state)
     end
   end
 
@@ -240,8 +241,6 @@ defmodule Mojentic.LLM.StreamRecovery do
       {:ok, events, state}
     end)
   end
-
-  defp finish_events(frames, state), do: parse("", frames, state)
 
   defp safe_item({:data, chunk}, state) do
     state = %{
@@ -275,16 +274,25 @@ defmodule Mojentic.LLM.StreamRecovery do
   defp item({:data, chunk}, state) do
     {frames, state} = frames(chunk, state)
 
-    with {:ok, state} <- observe_frames(frames, state),
-         {:ok, events, state} <- parse(chunk, frames, state) do
-      send(state.tracker, {:stream_progress, self(), snapshot(state)})
-      deliver(events, state)
-    else
-      {:parser_error, exception, state} -> failure({:parser_failure, exception}, state)
+    case parse_frames(chunk, frames, state) do
+      {:ok, events, state} ->
+        send(state.tracker, {:stream_progress, self(), snapshot(state)})
+        deliver(events, state)
+
+      {:parser_error, exception, state} ->
+        failure({:parser_failure, exception}, state)
     end
   rescue
     exception -> failure({:parser_failure, exception}, state)
   end
+
+  defp parse_frames(chunk, frames, %{mode: :events} = state) do
+    with {:ok, state} <- observe_frames(frames, state) do
+      if is_nil(chunk), do: finish_events(frames, state), else: parse(chunk, frames, state)
+    end
+  end
+
+  defp parse_frames(chunk, frames, state), do: parse(chunk, frames, state)
 
   # Rescue at the frame boundary so observations from earlier frames survive.
   # Parsing a chunk is atomic for delivery: an exception yields none of its events.
@@ -358,12 +366,17 @@ defmodule Mojentic.LLM.StreamRecovery do
     end)
   end
 
+  # Observe and assemble each legacy frame before advancing, retaining completed
+  # calls if a later observation fails without delivering any events from the chunk.
   defp parse(_chunk, frames, state) do
     send(state.tracker, {:stream_progress, self(), snapshot(state)})
 
     Enum.reduce_while(frames, {:ok, [], state}, fn frame, {:ok, events, current} ->
-      case safely(current, fn -> parse_frame(frame, events, current) end) do
-        {:ok, _, _} = parsed -> {:cont, parsed}
+      with {:ok, observed} <- safely(current, fn -> {:ok, observe(frame, current)} end),
+           {:ok, _, _} = parsed <-
+             safely(observed, fn -> parse_frame(frame, events, observed) end) do
+        {:cont, parsed}
+      else
         error -> {:halt, error}
       end
     end)

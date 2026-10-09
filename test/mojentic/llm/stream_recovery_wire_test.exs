@@ -102,6 +102,64 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     end
   end
 
+  for gateway <- [OpenAI, Ollama, OMLX], entrypoint <- [:adapter, :broker] do
+    @gateway gateway
+    @entrypoint entrypoint
+    @tag :completed_observation_proof
+    test "#{gateway} #{entrypoint} retains fragmented completed tools before observation failure" do
+      owner = self()
+      first = partial(@gateway, :content) <> fragmented_tools(@gateway, :start)
+      chunk = fragmented_tools(@gateway, :finish) <> malformed(@gateway, %{tool_calls: 7})
+
+      response =
+        String.replace(
+          http(200, first),
+          "Content-Length: #{byte_size(first)}",
+          "Content-Length: #{byte_size(first <> chunk)}"
+        )
+
+      server = server(@gateway, [{:stream_hold, response}])
+      supervisor = start_supervised!(Task.Supervisor)
+      tool = %Mojentic.TestSupport.CountingTool{owner: owner}
+      config = config(observer: &send(owner, {:event, &1}))
+
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn ->
+          stream =
+            if @entrypoint == :adapter do
+              @gateway.complete_stream("gpt-4o", [Message.user("sentinel-input")], [tool], config)
+            else
+              Broker.generate_stream(
+                Broker.new("gpt-4o", @gateway),
+                [Message.user("sentinel-input")],
+                [tool],
+                config
+              )
+            end
+
+          stream |> Stream.each(&send(owner, {:delivered, &1})) |> Enum.to_list()
+        end)
+
+      delivered =
+        if @entrypoint == :adapter, do: {:content, "sentinel-output"}, else: "sentinel-output"
+
+      assert_receive {:delivered, ^delivered}, 2000
+      assert :ok = GenServer.call(server, {:release, chunk})
+      assert [^delivered, {:error, error}] = Task.await(task, 2000)
+
+      assert_parser_progress(
+        error,
+        byte_size(first <> chunk),
+        %{content: true, reasoning: false, tool_fragments: 4, completed_tool_calls: 2},
+        semantic_progress(:content, true, 0),
+        server
+      )
+
+      assert_failure_lifecycle(error, collect_events())
+      refute_receive {:tool_executed, _}
+    end
+  end
+
   for gateway <- [OpenAI, Ollama, OMLX], mode <- [:legacy, :events] do
     @gateway gateway
     @mode mode
@@ -869,6 +927,28 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     end
   end
 
+  defp fragmented_tools(gateway, stage) do
+    calls =
+      for index <- 0..1 do
+        function =
+          if stage == :start,
+            do: %{name: "count", arguments: "{\"value\":"},
+            else: %{arguments: "\"sentinel-tool-#{index}\"}"}
+
+        %{index: index, id: "call-#{index}", function: function}
+      end
+
+    if gateway == Ollama do
+      Jason.encode!(%{message: %{tool_calls: calls}, done: stage == :finish}) <> "\n"
+    else
+      sse(%{
+        choices: [
+          %{delta: %{tool_calls: calls}, finish_reason: if(stage == :finish, do: "tool_calls")}
+        ]
+      })
+    end
+  end
+
   defp malformed(Ollama, delta), do: Jason.encode!(%{message: delta, done: false}) <> "\n"
   defp malformed(_gateway, delta), do: sse(%{choices: [%{delta: delta}]})
 
@@ -909,8 +989,12 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     assert Enum.map(events, & &1.type) == [:attempt_started, :attempt_failed, :exhausted]
     assert_ids(events, 1)
     [started, failed, exhausted] = events
-    assert started.metadata.attempt_id == error.attempt_id
-    assert started.metadata.logical_request_id == error.logical_request_id
+
+    for event <- [started, failed, exhausted] do
+      assert event.metadata.attempt_id == error.attempt_id
+      assert event.metadata.logical_request_id == error.logical_request_id
+    end
+
     assert failed.metadata.progress == error.progress
     assert exhausted.metadata.progress == error.progress
     refute inspect(events) =~ "sentinel"
