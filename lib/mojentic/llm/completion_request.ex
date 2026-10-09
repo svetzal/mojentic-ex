@@ -47,13 +47,26 @@ defmodule Mojentic.LLM.CompletionRequest do
         deadline,
         {started,
          fn ->
-           client.post(url, body, headers, Keyword.merge(opts, retry: false, redirect: false))
+           client.post(
+             url,
+             body,
+             headers,
+             Keyword.merge(opts, retry: false, redirect: false, wire_trace: trace(recovery, ids))
+           )
          end}
       )
 
     case result do
       {:not_sent, reason} -> {:not_sent, reason}
       response -> finish(response, parse, recovery, provider, operation, ids)
+    end
+  end
+
+  @doc false
+  def trace(recovery, ids) do
+    case Keyword.get(recovery, :trace_observer) do
+      nil -> nil
+      callback -> {callback, ids}
     end
   end
 
@@ -141,6 +154,9 @@ defmodule Mojentic.LLM.CompletionRequest do
 
     %{error | history: [CompletionError.safe_metadata(error) |> Map.delete(:history)]}
   end
+
+  defp classify({:error, :capture_failed}, _original),
+    do: {:protocol, nil, :unknown, :unknown, :capture_failed, false}
 
   defp classify(_response, :unsupported_options),
     do: {:protocol, nil, :unknown, :no, :unsupported_options, false}

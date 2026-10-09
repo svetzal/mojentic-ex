@@ -11,7 +11,13 @@ defmodule Mojentic.LLM.CompletionConfig do
   with ambiguous acceptance require explicit admission. See `Mojentic.LLM.Recovery`
   and RECOVERY-CONFORMANCE.md for admission, cancellation and policy options.
   Recovery limits govern resends; they never time out active generation.
-  Streaming recovery and exact wire trace hooks remain unimplemented.
+  Streaming recovery covers both completion stream APIs. Add
+  `trace_observer: fn event -> persist(event); :ok end` inside `recovery` to receive
+  raw per-wire evidence from the Req HTTP boundary. Caller storage owns retention
+  and access control; these events can contain credentials and model payloads.
+  An observer exception, throw, exit or return other than `:ok` terminates the
+  completion with `:capture_failed` and never authorizes another inference.
+  See `Mojentic.LLM.Recovery` for capture limits.
 
   Provides settings for temperature, context window size, and token limits.
 

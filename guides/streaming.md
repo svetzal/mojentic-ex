@@ -196,9 +196,65 @@ Recovery-enabled broker streaming suppresses default payload tracing, including
 messages, accumulated content and tool arguments. The recovery `observer` supplies
 safe lifecycle metadata. Error inspection and JSON encoding exclude response text
 and original causes; `CompletionError.cause(error)` is the explicit private
-inspection API and must not be sent to default logs. Exact raw wire trace hooks
-remain a separate increment. Providers expose no supported status, idempotency or
+inspection API and must not be sent to default logs. Raw per-wire evidence is
+available only through the explicit `trace_observer` option described below. Providers expose no supported status, idempotency or
 remote cancellation guarantee; see `Recovery.capabilities/1`.
 
 The deterministic production-HTTP cases and gate results are recorded in
 [RECOVERY-CONFORMANCE.md](https://github.com/svetzal/mojentic-ex/blob/main/RECOVERY-CONFORMANCE.md).
+
+
+## Opt-in exact HTTP evidence
+
+Add the callback inside the existing recovery configuration; ordinary and
+structured completions and both public streaming APIs use the same contract:
+
+```elixir
+config = CompletionConfig.new(
+  recovery: [
+    max_attempts: 2,
+    trace_observer: fn event ->
+      # Persist in caller-owned storage with the desired security/retention policy.
+      :ok = MyTraceStore.append(event.ids.logical_request_id, event)
+      :ok
+    end
+  ]
+)
+```
+
+Use `config` with a gateway or broker. Sessions accept
+`recovery: config.recovery` on `ChatSession.send/3` and `send_stream/3`.
+The safe lifecycle `observer` remains a separate callback. Enabling recovery alone
+never enables raw capture, and the broker's ordinary tracer remains payload-free.
+
+In dispatch order, the raw callback receives `:request` with the binary encoded
+body, method, URL and supplied headers; `:response_headers` with status and headers;
+`:response_data` for each exact observed binary chunk; and `:response_end` with
+outcome and evidence availability. Each event carries the same unmasked logical
+request ID, attempt ID and wire number as lifecycle/error metadata. HTTP failures,
+malformed provider JSON and partial transport responses retain their observed
+bytes. The callback receives credentials and payloads without masking; the library
+stores none of them. Default errors, JSON, lifecycle events and logs stay safe.
+
+Return exactly `:ok`. An exception, throw, exit or any other return causes terminal
+`capture_failed`, never another inference or successful session finalization.
+Already delivered content remains delivered. Capture failure can prevent an end
+notification; store the prefix as incomplete. Cancellation remains authoritative,
+including while a callback is blocked, and cancellation before dispatch counts zero
+attempts and produces no trace. Callbacks run in the request worker when cancellation
+is configured, so storage must not depend on running in the completion caller.
+
+The capture boundary is the default ReqClient, not TLS packets or transfer framing.
+Header metadata contains supplied request headers and observed response headers,
+not every generated transport header. HTTP data chunks can be coalesced. Provider
+terminal markers can stop capture before HTTP EOF (`outcome: :consumer_halted`).
+`:complete` means HTTP EOF, not successful provider decoding; `:failed` means the
+observed HTTP/transport failure. A headers-only response with no data is available
+empty-body evidence; failure before headers is `evidence: :unavailable`. Request
+notification happens after Req's first response observation or transport failure;
+cancellation before that can leave request evidence unavailable. Killed capture
+workers do not promise a final end callback. Missing bytes are never reconstructed
+or obtained by issuing another request. There is no trace truncation or byte-size
+limit; caller storage must handle the observed stream. Non-2xx bodies are buffered
+for error metadata. Custom HTTP clients must implement `wire_trace` themselves;
+these tests establish the default Req boundary contract.

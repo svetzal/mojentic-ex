@@ -32,6 +32,379 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     :ok
   end
 
+  for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object],
+      outcome <- [:retry_success, :exhaustion, :malformed, :capture_failure] do
+    @gateway gateway
+    @operation operation
+    @outcome outcome
+    test "#{gateway} #{@operation} exact trace #{@outcome} preserves wire bytes and identity" do
+      owner = self()
+      failure = "response-secret"
+
+      content =
+        if @operation == :complete_object,
+          do: ~s({"answer":"response-secret"}),
+          else: "response-secret"
+
+      success =
+        if @gateway == Ollama,
+          do: Jason.encode!(%{message: %{content: content}, done: true}),
+          else: Jason.encode!(%{choices: [%{message: %{content: content}}]})
+
+      bodies =
+        case @outcome do
+          :retry_success -> [{503, failure}, {200, success}]
+          :exhaustion -> [{503, failure}, {503, failure}]
+          :malformed -> [{200, "invalid-response-secret"}]
+          :capture_failure -> [{200, success}]
+        end
+
+      server =
+        start_supervised!(
+          {ScriptedCompletionServer,
+           {self(), Enum.map(bodies, fn {status, body} -> response(status, body) end)}}
+        )
+
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+
+      config =
+        CompletionConfig.new(
+          recovery: [
+            max_attempts: 2,
+            base_delay: 0,
+            admission: fn _ -> :allow end,
+            sleeper: fn _ -> :ok end,
+            trace_observer: fn event ->
+              send(owner, {:exact_trace, event})
+
+              if @outcome == :capture_failure and event.type == :response_end,
+                do: raise("capture-secret")
+
+              :ok
+            end,
+            observer: &send(owner, {:exact_lifecycle, &1})
+          ]
+        )
+
+      logs =
+        capture_log(fn ->
+          result = invoke(@gateway, @operation, config)
+          send(owner, {:exact_result, result})
+
+          case @outcome do
+            :retry_success ->
+              assert {:ok, _} = result
+
+            outcome ->
+              assert {:error, error} = result
+              assert_capture_outcome(outcome, error)
+              assert error.wire_attempt == length(bodies)
+              refute inspect(error) =~ "secret"
+              refute Jason.encode!(error) =~ "secret"
+          end
+        end)
+
+      refute logs =~ "secret"
+      traces = exact_messages(:exact_trace)
+      lifecycle = exact_messages(:exact_lifecycle)
+      requests = GenServer.call(server, :requests)
+      assert length(requests) == length(bodies)
+      grouped = Enum.group_by(traces, & &1.ids.wire_attempt)
+
+      for {{status, body}, number} <- Enum.with_index(bodies, 1) do
+        events = grouped[number]
+        [request_event] = Enum.filter(events, &(&1.type == :request))
+        [_, encoded] = String.split(Enum.at(requests, number - 1), "\r\n\r\n", parts: 2)
+        assert request_event.body == encoded
+        assert request_event.method == :post
+
+        assert request_event.url =~
+                 if(@gateway == Ollama, do: "/api/chat", else: "/v1/chat/completions")
+
+        [headers] = Enum.filter(events, &(&1.type == :response_headers))
+        assert headers.status == status
+        assert {"x-request-id", "wire-request-73"} in headers.headers
+
+        assert Enum.filter(events, &(&1.type == :response_data))
+               |> Enum.map(& &1.body)
+               |> IO.iodata_to_binary() == body
+
+        assert Enum.all?(events, &(&1.ids == request_event.ids))
+        assert Enum.count(events, &(&1.type == :response_end)) == 1
+        assert Enum.map(Enum.take(events, 2), & &1.type) == [:request, :response_headers]
+        assert Enum.all?(Enum.slice(events, 2, length(events) - 3), &(&1.type == :response_data))
+        assert List.last(events).type == :response_end
+        assert List.last(events).outcome == if(status == 200, do: :complete, else: :failed)
+
+        [started] =
+          Enum.filter(
+            lifecycle,
+            &(&1.type == :attempt_started and &1.metadata.wire_attempt == number)
+          )
+
+        assert Map.take(started.metadata, [:logical_request_id, :attempt_id, :wire_attempt]) ==
+                 request_event.ids
+      end
+
+      ids = Enum.filter(traces, &(&1.type == :request)) |> Enum.map(& &1.ids)
+      assert length(Enum.uniq(Enum.map(ids, & &1.logical_request_id))) == 1
+      assert length(Enum.uniq(Enum.map(ids, & &1.attempt_id))) == length(bodies)
+      assert_receive {:exact_result, result}
+      assert_trace_history(result, ids)
+      refute inspect(lifecycle) =~ "secret"
+      if length(requests) == 2, do: assert(Enum.at(requests, 0) == Enum.at(requests, 1))
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object],
+      evidence <- [:empty, :unavailable, :partial] do
+    @gateway gateway
+    @operation operation
+    @evidence evidence
+    test "#{gateway} #{operation} exact trace distinguishes #{evidence} response evidence" do
+      owner = self()
+
+      response =
+        case @evidence do
+          :empty ->
+            response(200, "")
+
+          :unavailable ->
+            ""
+
+          :partial ->
+            String.replace(
+              response(200, "partial-response-secret"),
+              "Content-Length: 23",
+              "Content-Length: 123"
+            )
+        end
+
+      server = start_supervised!({ScriptedCompletionServer, {self(), [response]}})
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+
+      config =
+        CompletionConfig.new(
+          recovery: [
+            trace_observer: fn event ->
+              send(owner, {:evidence_trace, event})
+              :ok
+            end
+          ]
+        )
+
+      assert {:error, error} = invoke(@gateway, @operation, config)
+
+      if @evidence == :partial do
+        assert error.category == :transport
+        assert error.retry_eligible
+        assert %Req.TransportError{reason: :closed} = CompletionError.cause(error)
+      end
+
+      traces = exact_messages(:evidence_trace)
+
+      data =
+        Enum.filter(traces, &(&1.type == :response_data))
+        |> Enum.map(& &1.body)
+        |> IO.iodata_to_binary()
+
+      expected = if @evidence == :partial, do: "partial-response-secret", else: ""
+      assert data == expected
+      [terminal] = Enum.filter(traces, &(&1.type == :response_end))
+
+      assert terminal.evidence ==
+               if(@evidence == :unavailable, do: :unavailable, else: :available)
+
+      [request_event] = Enum.filter(traces, &(&1.type == :request))
+      [request] = GenServer.call(server, :requests)
+      [_, encoded] = String.split(request, "\r\n\r\n", parts: 2)
+      assert request_event.body == encoded
+      assert request_event.ids.attempt_id == error.attempt_id
+      assert request_event.ids.logical_request_id == error.logical_request_id
+      refute inspect(error) =~ "secret"
+    end
+  end
+
+  for stage <- [:before_dispatch, :during_capture], operation <- [:complete, :complete_object] do
+    @stage stage
+    @operation operation
+    test "ordinary #{operation} exact trace cancellation #{stage} preserves dispatch accounting" do
+      owner = self()
+      body = Jason.encode!(%{choices: [%{message: %{content: ~s({"answer":"response-secret"})}}]})
+      server = start_supervised!({ScriptedCompletionServer, {self(), [response(200, body)]}})
+      assert_receive {:server_port, port}
+      configure(OpenAI, port)
+      cancel = make_ref()
+
+      config =
+        CompletionConfig.new(
+          recovery: [
+            max_attempts: 3,
+            cancel_ref: cancel,
+            trace_observer: fn event ->
+              send(owner, {:ordinary_cancel_trace, event})
+
+              if @stage == :during_capture and event.type == :response_data do
+                send(owner, {:ordinary_capturing, self()})
+
+                receive do
+                  :release_capture -> :ok
+                end
+              end
+
+              :ok
+            end
+          ]
+        )
+
+      supervisor = start_supervised!(Task.Supervisor)
+
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn ->
+          if @stage == :before_dispatch, do: send(self(), {:cancel, cancel})
+          invoke(OpenAI, @operation, config)
+        end)
+
+      if @stage == :during_capture do
+        assert_receive {:ordinary_capturing, worker}, 2000
+        monitor = Process.monitor(worker)
+        send(task.pid, {:cancel, cancel})
+        assert_receive {:DOWN, ^monitor, :process, ^worker, _}, 2000
+      end
+
+      assert {:error, error} = Task.await(task, 2000)
+      assert error.category == :cancellation
+      count = if @stage == :before_dispatch, do: 0, else: 1
+      assert error.wire_attempt == count
+      assert length(GenServer.call(server, :requests)) == count
+      if count == 0, do: refute_received({:ordinary_cancel_trace, _})
+      refute inspect(error) =~ "secret"
+    end
+  end
+
+  for failure <- [:return, :throw, :exit] do
+    @failure failure
+    test "exact trace observer #{failure} cannot report success or resend" do
+      server =
+        start_supervised!(
+          {ScriptedCompletionServer, {self(), [response(503, "response-secret")]}}
+        )
+
+      assert_receive {:server_port, port}
+      configure(OpenAI, port)
+
+      config =
+        CompletionConfig.new(recovery: [max_attempts: 3, trace_observer: trace_failure(@failure)])
+
+      assert {:error, error} = invoke(OpenAI, :complete, config)
+      assert error.reason == :capture_failed
+      assert error.wire_attempt == 1
+      assert length(GenServer.call(server, :requests)) == 1
+      refute inspect(error) =~ "secret"
+      refute Jason.encode!(error) =~ "secret"
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX], entrypoint <- [:broker, :session] do
+    @gateway gateway
+    @entrypoint entrypoint
+    test "#{gateway} ordinary #{entrypoint} exact trace capture failure prevents tool execution" do
+      owner = self()
+
+      call =
+        if @gateway == Ollama,
+          do: %{function: %{name: "count", arguments: %{value: "tool-secret"}}},
+          else: %{
+            id: "call-17",
+            type: "function",
+            function: %{name: "count", arguments: ~s({"value":"tool-secret"})}
+          }
+
+      message = %{content: "", tool_calls: [call]}
+
+      body =
+        if @gateway == Ollama,
+          do: Jason.encode!(%{message: message, done: true}),
+          else: Jason.encode!(%{choices: [%{message: message}]})
+
+      server = start_supervised!({ScriptedCompletionServer, {self(), [response(200, body)]}})
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+
+      config =
+        CompletionConfig.new(
+          recovery: [
+            max_attempts: 3,
+            trace_observer: fn event ->
+              send(owner, {:forwarded_trace, event})
+              if event.type == :response_end, do: raise("capture-secret")
+              :ok
+            end
+          ]
+        )
+
+      tool = %Mojentic.TestSupport.CountingTool{owner: owner}
+      broker = Broker.new("gpt-4o", @gateway)
+
+      result =
+        case @entrypoint do
+          :broker ->
+            Broker.generate(broker, [Message.user("payload-secret")], [tool], config)
+
+          :session ->
+            session = ChatSession.new(broker, tools: [tool])
+            ChatSession.send(session, "payload-secret", recovery: config.recovery)
+        end
+
+      assert {:error, error} = result
+      assert error.reason == :capture_failed
+      refute_received {:tool_executed, _}
+      traces = exact_messages(:forwarded_trace)
+      [request_event] = Enum.filter(traces, &(&1.type == :request))
+      [request] = GenServer.call(server, :requests)
+      [_, encoded] = String.split(request, "\r\n\r\n", parts: 2)
+      assert request_event.body == encoded
+
+      assert Enum.filter(traces, &(&1.type == :response_data))
+             |> Enum.map(& &1.body)
+             |> IO.iodata_to_binary() == body
+
+      assert request_event.ids.attempt_id == error.attempt_id
+      refute inspect(error) =~ "secret"
+      refute Jason.encode!(error) =~ "secret"
+    end
+  end
+
+  defp trace_failure(:return), do: fn _ -> {:error, "capture-secret"} end
+  defp trace_failure(:throw), do: fn _ -> throw("capture-secret") end
+  defp trace_failure(:exit), do: fn _ -> exit("capture-secret") end
+
+  defp assert_trace_history({:ok, _}, _ids), do: :ok
+
+  defp assert_trace_history({:error, error}, ids) do
+    assert Enum.map(
+             error.history,
+             &Map.take(&1, [:logical_request_id, :attempt_id, :wire_attempt])
+           ) == ids
+  end
+
+  defp assert_capture_outcome(:capture_failure, error),
+    do: assert(error.reason == :capture_failed)
+
+  defp assert_capture_outcome(_, _), do: :ok
+
+  defp exact_messages(tag, acc \\ []) do
+    receive do
+      {^tag, event} -> exact_messages(tag, [event | acc])
+    after
+      0 -> Enum.reverse(acc)
+    end
+  end
+
   @tag :decoding_proof
   test "OpenAI complete_object real Req retains invalid structured content and exact lifecycle" do
     body = Jason.encode!(%{choices: [%{message: %{content: "response-secret"}}]})

@@ -49,7 +49,16 @@ defmodule Mojentic.LLM.StreamRecovery do
               tracker: self()
             }
 
-            attempt = fn -> attempt(client, url, body, headers, opts, initial) end
+            attempt = fn ->
+              attempt(
+                client,
+                url,
+                body,
+                headers,
+                Keyword.put(opts, :wire_trace, CompletionRequest.trace(recovery, ids)),
+                initial
+              )
+            end
 
             started = fn ->
               emit(recovery, :attempt_started, Map.put(ids, :progress, progress()))
@@ -187,6 +196,7 @@ defmodule Mojentic.LLM.StreamRecovery do
     Process.link(initial.tracker)
     consume(client.post_stream(url, body, headers, opts), initial)
   rescue
+    _exception in Mojentic.HTTP.WireTrace.CaptureError -> failure(:capture_failed, initial)
     exception -> failure(exception, initial)
   end
 
@@ -205,17 +215,33 @@ defmodule Mojentic.LLM.StreamRecovery do
             drive(rest, updated)
 
           result ->
-            rest.({:halt, nil})
-            result
+            halt_wire(rest, result, state)
         end
 
       {done, _} when done in [:done, :halted] ->
         finish(state)
     end
   rescue
+    _exception in Mojentic.HTTP.WireTrace.CaptureError ->
+      failure(:capture_failed, state)
+
     exception ->
       continuation.({:halt, nil})
       failure({:parser_failure, exception}, state)
+  end
+
+  defp halt_wire(rest, result, state) do
+    rest.({:halt, nil})
+    result
+  rescue
+    _exception in Mojentic.HTTP.WireTrace.CaptureError ->
+      progress =
+        case result do
+          {:ok, {progress, _}} -> progress
+          {:error, error} -> error.progress
+        end
+
+      failure(:capture_failed, %{state | progress: progress})
   end
 
   defp finish(%{provider: :ollama, buffer: buffer} = state) when buffer != "" do
@@ -263,6 +289,16 @@ defmodule Mojentic.LLM.StreamRecovery do
       | status: status,
         headers: headers,
         progress: %{state.progress | headers_received: true}
+    }
+
+    send(state.tracker, {:stream_progress, self(), snapshot(state)})
+    {:continue, state}
+  end
+
+  defp item({:http_data, chunk}, state) do
+    state = %{
+      state
+      | progress: %{state.progress | raw_bytes: state.progress.raw_bytes + byte_size(chunk)}
     }
 
     send(state.tracker, {:stream_progress, self(), snapshot(state)})
@@ -503,6 +539,9 @@ defmodule Mojentic.LLM.StreamRecovery do
   defp failure(reason, state) do
     response =
       case reason do
+        {:http_response, status, headers, body} ->
+          {:ok, %{status_code: status, headers: headers, body: body}}
+
         {:http_response, status, headers} ->
           {:ok, %{status_code: status, headers: headers, body: ""}}
 
@@ -524,7 +563,7 @@ defmodule Mojentic.LLM.StreamRecovery do
     interrupted = semantic?(state.progress.observed)
 
     progress =
-      if match?({:http_response, _, _}, reason),
+      if http_response?(reason),
         do: %{state.progress | headers_received: true},
         else: state.progress
 
@@ -549,12 +588,20 @@ defmodule Mojentic.LLM.StreamRecovery do
       error
       | progress: progress,
         phase: if(state.progress.headers_received, do: :streaming, else: error.phase),
-        reason: if(interrupted, do: :stream_interrupted, else: error.reason),
+        reason: capture_reason(reason, interrupted, error.reason),
         retry_eligible: error.retry_eligible and not interrupted
     }
 
     {:error, %{error | history: [Map.delete(CompletionError.safe_metadata(error), :history)]}}
   end
+
+  defp http_response?({:http_response, _, _}), do: true
+  defp http_response?({:http_response, _, _, _}), do: true
+  defp http_response?(_), do: false
+
+  defp capture_reason(:capture_failed, _interrupted, _reason), do: :capture_failed
+  defp capture_reason(_cause, true, _reason), do: :stream_interrupted
+  defp capture_reason(_cause, false, reason), do: reason
 
   defp semantic?(progress) do
     progress.content or progress.reasoning or progress.tool_fragments > 0 or
@@ -567,6 +614,7 @@ defmodule Mojentic.LLM.StreamRecovery do
   defp response_metadata(error, reason, %{status: status} = state) when not is_nil(status) do
     body =
       case reason do
+        {:http_response, _, _, body} -> body
         {:provider_error, provider_error} -> Jason.encode!(%{"error" => provider_error})
         _ -> ""
       end

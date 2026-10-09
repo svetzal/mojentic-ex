@@ -23,6 +23,280 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     :ok
   end
 
+  @tag :exact_trace_proof
+  test "exact trace retains streaming HTTP failure bytes and capture failure prevents resend" do
+    owner = self()
+    body = "response-sentinel-secret"
+    server = start_supervised!({ScriptedCompletionServer, {self(), [http(503, body)]}})
+    assert_receive {:server_port, port}
+    System.put_env("OPENAI_API_ENDPOINT", "http://127.0.0.1:#{port}/v1")
+    System.put_env("OPENAI_API_KEY", "credential-sentinel-secret")
+
+    config =
+      CompletionConfig.new(
+        recovery: [
+          max_attempts: 3,
+          trace_observer: fn event ->
+            send(owner, {:trace, event})
+            if event.type == :response_data, do: raise("capture-sentinel-secret")
+            :ok
+          end,
+          observer: &send(owner, {:lifecycle, &1})
+        ]
+      )
+
+    assert [{:error, %CompletionError{} = error}] =
+             OpenAI.complete_stream_events(
+               "gpt-4o",
+               [Message.user("input-sentinel-secret")],
+               config
+             )
+             |> Enum.to_list()
+
+    assert error.reason == :capture_failed
+    assert error.wire_attempt == 1
+    assert_receive {:trace, %{type: :request, body: request_body, ids: ids}}
+    assert_receive {:trace, %{type: :response_headers, status: 503, ids: ^ids}}
+    assert_receive {:trace, %{type: :response_data, body: ^body, ids: ^ids}}
+    assert ids.logical_request_id == error.logical_request_id
+    assert ids.attempt_id == error.attempt_id
+    assert ids.wire_attempt == error.wire_attempt
+    [request] = GenServer.call(server, :requests)
+    [_, encoded] = String.split(request, "\r\n\r\n", parts: 2)
+    assert request_body == encoded
+    refute inspect(error) =~ "sentinel-secret"
+    refute Jason.encode!(error) =~ "sentinel-secret"
+    refute_received {:trace, %{type: :response_end}}
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX],
+      mode <- [:events, :legacy],
+      outcome <- [:retry_success, :exhaustion, :partial, :malformed, :terminal_capture_failure] do
+    @gateway gateway
+    @mode mode
+    @outcome outcome
+    test "#{gateway} #{mode} exact streaming trace #{outcome} retains observed chunks" do
+      owner = self()
+      failure = "response-sentinel-secret"
+
+      responses =
+        case @outcome do
+          :retry_success -> [http(503, failure), success(@gateway)]
+          :exhaustion -> [http(503, failure), http(503, failure)]
+          :partial -> [truncated(partial(@gateway, :content))]
+          :malformed -> [http(200, malformed(@gateway, %{tool_calls: 7}))]
+          :terminal_capture_failure -> [success(@gateway)]
+        end
+
+      server = server(@gateway, responses)
+
+      config =
+        config(
+          trace_observer: fn event ->
+            send(owner, {:exact_trace, event})
+
+            if @outcome == :terminal_capture_failure and event.type == :response_end,
+              do: raise("capture-sentinel-secret")
+
+            :ok
+          end,
+          observer: &send(owner, {:exact_lifecycle, &1})
+        )
+
+      result = invoke(@gateway, @mode, config) |> Enum.to_list()
+
+      if @outcome == :retry_success do
+        refute Enum.any?(result, &match?({:error, _}, &1))
+      else
+        assert {:error, error} = List.last(result)
+
+        if @outcome == :terminal_capture_failure do
+          assert error.reason == :capture_failed
+          assert error.progress.observed.content
+          assert error.progress.delivered.content
+          assert error.progress.raw_bytes > 0
+        end
+
+        refute inspect(error) =~ "sentinel"
+        refute Jason.encode!(error) =~ "sentinel"
+      end
+
+      traces = exact_messages(:exact_trace)
+      lifecycle = exact_messages(:exact_lifecycle)
+      requests = GenServer.call(server, :requests)
+      assert length(requests) == length(responses)
+      grouped = Enum.group_by(traces, & &1.ids.wire_attempt)
+
+      for {response, number} <- Enum.with_index(responses, 1) do
+        [_, expected_body] = String.split(response, "\r\n\r\n", parts: 2)
+        events = grouped[number]
+        [request_event] = Enum.filter(events, &(&1.type == :request))
+        [_, encoded] = String.split(Enum.at(requests, number - 1), "\r\n\r\n", parts: 2)
+        assert request_event.body == encoded
+
+        assert Enum.filter(events, &(&1.type == :response_data))
+               |> Enum.map(& &1.body)
+               |> IO.iodata_to_binary() == expected_body
+
+        assert Enum.all?(events, &(&1.ids == request_event.ids))
+        assert Enum.count(events, &(&1.type == :response_end)) == 1
+        assert Enum.map(Enum.take(events, 2), & &1.type) == [:request, :response_headers]
+        assert Enum.all?(Enum.slice(events, 2, length(events) - 3), &(&1.type == :response_data))
+        assert List.last(events).type == :response_end
+
+        expected =
+          if String.starts_with?(response, "HTTP/1.1 503") or @outcome == :partial,
+            do: :failed,
+            else: :consumer_halted
+
+        assert List.last(events).outcome == expected
+
+        [started] =
+          Enum.filter(
+            lifecycle,
+            &(&1.type == :attempt_started and &1.metadata.wire_attempt == number)
+          )
+
+        assert Map.take(started.metadata, [:logical_request_id, :attempt_id, :wire_attempt]) ==
+                 request_event.ids
+
+        [headers] = Enum.filter(events, &(&1.type == :response_headers))
+        assert {"x-request-id", "fixture-73"} in headers.headers
+      end
+
+      refute inspect(lifecycle) =~ "sentinel"
+      ids = Enum.filter(traces, &(&1.type == :request)) |> Enum.map(& &1.ids)
+      assert Enum.uniq(Enum.map(ids, & &1.logical_request_id)) |> length() == 1
+      assert Enum.uniq(Enum.map(ids, & &1.attempt_id)) |> length() == length(responses)
+
+      case List.last(result) do
+        {:error, error} ->
+          assert Enum.map(
+                   error.history,
+                   &Map.take(&1, [:logical_request_id, :attempt_id, :wire_attempt])
+                 ) == ids
+
+        _ ->
+          :ok
+      end
+
+      if length(requests) == 2, do: assert(Enum.at(requests, 0) == Enum.at(requests, 1))
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX],
+      mode <- [:events, :legacy],
+      stage <- [:before_dispatch, :during_capture] do
+    @gateway gateway
+    @mode mode
+    @stage stage
+    test "#{gateway} #{mode} exact trace cancellation #{stage} is authoritative" do
+      owner = self()
+      server = server(@gateway, [success(@gateway)])
+      cancel = make_ref()
+
+      config =
+        config(
+          cancel_ref: cancel,
+          trace_observer: fn event ->
+            send(owner, {:cancel_trace, event})
+
+            if @stage == :during_capture and event.type == :response_data do
+              send(owner, {:capturing, self()})
+
+              receive do
+                :release_capture -> :ok
+              end
+            end
+
+            :ok
+          end
+        )
+
+      supervisor = start_supervised!(Task.Supervisor)
+
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn ->
+          if @stage == :before_dispatch, do: send(self(), {:cancel, cancel})
+          invoke(@gateway, @mode, config) |> Enum.to_list()
+        end)
+
+      if @stage == :during_capture do
+        assert_receive {:capturing, worker}, 2000
+        monitor = Process.monitor(worker)
+        send(task.pid, {:cancel, cancel})
+        assert_receive {:DOWN, ^monitor, :process, ^worker, _}, 2000
+      end
+
+      assert [{:error, error}] = Task.await(task, 2000)
+      assert error.category == :cancellation
+      count = if @stage == :before_dispatch, do: 0, else: 1
+      assert error.wire_attempt == count
+      assert length(GenServer.call(server, :requests)) == count
+      if count == 0, do: refute_received({:cancel_trace, _})
+      refute inspect(error) =~ "sentinel"
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX], entrypoint <- [:broker, :session] do
+    @gateway gateway
+    @entrypoint entrypoint
+    test "#{gateway} #{@entrypoint} forwards exact trace and prevents tools on capture failure" do
+      owner = self()
+      server = server(@gateway, [tool_response(@gateway)])
+
+      config =
+        config(
+          trace_observer: fn event ->
+            send(owner, {:forwarded_trace, event})
+            if event.type == :response_end, do: raise("capture-sentinel")
+            :ok
+          end
+        )
+
+      tool = %Mojentic.TestSupport.CountingTool{owner: owner}
+      broker = Broker.new("gpt-4o", @gateway)
+
+      stream =
+        case @entrypoint do
+          :broker ->
+            Broker.generate_stream(broker, [Message.user("sentinel-input")], [tool], config)
+
+          :session ->
+            session = ChatSession.new(broker, tools: [tool])
+
+            {:ok, stream, handle} =
+              ChatSession.send_stream(session, "sentinel-input", recovery: config.recovery)
+
+            send(owner, {:session_handle, handle})
+            stream
+        end
+
+      assert [{:error, error}] = Enum.to_list(stream)
+      assert error.reason == :capture_failed
+      assert_receive {:forwarded_trace, %{type: :request, body: encoded}}
+      [request] = GenServer.call(server, :requests)
+      [_, actual] = String.split(request, "\r\n\r\n", parts: 2)
+      assert encoded == actual
+      refute_received {:tool_executed, _}
+
+      if @entrypoint == :session do
+        assert_receive {:session_handle, handle}
+        assert ChatSession.finalize_stream(handle) == {:error, error}
+      end
+
+      refute inspect(error) =~ "sentinel"
+    end
+  end
+
+  defp exact_messages(tag, acc \\ []) do
+    receive do
+      {^tag, event} -> exact_messages(tag, [event | acc])
+    after
+      0 -> Enum.reverse(acc)
+    end
+  end
+
   test "delivered content interrupts through real Req without replay or successful terminal" do
     frame =
       "data: " <> Jason.encode!(%{choices: [%{delta: %{content: "sentinel-output"}}]}) <> "\n\n"

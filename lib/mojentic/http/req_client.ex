@@ -4,6 +4,7 @@ defmodule Mojentic.HTTP.ReqClient do
   """
 
   @behaviour Mojentic.HTTP
+  alias Mojentic.HTTP.WireTrace
 
   @impl true
   def get(url, headers, opts) do
@@ -26,6 +27,41 @@ defmodule Mojentic.HTTP.ReqClient do
 
   @impl true
   def post(url, body, headers, opts) do
+    if Keyword.get(opts, :wire_trace) do
+      traced_post(url, body, headers, opts)
+    else
+      ordinary_post(url, body, headers, opts)
+    end
+  end
+
+  defp traced_post(url, body, headers, opts) do
+    {:ok, stream} =
+      post_stream(
+        url,
+        body,
+        headers,
+        Keyword.merge(opts, stream_metadata: true, stream_timeout: :idle)
+      )
+
+    Enum.reduce(stream, {:ok, %{status_code: nil, headers: [], body: ""}}, fn
+      {:headers, status, headers}, {:ok, response} ->
+        {:ok, %{response | status_code: status, headers: headers}}
+
+      {kind, chunk}, {:ok, response} when kind in [:data, :http_data] ->
+        {:ok, %{response | body: response.body <> chunk}}
+
+      {:error, {:http_response, status, headers, body}}, _ ->
+        {:ok, %{status_code: status, headers: headers, body: body}}
+
+      {:error, %Finch.TransportError{reason: reason}}, _ ->
+        {:error, %Req.TransportError{reason: reason}}
+
+      {:error, reason}, _ ->
+        {:error, reason}
+    end)
+  end
+
+  defp ordinary_post(url, body, headers, opts) do
     timeout = Keyword.get(opts, :recv_timeout, 30_000)
 
     case Req.post(url,
@@ -66,17 +102,25 @@ defmodule Mojentic.HTTP.ReqClient do
             timeout,
             Keyword.get(opts, :stream_timeout, :absolute),
             Keyword.get(opts, :stream_metadata, false),
-            Keyword.get(opts, :cancel_ref)
+            Keyword.get(opts, :cancel_ref),
+            not is_nil(Keyword.get(opts, :wire_trace))
           )
         end,
         &next_stream/1,
         &close_stream/1
       )
 
+    stream =
+      WireTrace.stream(
+        Keyword.get(opts, :wire_trace),
+        %{type: :request, method: :post, url: url, headers: headers, body: body},
+        stream
+      )
+
     {:ok, stream}
   end
 
-  defp start_stream(url, body, headers, timeout, mode, metadata, cancel) do
+  defp start_stream(url, body, headers, timeout, mode, metadata, cancel, trace) do
     deadline =
       if mode == :idle, do: {:idle, timeout}, else: System.monotonic_time(:millisecond) + timeout
 
@@ -94,6 +138,9 @@ defmodule Mojentic.HTTP.ReqClient do
           do: {:headers, response, {deadline, cancel}},
           else: {:streaming, response, deadline}
 
+      {:ok, response} when trace ->
+        {:failed_headers, response, deadline, cancel}
+
       {:ok, response} ->
         Req.cancel_async_response(response)
 
@@ -103,6 +150,34 @@ defmodule Mojentic.HTTP.ReqClient do
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  defp next_stream({:failed_headers, response, deadline, cancel}),
+    do:
+      {[{:headers, response.status, flatten_headers(response.headers)}],
+       {:failed_body, response, deadline, cancel, ""}}
+
+  defp next_stream({:failed_body, response, deadline, cancel, body} = state) do
+    remaining =
+      case deadline do
+        {:idle, timeout} -> timeout
+        deadline -> max(deadline - System.monotonic_time(:millisecond), 0)
+      end
+
+    case receive_stream(state, response.body.ref, remaining, cancel) do
+      {:halt, _} ->
+        {[{:error, {:http_response, response.status, flatten_headers(response.headers), body}}],
+         :done}
+
+      {events, :done} ->
+        {events, :done}
+
+      {events, _} ->
+        chunks = for {:data, chunk} <- events, do: chunk
+
+        {Enum.map(chunks, &{:http_data, &1}),
+         {:failed_body, response, deadline, cancel, body <> IO.iodata_to_binary(chunks)}}
     end
   end
 
@@ -158,6 +233,8 @@ defmodule Mojentic.HTTP.ReqClient do
     end
   end
 
+  defp close_stream({:failed_headers, response, _, _}), do: Req.cancel_async_response(response)
+  defp close_stream({:failed_body, response, _, _, _}), do: Req.cancel_async_response(response)
   defp close_stream({:recovering, response, _, _}), do: Req.cancel_async_response(response)
   defp close_stream({:headers, response, _deadline}), do: Req.cancel_async_response(response)
   defp close_stream({:streaming, response, _deadline}), do: Req.cancel_async_response(response)

@@ -6,12 +6,14 @@ under TRANSIENT-RECOVERY-2026-10.md and RECOVERY-REQUEST-2026-10.txt sections 1â
 Recovery-disabled adapters retain their existing parsers, timeout behavior and
 payloads. No dependencies, runtime pins, ordinary completion parsing, embeddings,
 realtime, model management, tool depth, release files or sibling repositories
-were changed. Exact raw wire trace hooks remain a separate increment.
+were changed in that historical increment. The c11 section below implements
+the separate opt-in exact wire trace increment.
 
 The c9 sections below describe the preserved implementation and its historical
 validation. Their original capture files are absent from this worktree; log
 references in those sections are historical, not fresh executable proof. The
-c10 evidence at the end records this run's actual commands and outcomes.
+c10 sections are also historical; the c11 section records this run's actual
+commands and outcomes.
 
 ## Synchronization correction (c9, historical)
 
@@ -28,10 +30,10 @@ FETCH_HEAD. A separate `git ls-remote origin refs/heads/main` exited **0** and
 reported `a985c7b7303cecd0b864f697f8a4099b2e1522d9`
 (`remote-main.log`). HEAD and origin/main stayed unchanged.
 
-`pull --rebase origin main` was not attempted because the later task restriction
-explicitly prohibits rebasing and modifying refs. No execution denial for this
-repository fetch occurred; no pull/rebase synchronization or conflict resolution
-is claimed. Final synchronization and landing on main remain external Foundry
+Historical correction: the omitted `pull --rebase origin main` was incorrectly
+attributed to supplied instructions prohibiting the attempt. The c11 run actually
+attempted it and recorded the filesystem denial below. The historical fetch alone
+did not establish pull/rebase synchronization or conflict resolution. Final synchronization and landing on main remain external Foundry
 prerequisites. No commit, push, merge, rebase, tag or release was performed.
 
 ## Characterized boundaries and licensed changes
@@ -194,8 +196,9 @@ The obsolete rejecting-log claim above has been replaced with that distinction.
 
 Before edits, actual `git fetch origin` failed with exit **255** because the
 worktree's external Git metadata/FETCH_HEAD is read-only (`fetch.log`).
-`pull --rebase` was not invoked: the current Foundry instruction explicitly
-prohibits rebasing and modifying refs, overriding earlier repository guidance.
+Historical correction: `pull --rebase` was omitted, and the stated instruction-based
+justification for omitting the requested attempt was incorrect. The actual c11
+attempt and filesystem denial are recorded below.
 No synchronization success or conflict resolution is claimed. HEAD, all refs
 and AGENTS.md remain unchanged. Foundry owns finalization and landing on main;
 no commit, push, merge, rebase, tag, release, sibling edit, live-model request or
@@ -332,8 +335,8 @@ and require no content changes. CI YAML is parsed by the installed YamlElixir
 and its dev/test gates, release prerequisites and every runtime pin are verified;
 GitHub-hosted CI execution is not claimed.
 
-**Exact wire trace hooks remain unverified.** Public completion conformance and
-successful type analysis do not establish exact wire trace capability, remote
+At the end of c10, **exact wire trace hooks remained unverified**. Public completion
+conformance and successful type analysis alone did not establish that capability, remote
 termination, provider-side idempotency or live-model results.
 
 `.foundry/validate-proof.py` validates the proof JSON shape, field types, complete
@@ -341,3 +344,135 @@ log existence, actual exit sidecars, successful project analysis, quality-gate
 results, unchanged existing dependencies, AGENTS.md, test sources, HEAD and refs.
 Its captured output is `proof-validation.log`. Source/configuration changes remain
 in the working tree for Foundry review and finalization.
+
+
+## c11: opt-in per-wire exact evidence
+
+This correction starts at `04bee5c46a4728e148c75533710abf0c6935dc35`.
+The initial status was clean. AGENTS.md, locked dependencies, runtime pins,
+release files and all refs are preserved. Foundry owns Git finalization; edits
+remain in this isolated worktree's task branch rather than landing via a commit,
+PR or release during execution.
+
+Before source edits, `git fetch origin` exited **255** and the actually attempted
+`git pull --rebase origin main` exited **1**: both could not open the external
+read-only FETCH_HEAD. [Complete synchronization output](.foundry/logs/synchronization.log)
+records the execution denial and statuses. Neither operation established
+synchronization or reached conflict handling. The historical claims that supplied
+instructions prohibited the omitted pull were incorrect; they are corrected above.
+
+`CompletionRequest` continues to own ordinary/structured recovery, `StreamRecovery`
+continues to own stream recovery, and `ReqClient` captures the actual HTTP evidence.
+`recovery: [trace_observer: callback]` enables the callback for all three providers,
+all four completion APIs and broker/session propagation. Raw request bodies are
+already encoded binaries; response chunks are observed before provider parsing,
+including non-2xx bodies and partial ordinary responses. Events carry the exact
+unmasked logical request ID, distinct attempt ID and wire number used by lifecycle
+metadata. Callback errors terminate with safe `capture_failed`, disable resends,
+and prevent successful session finalization or executing captured tool calls.
+No dependency upgrades, admission/payload/parsing changes or generation timeout
+were added. Traced ordinary requests use the existing idle receive-timeout contract.
+
+Capture has explicit limits: supplied request headers rather than every generated
+transport header; Req-exposed binary chunks rather than TLS/HTTP transfer framing;
+no truncation or storage limit; caller-owned persistence. End events distinguish
+available headers/empty data from unavailable evidence. Stream parser termination
+reports `consumer_halted` instead of claiming EOF. Request capture occurs at the
+first response observation or transport failure, after dispatch; cancellation
+before that observation can leave evidence unavailable. Cancellation kills blocked
+capture workers and does not guarantee a terminal trace callback. Observer failure
+can itself leave a partial trace. Missing evidence is never reconstructed or fetched
+via another inference. See [migration/API guide](guides/streaming.md#opt-in-exact-http-evidence)
+and `Mojentic.LLM.Recovery` for event fields and callback return requirements.
+
+### Behavioral proof and concrete cases
+
+[proof.json](.foundry/proof.json) records the real public-boundary probe
+`exact trace retains streaming HTTP failure bytes and capture failure prevents resend`.
+The rejecting run exited **2** because `trace_observer` was rejected as
+`unsupported_options`; the corrected run exits **0** after capturing the exact
+503 body and failing its observer. Assertions compare encoded request bytes,
+response bytes, unmasked lifecycle/error identities and the actual server requests,
+rather than just attempt counters. [Rejecting log](.foundry/logs/rejecting.log) and
+[corrected log](.foundry/logs/corrected.log) include complete captured output.
+
+The following generated test names use the provider's full Elixir module name in
+actual ExUnit output; each matrix includes OpenAI, Ollama and OMLX:
+
+| Concrete test family | Evidence |
+| --- | --- |
+| `Elixir.Mojentic.LLM.Gateways.OpenAI complete exact trace retry_success preserves wire bytes and identity` | Ordinary and structured APIs, 503 then success; exact unchanged encoded request bodies, observed response bodies/status/headers, ordered distinct attempt identities and lifecycle correlation |
+| `Elixir.Mojentic.LLM.Gateways.Ollama complete_object exact trace exhaustion preserves wire bytes and identity` | Final HTTP failure bodies from both attempts; same logical identity and exact request/response bytes |
+| `Elixir.Mojentic.LLM.Gateways.OMLX complete exact trace malformed preserves wire bytes and identity` | Malformed body retained before decoding; no resend and safe default error/log/event serialization |
+| `Elixir.Mojentic.LLM.Gateways.OpenAI events exact streaming trace partial retains observed chunks` | Both stream APIs retain exact partial chunks before interruption, one actual request and no replay |
+| `Elixir.Mojentic.LLM.Gateways.Ollama legacy exact streaming trace malformed retains observed chunks` | Provider parsing failure retains observed raw chunk bytes independently of parsed output |
+| `Elixir.Mojentic.LLM.Gateways.OMLX events exact streaming trace terminal_capture_failure retains observed chunks` | Terminal capture failure cannot become success or lose already observed/delivered progress |
+| `Elixir.Mojentic.LLM.Gateways.OpenAI complete exact trace distinguishes unavailable response evidence` | All ordinary/structured providers distinguish unavailable evidence, empty body and interrupted partial body |
+| `ordinary complete_object exact trace cancellation during_capture preserves dispatch accounting` | Ordinary/structured capture cancellation and cancellation before dispatch; monitored workers, zero-attempt pre-dispatch accounting |
+| `Elixir.Mojentic.LLM.Gateways.Ollama events exact trace cancellation before_dispatch is authoritative` | Both stream APIs, all providers; no capture or request before dispatch, blocked capture killed on cancellation |
+| `exact trace observer throw cannot report success or resend` | Non-`:ok` return, throw, exit and exception sanitized; observer failure cannot authorize another wire request |
+| `Elixir.Mojentic.LLM.Gateways.OMLX session forwards exact trace and prevents tools on capture failure` | Broker and session streams reject terminal capture failure after completed tool evidence; no tool execution or successful session finalization |
+| `Elixir.Mojentic.LLM.Gateways.OpenAI ordinary broker exact trace capture failure prevents tool execution` | Ordinary broker/session propagation includes exact request/response evidence without tool execution |
+
+Existing real-boundary tests continue to assert sentinel absence from default
+errors, JSON/history, lifecycle events, logs and broker tracer records. Explicit
+trace callbacks alone retain raw request/response/credential evidence. Full
+concrete names and byte/identity cases are in [wire-matrix.log](.foundry/logs/wire-matrix.log).
+
+
+### c11 validation environment and gate outcomes
+
+The unchanged CI pins and `scripts/recovery-mix` select **Elixir 1.18.5 /
+OTP 28.5.0.7**, independently of the machine's newer default runtime.
+[Runtime output](.foundry/logs/runtime.log) verifies the actual versions. Existing
+locked dependencies were provisioned with `foundry capture -- scripts/recovery-mix
+deps.get` (exit **0**, [complete log](.foundry/logs/provisioning.log)); `mix.lock` and
+`mix.exs` are byte-for-byte unchanged. No thresholds, exclusions, advisory
+allowlists, runtime pins or project PLT settings were changed.
+
+All final commands run through `foundry capture --`; `scripts/recovery-mix` means
+`mix` on the verified pinned runtime. Complete stdout/stderr and actual statuses
+are retained in [check-results.json](.foundry/check-results.json) and the logs:
+
+| Command after `foundry capture --` | Exit | Complete log |
+| --- | --- | --- |
+| `scripts/recovery-mix format --check-formatted` | 0 | [format](.foundry/logs/format.log) |
+| `scripts/recovery-mix compile --warnings-as-errors` | 0 | [compile](.foundry/logs/compile.log) |
+| `env MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | [test compile](.foundry/logs/test-compile.log) |
+| `scripts/recovery-mix credo --strict` | 0 | [Credo](.foundry/logs/credo.log) |
+| `scripts/recovery-mix test` | 0 | [tests](.foundry/logs/test.log) |
+| `scripts/recovery-mix test --cover` | 0 | [coverage](.foundry/logs/coverage.log) |
+| `scripts/recovery-mix dialyzer` | 0 | [Dialyzer](.foundry/logs/dialyzer.log) |
+| `scripts/recovery-mix deps.audit` | 0 | [dependency audit](.foundry/logs/deps-audit.log) |
+| `scripts/recovery-mix hex.audit` | 0 | [Hex audit](.foundry/logs/hex-audit.log) |
+| `scripts/recovery-mix sobelow --config` | 0 | [Sobelow](.foundry/logs/sobelow.log) |
+| `scripts/recovery-mix docs` | 0 | [documentation](.foundry/logs/docs.log) |
+| `scripts/recovery-mix hex.outdated --all` | 1 | [outdated packages](.foundry/logs/outdated.log) |
+| `scripts/recovery-mix test test/mojentic/llm/recovery_wire_test.exs test/mojentic/llm/stream_recovery_wire_test.exs --trace` | 0 | [wire matrix](.foundry/logs/wire-matrix.log) |
+| `scripts/recovery-mix test test/mojentic/llm/stream_recovery_wire_test.exs --only exact_trace_proof --trace` | 0 | [corrected proof](.foundry/logs/corrected.log) |
+
+The full suite passes **22 doctests and 1,441 tests**, with the existing **19
+exclusions** unchanged. Coverage is **89.14%**, above the unchanged **80%**
+threshold. The real-wire matrix passes **512 tests**. Credo reports no issues;
+Dialyzer reports zero errors and zero skips. Documentation builds with the
+pre-existing missing LICENSE and igniter usage-rules link warnings, preserved
+in its log. Sobelow is recorded for the requested gate; this is not a Phoenix app.
+
+MixAudit reports no vulnerabilities but its automatic database pull emits a
+read-only FETCH_HEAD denial. Independent read-only local and upstream checks both
+return `935abf7410a2bbb18e12579dee6e31267c3ed244`
+([local](.foundry/logs/advisory-local.log), [upstream](.foundry/logs/advisory-remote.log)),
+establishing database freshness without editing that external checkout. Hex audit
+reports no retired/security-advisory packages. `hex.outdated --all` exits 1 for
+available upgrades, which are informational; no dependency upgrade was performed.
+
+Intermediate failed checks are preserved rather than omitted: the first expanded
+wire matrix exited 2 ([log](.foundry/logs/wire-initial.log)), Credo rejected added
+branch complexity with exit 8 ([log](.foundry/logs/credo-rejected.log)), and compile
+rejected an unused helper with exit 1 ([log](.foundry/logs/compile-rejected.log)).
+The connected trace fixes preserve timeout/error classification and delivered
+progress. All required gates were rerun on the final changes without suppression.
+[Evidence validation](.foundry/logs/evidence-validation.log) checks proof JSON field
+types, actual captured exit statuses, log existence, preserved files/HEAD, and a
+nonempty, whitespace-clean working tree. No synchronization, main landing or
+remote cancellation guarantee is inferred from these local results.
