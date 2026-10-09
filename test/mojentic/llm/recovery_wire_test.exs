@@ -33,6 +33,240 @@ defmodule Mojentic.LLM.RecoveryWireTest do
   end
 
   for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object, :broker, :broker_object, :session],
+      tracing <- [false, true],
+      admitted <- [false, true],
+      interruption <- [:closed, :timeout] do
+    @gateway gateway
+    @operation operation
+    @tracing tracing
+    @admitted admitted
+    @interruption interruption
+    @tag :ordinary_body_progress
+    test "#{gateway} #{operation} incomplete 200 #{interruption} tracing #{tracing} admitted #{admitted} retains exact body evidence" do
+      assert_body_progress(@gateway, @operation, @tracing, @admitted, @interruption)
+    end
+  end
+
+  defp assert_body_progress(gateway, operation, tracing, admitted, interruption) do
+    owner = self()
+    object? = operation in [:complete_object, :broker_object]
+    kind = if object?, do: :complete_object, else: :complete
+    # A complete JSON value on an incomplete HTTP body must still fail.
+    partial = String.replace(successful_body(gateway, kind), "done", "partial-body-secret-π")
+
+    broken =
+      String.replace(
+        response(200, partial),
+        "Content-Length: #{byte_size(partial)}",
+        "Content-Length: 9999"
+      )
+
+    broken = if interruption == :timeout, do: {:stream_hold, broken}, else: broken
+
+    server =
+      start_supervised!(
+        {ScriptedCompletionServer,
+         {owner, [broken, response(200, successful_body(gateway, kind))]}}
+      )
+
+    assert_receive {:server_port, port}
+    configure(gateway, port)
+
+    for key <- ["OPENAI_TIMEOUT", "OLLAMA_TIMEOUT", "OMLX_TIMEOUT"],
+        do: System.put_env(key, "150")
+
+    recovery = [
+      max_attempts: 2,
+      base_delay: 0,
+      sleeper: fn _ -> :ok end,
+      observer: &send(owner, {:body_lifecycle, &1})
+    ]
+
+    recovery =
+      if admitted,
+        do:
+          Keyword.put(recovery, :admission, fn context ->
+            send(owner, {:body_admission, context.failure})
+            :allow
+          end),
+        else: recovery
+
+    recovery =
+      if tracing,
+        do:
+          Keyword.put(recovery, :trace_observer, fn event ->
+            send(owner, {:body_trace, event})
+            :ok
+          end),
+        else: recovery
+
+    config = CompletionConfig.new(recovery: recovery)
+    result = body_progress_invoke(gateway, operation, config)
+    assert_receive {:body_lifecycle, %{type: :attempt_started, metadata: started}}
+    assert_receive {:body_lifecycle, %{type: :attempt_failed, metadata: failed}}
+    assert_body_failure(failed, started, partial, interruption)
+    assert_receive {:wire_request, wire}
+
+    expected_messages =
+      if operation == :session do
+        session = ChatSession.new(Broker.new("gpt-4o", gateway))
+
+        Enum.map(session.messages, fn sized ->
+          %{"role" => Atom.to_string(sized.message.role), "content" => sized.message.content}
+        end) ++ [%{"role" => "user", "content" => "payload-secret"}]
+      else
+        [%{"role" => "user", "content" => "payload-secret"}]
+      end
+
+    assert_payload(wire, gateway, kind, expected_messages)
+
+    assert_body_result(result, server, wire, failed, started, admitted, interruption)
+    assert_body_trace(tracing, wire, started, partial, expected_messages)
+  end
+
+  defp assert_body_failure(failed, started, partial, interruption) do
+    assert failed.http_status == 200
+    assert failed.category == if(interruption == :timeout, do: :client_timeout, else: :transport)
+    assert failed.reason == if(interruption == :timeout, do: :timeout, else: :transport_failure)
+    assert failed.phase == :streaming
+    assert failed.acceptance == :unknown
+    assert failed.retry_eligible == (interruption == :closed)
+    assert failed.provider_request_id == "wire-request-73"
+    assert failed.retry_after == %{kind: :delay_seconds, value: 11}
+    semantic = %{content: true, reasoning: false, tool_fragments: 0, completed_tool_calls: 0}
+
+    assert failed.progress == %{
+             headers_received: true,
+             raw_bytes: byte_size(partial),
+             observed: semantic,
+             delivered: %{semantic | content: false}
+           }
+
+    assert UUID.info!(started.attempt_id)[:version] == 4
+    assert UUID.info!(started.logical_request_id)[:version] == 4
+    refute started.attempt_id == started.logical_request_id
+    assert failed.attempt_id == started.attempt_id
+    assert failed.logical_request_id == started.logical_request_id
+    assert failed.wire_attempt == 1
+    assert [history] = failed.history
+    assert history == Map.delete(failed, :history)
+  end
+
+  defp assert_body_result(result, server, wire, failed, started, admitted, interruption) do
+    if interruption == :closed and (admitted or failed.provider == :openai) do
+      if admitted do
+        assert_receive {:body_admission, failure}
+        assert failure == failed
+      else
+        refute_received {:body_admission, _}
+        assert_receive {:body_lifecycle, %{type: :admission_allowed, metadata: ^failed}}
+      end
+
+      assert_body_completion(result, failed.operation)
+
+      assert_receive {:wire_request, retry}
+      assert retry == wire
+      assert GenServer.call(server, :requests) == [wire, retry]
+      assert_receive {:body_lifecycle, %{type: :attempt_succeeded, metadata: succeeded}}
+      assert succeeded.logical_request_id == started.logical_request_id
+      refute succeeded.attempt_id == started.attempt_id
+      assert succeeded.wire_attempt == 2
+    else
+      assert {:error, error} = result
+      assert %Req.TransportError{reason: cause} = CompletionError.cause(error)
+      assert cause == interruption
+      assert error.category == failed.category
+      assert error.reason == failed.reason
+
+      assert error.resend_permission ==
+               if(interruption == :timeout, do: :not_granted, else: :admission_required)
+
+      assert error.progress == failed.progress
+      assert error.http_status == 200
+      assert [history] = error.history
+      assert history == Map.delete(failed, :history)
+      assert error.attempt_id == started.attempt_id
+      assert error.logical_request_id == started.logical_request_id
+      assert error.wire_attempt == 1
+      refute inspect(error) =~ "partial-body-secret"
+      refute Jason.encode!(error) =~ "partial-body-secret"
+      refute inspect(failed) =~ "partial-body-secret"
+      refute inspect(history) =~ "partial-body-secret"
+      refute_received {:body_admission, _}
+      refute_received {:body_lifecycle, %{type: :attempt_succeeded}}
+      assert GenServer.call(server, :requests) == [wire]
+    end
+  end
+
+  defp assert_body_completion(result, operation) do
+    assert {:ok, completion} = result
+
+    content =
+      case completion do
+        %Mojentic.LLM.GatewayResponse{object: object} when not is_nil(object) -> object
+        %Mojentic.LLM.GatewayResponse{content: content} -> content
+        content -> content
+      end
+
+    assert content ==
+             if(operation == :complete_object, do: %{"value" => "done"}, else: "done")
+  end
+
+  defp assert_body_trace(tracing, wire, started, partial, expected_messages) do
+    if tracing do
+      assert_receive {:body_trace, %{type: :request} = request}
+      assert_exact_dispatched_request(request, wire, started, expected_messages)
+      ids = Map.take(started, [:logical_request_id, :attempt_id, :wire_attempt])
+
+      assert_receive {:body_trace,
+                      %{type: :response_headers, status: 200, headers: headers, ids: ^ids}}
+
+      assert {"x-request-id", "wire-request-73"} in headers
+      assert {"retry-after", "11"} in headers
+      assert_receive {:body_trace, %{type: :response_data, body: ^partial, ids: ^ids}}
+
+      assert_receive {:body_trace,
+                      %{type: :response_end, outcome: :failed, evidence: :available, ids: ^ids}}
+    else
+      refute_received {:body_trace, _}
+    end
+  end
+
+  defp body_progress_invoke(gateway, :broker, config),
+    do:
+      Broker.generate(Broker.new("gpt-4o", gateway), [Message.user("payload-secret")], [], config)
+
+  defp body_progress_invoke(gateway, :broker_object, config),
+    do:
+      Broker.generate_object(
+        Broker.new("gpt-4o", gateway),
+        [Message.user("payload-secret")],
+        %{"type" => "object"},
+        config
+      )
+
+  defp body_progress_invoke(gateway, :session, config) do
+    session = ChatSession.new(Broker.new("gpt-4o", gateway))
+    original = session.messages
+
+    case ChatSession.send(session, "payload-secret", recovery: config.recovery) do
+      {:ok, content, updated} ->
+        assert Enum.map(updated.messages, & &1.message) ==
+                 Enum.map(original, & &1.message) ++
+                   [Message.user("payload-secret"), Message.assistant(content)]
+
+        {:ok, content}
+
+      {:error, _} = error ->
+        assert session.messages == original
+        error
+    end
+  end
+
+  defp body_progress_invoke(gateway, operation, config), do: invoke(gateway, operation, config)
+
+  for gateway <- [OpenAI, Ollama, OMLX],
       operation <- [:complete, :complete_object, :events, :legacy],
       tracing <- [false, true],
       attempts <- [1, 3] do
@@ -182,8 +416,11 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     else
       assert %Req.TransportError{reason: :timeout} = CompletionError.cause(error)
       assert error.reason == :timeout
-      refute error.progress.headers_received
-      assert error.progress.raw_bytes == 0
+      assert error.http_status == 200
+      assert error.phase == :streaming
+      assert error.progress.headers_received
+      assert error.progress.raw_bytes == byte_size(partial)
+      refute error.progress.delivered.content
     end
   end
 
@@ -492,10 +729,15 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     end
   end
 
-  defp assert_exact_dispatched_request(trace, wire, started) do
+  defp assert_exact_dispatched_request(
+         trace,
+         wire,
+         started,
+         expected_messages \\ [%{"role" => "user", "content" => "payload-secret"}]
+       ) do
     [headers, body] = String.split(wire, "\r\n\r\n", parts: 2)
     assert trace.body == body
-    assert Jason.decode!(body)["messages"] == [%{"role" => "user", "content" => "payload-secret"}]
+    assert Jason.decode!(body)["messages"] == expected_messages
     assert byte_size(body) > 0
 
     received_headers =

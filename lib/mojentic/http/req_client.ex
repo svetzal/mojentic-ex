@@ -56,16 +56,24 @@ defmodule Mojentic.HTTP.ReqClient do
       {:error, {:http_response, status, headers, body, cause}}, _ ->
         {:error, {:http_response, status, headers, body, cause}}
 
-      {:error, :timeout}, _ ->
-        {:error, %Req.TransportError{reason: :timeout}}
+      {:error, reason}, {:ok, response} ->
+        cause = post_cause(reason)
 
-      {:error, %Finch.TransportError{reason: reason}}, _ ->
-        {:error, %Req.TransportError{reason: reason}}
-
-      {:error, reason}, _ ->
-        {:error, reason}
+        if is_nil(response.status_code) do
+          {:error, cause}
+        else
+          {:error, {:http_response, response.status_code, response.headers, response.body, cause}}
+        end
     end)
   end
+
+  # Preserve the existing POST cause contract while retaining received evidence.
+  defp post_cause(:timeout), do: %Req.TransportError{reason: :timeout}
+
+  defp post_cause(%Finch.TransportError{reason: reason}),
+    do: %Req.TransportError{reason: reason}
+
+  defp post_cause(reason), do: reason
 
   defp ordinary_post(url, body, headers, opts) do
     timeout = Keyword.get(opts, :recv_timeout, 30_000)

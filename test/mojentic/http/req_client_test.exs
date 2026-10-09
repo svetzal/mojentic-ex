@@ -115,7 +115,7 @@ defmodule Mojentic.HTTP.ReqClientTest do
   for winner <- [:finch, :receive_loop] do
     @winner winner
     @tag :stalled_post_boundary
-    test "recovery POST #{@winner} timeout matches retries-disabled Req POST" do
+    test "recovery POST #{@winner} timeout retains Req cause and received 200 evidence" do
       server =
         start_supervised!(
           {Mojentic.TestSupport.ScriptedCompletionServer,
@@ -134,7 +134,9 @@ defmodule Mojentic.HTTP.ReqClientTest do
           :ok
       end
 
-      assert {:error, %Req.TransportError{reason: :timeout}} =
+      assert {:error,
+              {:http_response, 200, [{"content-length", "999"}], "partial",
+               %Req.TransportError{reason: :timeout}}} =
                ReqClient.post("http://127.0.0.1:#{port}/x", "{}", [],
                  retry: false,
                  recv_timeout: 100,

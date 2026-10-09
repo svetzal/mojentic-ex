@@ -715,7 +715,8 @@ The final corrected capture also includes all 77 boundary probes. See [proof.jso
 
 Ordinary retries-disabled POST characterization observes a native
 `Req.TransportError{reason: :timeout}` and exactly one request. Deterministic
-recovery POST probes select both timers and require that same contract.
+recovery POST probes select both timers and require that same native cause
+inside the received-response evidence envelope.
 [POST characterization](.foundry/logs/post-characterization/) retains the actual
 passing capture. Traced and untraced completion calls are checked with one and
 three maximum attempts. The 48 natural-scheduling cases cover OpenAI, Ollama and
@@ -729,9 +730,10 @@ trace request bytes and supplied headers when enabled, client-timeout category,
 ineligibility, progress, final error/history/lifecycle identities and a single
 server-observed dispatch despite a configured admission callback and three
 allowed attempts. Streams retain delivered partial content, actual raw bytes,
-streaming phase and explicit interruption. Buffered completions retain their
-existing transport-only timeout progress (zero body bytes and unknown phase);
-this correction does not add successful-response buffering metadata.
+streaming phase and explicit interruption. Ordinary completion body-read failures
+now retain received HTTP 200 headers and exact observed body bytes while remaining
+transport or client-timeout failures, as established by the targeted progress
+correction below.
 
 The existing full wire matrix continues to cover interrupted non-2xx HTTP-status
 precedence, immutable resend bytes, explicit admission requirements, recovery
@@ -788,9 +790,8 @@ Separate outstanding assertion work remains for exhaustive public broker/session
 correlation of every error/cause/progress field across the full tracing matrix,
 complete immutable native-reasoning/tool/schema payload combinations, and
 complete safe-metadata assertions for every provider failure variant. Existing cases
-provide partial coverage of these areas, not exhaustive proof. Buffered successful-
-status interruptions also retain the progress limitation described above. Disabled
-reasoning parity and ordinary generate finish handling remain deferred.
+provide partial coverage of these areas, not exhaustive proof. Disabled reasoning
+parity and ordinary generate finish handling remain deferred.
 
 ### Final post-correction validation
 
@@ -982,3 +983,41 @@ unchanged protected files and HEAD, whitespace, and the required nonempty focuse
 working tree. [c15-evidence-manifest.json](.foundry/c15-evidence-manifest.json)
 indexes the proof, synchronization, final matrix and source hashes for review.
 All changes remain uncommitted for Foundry's controller-owned landing on main.
+
+## Ordinary completion body-read progress correction (2026-10-09)
+
+The rejecting public-boundary capture recorded 60 failures against the previous
+production code: each expected received HTTP 200 evidence and instead observed
+`http_status: nil`. The corrected matrix passes all 120 cases through the real
+`Mojentic.HTTP.ReqClient` and scripted TCP server. See
+[behavioral proof](.foundry/proof.json),
+[rejecting capture](.foundry/logs/body-progress/rejecting.stdout.log),
+[corrected capture](.foundry/logs/body-progress/corrected.stdout.log), and the
+[complete gate log index](.foundry/body-progress-evidence.json).
+
+OpenAI, Ollama and oMLX are covered through ordinary and structured gateway
+completion, ordinary and structured broker calls, and ordinary session sends,
+with tracing enabled and disabled. Both socket closure and body-read timeout
+retain explicit HTTP 200, the validated request ID and Retry-After, received-header
+progress and independently specified partial-body byte counts. The body includes
+multibyte text and valid completion JSON, but its advertised HTTP length is larger
+than the actual bytes sent: it cannot be treated as a successful completion.
+Observed content remains distinct from zero delivered content. Existing stalled
+body probes additionally cover incomplete JSON and both timeout timer sources.
+
+Failures remain transport errors or client timeouts, with the original POST
+`Req.TransportError` contract accessible only through `CompletionError.cause/1`.
+Timeouts remain ineligible and send exactly one request even with an admission
+callback configured. Ambiguous local execution on Ollama/oMLX requires admission
+before resend; explicit admission sends exactly two identical complete HTTP
+requests. OpenAI retains its existing hosted retry policy. The matrix compares
+full model/message/schema/options payloads, actual request counts, UUID identities,
+complete history metadata, lifecycle progress and exact opt-in trace headers/body
+and identities. Default inspection, serialization, history and failure metadata
+exclude raw partial response text. Existing interrupted 401/503 probes retain
+non-2xx HTTP precedence, and cancellation probes retain local socket closure.
+
+The former ordinary body-read buffered-progress limitation is removed. This does
+not establish progress retention when authoritative cancellation kills a blocked
+worker, remote inference termination, disabled reasoning parity, ordinary generate
+finish handling, or exhaustive conformance beyond the retained limitations above.

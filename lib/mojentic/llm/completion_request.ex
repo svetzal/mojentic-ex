@@ -187,6 +187,13 @@ defmodule Mojentic.LLM.CompletionRequest do
   defp classify(_response, :unsupported_options),
     do: {:protocol, nil, :unknown, :no, :unsupported_options, false}
 
+  # An interrupted 200 body is transport evidence, never a decoded completion.
+  # Non-2xx responses retain HTTP precedence in the status clause below.
+  defp classify({:ok, %{status_code: 200, phase: :streaming}}, cause) do
+    {category, _status, _phase, acceptance, reason, eligible} = classify({:error, cause}, cause)
+    {category, 200, :streaming, acceptance, reason, eligible}
+  end
+
   defp classify({:ok, %{status_code: 200, body: body}}, _cause) do
     case Jason.decode(body) do
       {:ok, %{"error" => _error}} ->
