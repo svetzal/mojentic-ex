@@ -31,9 +31,10 @@ defmodule Mojentic.LLM.Recovery do
   generated transport header. Chunks can be coalesced by the HTTP client. A
   parser can stop before EOF; `:consumer_halted` reports that capture limit rather
   than claiming a complete response. Callback failure itself can prevent terminal
-  notification. Request notification occurs when Req yields its first response
-  observation (or transport failure), after the dispatch; cancellation before
-  that point can leave request evidence unavailable. Authoritative cancellation
+  notification. Request notification occurs at authorized dispatch, before waiting
+  for response headers. A dispatched request retains its independent exact evidence
+  when cancelled before headers; an undispatched cancellation produces no trace.
+  Authoritative cancellation
   kills a blocked capture worker, so terminal capture delivery is not guaranteed
   on cancellation. No extra read, resend or model request fills missing evidence.
   Custom HTTP behaviours must implement `:wire_trace` to provide exact evidence;

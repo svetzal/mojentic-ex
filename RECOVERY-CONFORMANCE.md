@@ -183,8 +183,9 @@ cancellation, request status and idempotency unsupported, with exact remote
 termination unknown, for all three providers. Local ambiguity needs explicit
 application admission. There is no model unload, tool/session replay, agent
 restart, harness policy or live-model experiment in this increment. Exact wire
-trace hooks remain unavailable and are not represented by lifecycle counts or
-masked-ID evidence. Deterministic fixture equality verifies the semantic payload;
+trace hooks are opt-in at the default ReqClient boundary and retain encoded
+request bytes independently of response observation. Lifecycle counts and masked
+IDs do not substitute for exact evidence. Deterministic fixture equality verifies the semantic payload;
 it does not establish provider-side idempotency or remote termination.
 
 ## Type-analysis prerequisite correction (c10)
@@ -378,8 +379,9 @@ transport header; Req-exposed binary chunks rather than TLS/HTTP transfer framin
 no truncation or storage limit; caller-owned persistence. End events distinguish
 available headers/empty data from unavailable evidence. Stream parser termination
 reports `consumer_halted` instead of claiming EOF. Request capture occurs at the
-first response observation or transport failure, after dispatch; cancellation
-before that observation can leave evidence unavailable. Cancellation kills blocked
+authorized dispatch, before waiting for response headers; cancellation after
+server receipt retains the independently captured request even without a response.
+Cancellation kills blocked
 capture workers and does not guarantee a terminal trace callback. Observer failure
 can itself leave a partial trace. Missing evidence is never reconstructed or fetched
 via another inference. See [migration/API guide](guides/streaming.md#opt-in-exact-http-evidence)
@@ -387,14 +389,10 @@ and `Mojentic.LLM.Recovery` for event fields and callback return requirements.
 
 ### Behavioral proof and concrete cases
 
-[proof.json](.foundry/proof.json) records the real public-boundary probe
-`exact trace retains streaming HTTP failure bytes and capture failure prevents resend`.
-The rejecting run exited **2** because `trace_observer` was rejected as
-`unsupported_options`; the corrected run exits **0** after capturing the exact
-503 body and failing its observer. Assertions compare encoded request bytes,
-response bytes, unmasked lifecycle/error identities and the actual server requests,
-rather than just attempt counters. [Rejecting log](.foundry/logs/rejecting.log) and
-[corrected log](.foundry/logs/corrected.log) include complete captured output.
+The preserved c11 increment added the real-boundary streaming capture and
+capture-failure regressions listed below. The current c12 behavioral proof and
+fresh validation artifacts are documented in the final section; historical c11
+counts are not used as evidence of this worktree's current behavior.
 
 The following generated test names use the provider's full Elixir module name in
 actual ExUnit output; each matrix includes OpenAI, Ollama and OMLX:
@@ -420,59 +418,132 @@ trace callbacks alone retain raw request/response/credential evidence. Full
 concrete names and byte/identity cases are in [wire-matrix.log](.foundry/logs/wire-matrix.log).
 
 
-### c11 validation environment and gate outcomes
+## Wire-boundary correction of preserved c11 (c12)
 
-The unchanged CI pins and `scripts/recovery-mix` select **Elixir 1.18.5 /
-OTP 28.5.0.7**, independently of the machine's newer default runtime.
-[Runtime output](.foundry/logs/runtime.log) verifies the actual versions. Existing
-locked dependencies were provisioned with `foundry capture -- scripts/recovery-mix
-deps.get` (exit **0**, [complete log](.foundry/logs/provisioning.log)); `mix.lock` and
-`mix.exs` are byte-for-byte unchanged. No thresholds, exclusions, advisory
-allowlists, runtime pins or project PLT settings were changed.
+HEAD remains `d04f4325d053e39f4ead00afeeb05949fcc6b2f0`. This correction extends
+that exact-tracing increment; it does not replace it. `AGENTS.md`, the source
+requirements, runtime pins, versions and locked dependencies are preserved.
+Fetch was attempted twice and returned **255** because the shared Git
+`FETCH_HEAD` is read-only ([captured result](.foundry/logs/git-sync.log)).
+`pull --rebase origin main`, commits, main landing and ref writes were not
+attempted: this Foundry run expressly prohibits them and owns finalization.
+There is no PR, release, live-model call, benchmark or sibling/harness edit.
 
-All final commands run through `foundry capture --`; `scripts/recovery-mix` means
-`mix` on the verified pinned runtime. Complete stdout/stderr and actual statuses
-are retained in [check-results.json](.foundry/check-results.json) and the logs:
+### Public errors, progress and exact dispatch evidence
+
+Recovery-only ReqClient metadata retains received non-2xx status and headers,
+actual partial body bytes and the interrupted read cause. Public classification
+and policy continue to use the HTTP status, so a truncated 401 cannot become a
+retryable transport failure. Tracing-disabled recovery preserves the same safe
+status/header/progress evidence without calling a trace observer. Raw trace
+chunks remain exact and opt-in. Cancellation and capture failure remain terminal.
+Legacy streaming status-only results and unrelated POST transport errors retain
+their existing contracts; GET binary-body characterization is unchanged.
+
+Request capture runs at authorized dispatch before the blocking response read.
+Cancellation after actual server receipt therefore retains encoded body and
+supplied header evidence with the real logical/attempt identities even without
+response headers. A retry has a distinct attempt ID and the same request bytes.
+Undispatched cancellation still has zero attempts and no trace. Killed or failed
+capture callbacks can leave an incomplete prefix and need not produce a terminal
+notification. Local cancellation still does not prove remote termination.
+
+### Behavioral proof and deterministic assertion coverage
+
+[proof.json](.foundry/proof.json) records
+`dispatched cancellation before headers retains exact request and lifecycle identity`.
+The rejecting probe exited **2**: the server received the complete request but
+there was no request trace after cancellation. The corrected probe exited **0**
+with concrete encoded body/header comparisons and actual lifecycle/error IDs.
+The corresponding complete [rejecting](.foundry/logs/rejecting.log) and
+[corrected](.foundry/logs/corrected.log) logs are retained.
+
+The non-2xx boundary was also exercised against the preserved ReqClient before
+restoring the correction ([rejecting matrix](.foundry/logs/status-rejecting.log),
+exit **2**). It exposed transport/client-timeout classification and missing body
+progress after receipt of a status. That initial expanded run also exposed an
+incorrect test expectation for the public tuple-valued Retry-After; this was
+corrected to the existing public type, with no production type change. The
+in-progress trace-state refactor also exposed a stale `started` map field in
+that run; it was removed before the corrected matrix.
+The corrected status matrix exits **0** for all **96** selected cases
+([log](.foundry/logs/status-corrected.log)).
+
+All new provider cases use real ReqClient sockets through the public gateway APIs,
+with no HTTP mocks. Matrix rows cover OpenAI, Ollama and OMLX, ordinary completion,
+structured completion, terminal-event streaming and legacy streaming:
+
+| Concrete test name | Assertions |
+| --- | --- |
+| `Elixir.Mojentic.LLM.Gateways.OpenAI complete interrupted 401 closed tracing false retains HTTP evidence without transport retry` | One actual request even with transport retries/admission enabled; numeric status, validated request ID, Retry-After, exact partial raw bytes, HTTP policy restriction, error/history/lifecycle identity and default privacy |
+| `Elixir.Mojentic.LLM.Gateways.OMLX events interrupted 503 timeout tracing true retains HTTP evidence without transport retry` | Connection closure and stalled body reads, tracing on/off; exact received headers and partial trace data, failed end with available evidence, body-read phase; caller status restriction prevents resend |
+| `Elixir.Mojentic.LLM.Gateways.Ollama complete_object dispatched attempt 2 cancelled before headers retains exact independent request evidence` | Initial/retry cancellation after server receipt and before headers; encoded body and supplied header comparisons, concrete UUIDs correlated to lifecycle/error/history, distinct retry ID, immutable retry bytes, no response evidence for cancelled attempt and no later request |
+| `Elixir.Mojentic.LLM.Gateways.OpenAI legacy interrupted 503 retries only as admitted HTTP status with immutable bytes` | Positive HTTP-only retry after an interrupted error body; explicit admission sees exact safe progress, two actual identical requests, distinct attempt IDs and HTTP status in both history entries |
+| `legacy non-2xx stream metadata true retains immediate status-only contract` | Recovery-disabled metadata/non-metadata streams retain their existing immediate status errors without reading an incomplete body |
+| `unrelated post with retries disabled retains transport-only interrupted response` | A non-recovery POST continues returning its existing Req transport error |
+
+The inherited exact-trace, zero-attempt cancellation, terminal capture failure,
+privacy, immutable payload, broker/session and tool-safety regressions remain
+part of the full suite. No exclusions, thresholds, dependencies, runtime pins,
+advisory suppressions or capability limits were changed.
+
+### Fresh validation on the pinned runtime
+
+The [runtime log](.foundry/logs/runtime.log) verifies **Elixir 1.18.5 /
+OTP 28.5.0.7**. Missing dependencies were provisioned only from the existing
+lock ([provisioning log](.foundry/logs/provisioning.log), exit **0**).
+The following actual outcomes replace the historical c11 validation table.
+Commands execute through `foundry capture --`; `scripts/recovery-mix` selects and
+verifies the pinned runtime. Complete captured stdout/stderr and actual exits
+are indexed in [check-results.json](.foundry/check-results.json).
 
 | Command after `foundry capture --` | Exit | Complete log |
 | --- | --- | --- |
 | `scripts/recovery-mix format --check-formatted` | 0 | [format](.foundry/logs/format.log) |
 | `scripts/recovery-mix compile --warnings-as-errors` | 0 | [compile](.foundry/logs/compile.log) |
-| `env MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | [test compile](.foundry/logs/test-compile.log) |
-| `scripts/recovery-mix credo --strict` | 0 | [Credo](.foundry/logs/credo.log) |
-| `scripts/recovery-mix test` | 0 | [tests](.foundry/logs/test.log) |
+| `env MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | [test-compile](.foundry/logs/test-compile.log) |
+| `scripts/recovery-mix credo --strict` | 0 | [credo](.foundry/logs/credo.log) |
+| `scripts/recovery-mix test` | 0 | [test](.foundry/logs/test.log) |
 | `scripts/recovery-mix test --cover` | 0 | [coverage](.foundry/logs/coverage.log) |
-| `scripts/recovery-mix dialyzer` | 0 | [Dialyzer](.foundry/logs/dialyzer.log) |
-| `scripts/recovery-mix deps.audit` | 0 | [dependency audit](.foundry/logs/deps-audit.log) |
-| `scripts/recovery-mix hex.audit` | 0 | [Hex audit](.foundry/logs/hex-audit.log) |
-| `scripts/recovery-mix sobelow --config` | 0 | [Sobelow](.foundry/logs/sobelow.log) |
-| `scripts/recovery-mix docs` | 0 | [documentation](.foundry/logs/docs.log) |
-| `scripts/recovery-mix hex.outdated --all` | 1 | [outdated packages](.foundry/logs/outdated.log) |
-| `scripts/recovery-mix test test/mojentic/llm/recovery_wire_test.exs test/mojentic/llm/stream_recovery_wire_test.exs --trace` | 0 | [wire matrix](.foundry/logs/wire-matrix.log) |
-| `scripts/recovery-mix test test/mojentic/llm/stream_recovery_wire_test.exs --only exact_trace_proof --trace` | 0 | [corrected proof](.foundry/logs/corrected.log) |
+| `scripts/recovery-mix dialyzer` | 0 | [dialyzer](.foundry/logs/dialyzer.log) |
+| `scripts/recovery-mix deps.audit` | 0 | [deps-audit](.foundry/logs/deps-audit.log) |
+| `scripts/recovery-mix hex.audit` | 0 | [hex-audit](.foundry/logs/hex-audit.log) |
+| `scripts/recovery-mix sobelow --config` | 0 | [sobelow](.foundry/logs/sobelow.log) |
+| `scripts/recovery-mix docs` | 0 | [docs](.foundry/logs/docs.log) |
+| `scripts/recovery-mix hex.outdated --all` | 1 | [outdated](.foundry/logs/outdated.log) |
+| `scripts/recovery-mix test test/mojentic/llm/recovery_wire_test.exs test/mojentic/llm/stream_recovery_wire_test.exs test/mojentic/http/req_client_test.exs --trace` | 0 | [wire-matrix](.foundry/logs/wire-matrix.log) |
+| `scripts/recovery-mix test test/mojentic/llm/recovery_wire_test.exs --only dispatch_boundary_proof` | 0 | [proof-final](.foundry/logs/proof-final.log) |
 
-The full suite passes **22 doctests and 1,441 tests**, with the existing **19
-exclusions** unchanged. Coverage is **89.14%**, above the unchanged **80%**
-threshold. The real-wire matrix passes **512 tests**. Credo reports no issues;
-Dialyzer reports zero errors and zero skips. Documentation builds with the
-pre-existing missing LICENSE and igniter usage-rules link warnings, preserved
-in its log. Sobelow is recorded for the requested gate; this is not a Phoenix app.
+The full suite and coverage run both pass **22 doctests and 1,577 tests**, with
+**19 exclusions** unchanged. Coverage is **89.16%**, above the unchanged **80%**
+threshold. The final real-wire/ReqClient matrix passes **652 tests**. The final
+before-headers proof runs one selected test successfully, with the other 436
+cases excluded only by its `--only dispatch_boundary_proof` selection.
+Credo reports no issues; Dialyzer reports zero errors and zero skips.
 
-MixAudit reports no vulnerabilities but its automatic database pull emits a
-read-only FETCH_HEAD denial. Independent read-only local and upstream checks both
-return `935abf7410a2bbb18e12579dee6e31267c3ed244`
-([local](.foundry/logs/advisory-local.log), [upstream](.foundry/logs/advisory-remote.log)),
-establishing database freshness without editing that external checkout. Hex audit
-reports no retired/security-advisory packages. `hex.outdated --all` exits 1 for
-available upgrades, which are informational; no dependency upgrade was performed.
+MixAudit reports no vulnerabilities. Its automatic database pull still emits a
+read-only `FETCH_HEAD` denial, but independent read-only
+[local](.foundry/logs/advisory-local.log) and
+[upstream](.foundry/logs/advisory-remote.log) checks both return
+`935abf7410a2bbb18e12579dee6e31267c3ed244`, verifying database freshness without
+editing its checkout. Hex audit reports no retired/security-advisory packages.
+`hex.outdated --all` returns **1** for available upgrades, an informational
+result; no advisory or dependency upgrade was required by these audit results.
+Sobelow completes successfully and warns that this library has no Phoenix router;
+its existing lockfile keyword warnings are retained in the log. Documentation
+builds successfully with the pre-existing missing LICENSE and igniter usage-rules
+link warnings, outside this correction's scope.
 
-Intermediate failed checks are preserved rather than omitted: the first expanded
-wire matrix exited 2 ([log](.foundry/logs/wire-initial.log)), Credo rejected added
-branch complexity with exit 8 ([log](.foundry/logs/credo-rejected.log)), and compile
-rejected an unused helper with exit 1 ([log](.foundry/logs/compile-rejected.log)).
-The connected trace fixes preserve timeout/error classification and delivered
-progress. All required gates were rerun on the final changes without suppression.
-[Evidence validation](.foundry/logs/evidence-validation.log) checks proof JSON field
-types, actual captured exit statuses, log existence, preserved files/HEAD, and a
-nonempty, whitespace-clean working tree. No synchronization, main landing or
-remote cancellation guarantee is inferred from these local results.
+Intermediate outcomes are retained: the initial request proof and status
+characterization exited **2**, the first expanded wire run exited **0**
+([log](.foundry/logs/wire-initial.log)), and Credo initially rejected added
+complexity with exit **8** ([log](.foundry/logs/credo-rejected.log)). Cause extraction
+was refactored without suppression; every required project gate was then run
+successfully on the final source. The existing supported capability limits,
+privacy defaults and tool/session safety tests remain intact.
+
+[Evidence validation](.foundry/logs/evidence-validation.log) checks the exact proof
+JSON shape and field types, nonzero rejecting/zero corrected exits, byte-complete
+capture logs, all actual gate results, pinned runtime, advisory freshness,
+unchanged protected files/HEAD and a nonempty, whitespace-clean working tree.
+Changes remain uncommitted for Foundry review and finalization.

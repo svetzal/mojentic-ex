@@ -32,6 +32,329 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     :ok
   end
 
+  @tag :dispatch_boundary_proof
+  test "dispatched cancellation before headers retains exact request and lifecycle identity" do
+    server = start_supervised!({ScriptedCompletionServer, {self(), [:hold]}})
+    assert_receive {:server_port, port}
+    configure(OpenAI, port)
+    owner = self()
+    cancel = make_ref()
+
+    config =
+      CompletionConfig.new(
+        recovery: [
+          max_attempts: 3,
+          cancel_ref: cancel,
+          trace_observer: fn event ->
+            send(owner, {:boundary_trace, event})
+            :ok
+          end,
+          observer: fn event -> send(owner, {:boundary_lifecycle, event}) end
+        ]
+      )
+
+    supervisor = start_supervised!(Task.Supervisor)
+    task = Task.Supervisor.async_nolink(supervisor, fn -> invoke(OpenAI, :complete, config) end)
+    assert_receive {:wire_request, wire}, 2000
+    send(task.pid, {:cancel, cancel})
+    assert {:error, error} = Task.await(task, 2000)
+    assert error.category == :cancellation
+    assert error.wire_attempt == 1
+    assert_receive {:boundary_trace, %{type: :request} = request}
+    [wire_headers, wire_body] = String.split(wire, "\r\n\r\n", parts: 2)
+    assert request.body == wire_body
+
+    assert Jason.decode!(request.body)["messages"] == [
+             %{"role" => "user", "content" => "payload-secret"}
+           ]
+
+    for {key, value} <- request.headers do
+      assert String.downcase(wire_headers) =~ String.downcase("#{key}: #{value}")
+    end
+
+    assert request.ids.logical_request_id == error.logical_request_id
+    assert request.ids.attempt_id == error.attempt_id
+    assert request.ids.wire_attempt == error.wire_attempt
+    assert_receive {:boundary_lifecycle, %{type: :attempt_started, metadata: started}}
+    assert started.attempt_id == request.ids.attempt_id
+    assert started.logical_request_id == request.ids.logical_request_id
+    assert GenServer.call(server, :requests) == [wire]
+    refute_received {:boundary_trace, %{type: :response_headers}}
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object, :events, :legacy],
+      tracing <- [true, false],
+      interruption <- [:closed, :timeout],
+      status <- [401, 503] do
+    @gateway gateway
+    @operation operation
+    @tracing tracing
+    @interruption interruption
+    @status status
+    @tag :interrupted_status_boundary
+    test "#{gateway} #{operation} interrupted #{status} #{interruption} tracing #{tracing} retains HTTP evidence without transport retry" do
+      owner = self()
+      partial = "partial-error-secret"
+
+      wire_response =
+        String.replace(
+          response(@status, partial),
+          "Content-Length: #{byte_size(partial)}",
+          "Content-Length: 999"
+        )
+
+      scripted =
+        if @interruption == :closed, do: wire_response, else: {:stream_hold, wire_response}
+
+      server = start_supervised!({ScriptedCompletionServer, {self(), [scripted]}})
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+
+      for key <- ["OPENAI_TIMEOUT", "OLLAMA_TIMEOUT", "OMLX_TIMEOUT"],
+          do: System.put_env(key, "150")
+
+      recovery = [
+        max_attempts: 3,
+        retryable_categories: [:transport, :http],
+        retryable_statuses: [],
+        admission: fn _ -> :allow end,
+        observer: &send(owner, {:status_lifecycle, &1})
+      ]
+
+      recovery =
+        if @tracing,
+          do:
+            Keyword.put(recovery, :trace_observer, fn event ->
+              send(owner, {:status_trace, event})
+              :ok
+            end),
+          else: recovery
+
+      assert {:error, error} =
+               boundary_invoke(@gateway, @operation, CompletionConfig.new(recovery: recovery))
+
+      assert error.category == :http
+      assert error.http_status == @status
+      assert error.provider_request_id == "wire-request-73"
+      assert error.retry_after == {:delay_seconds, 11}
+      assert error.progress.headers_received
+      assert error.phase == :streaming
+      assert error.progress.raw_bytes == byte_size(partial)
+      assert error.retry_eligible == (@status == 503)
+      assert error.wire_attempt == 1
+      assert [history] = error.history
+      assert history.http_status == @status
+      assert history.progress == error.progress
+      assert history.attempt_id == error.attempt_id
+      assert_receive {:status_lifecycle, %{type: :attempt_started, metadata: started}}
+      assert started.attempt_id == error.attempt_id
+      assert started.logical_request_id == error.logical_request_id
+      assert_receive {:status_lifecycle, %{type: :attempt_failed, metadata: failed}}
+      assert failed.http_status == @status
+      assert failed.progress == error.progress
+      assert failed.attempt_id == error.attempt_id
+      assert_receive {:wire_request, wire}
+      assert GenServer.call(server, :requests) == [wire]
+
+      if @tracing do
+        assert_receive {:status_trace, %{type: :request} = request}
+        assert_exact_dispatched_request(request, wire, started)
+
+        assert_receive {:status_trace,
+                        %{type: :response_headers, status: status, headers: headers}}
+
+        assert status == @status
+        assert {"x-request-id", "wire-request-73"} in headers
+        assert_receive {:status_trace, %{type: :response_data, body: ^partial}}
+
+        assert_receive {:status_trace,
+                        %{type: :response_end, outcome: :failed, evidence: :available}}
+      else
+        refute_received {:status_trace, _}
+      end
+
+      refute inspect(error) =~ "secret"
+      refute Jason.encode!(error) =~ "secret"
+      refute_receive {:wire_request, _}, 30
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object, :events, :legacy],
+      attempt <- [1, 2] do
+    @gateway gateway
+    @operation operation
+    @attempt attempt
+    test "#{gateway} #{operation} dispatched attempt #{attempt} cancelled before headers retains exact independent request evidence" do
+      owner = self()
+      responses = if @attempt == 1, do: [:hold], else: [response(503, "failure-secret"), :hold]
+      server = start_supervised!({ScriptedCompletionServer, {self(), responses}})
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+      cancel = make_ref()
+
+      config =
+        CompletionConfig.new(
+          recovery: [
+            max_attempts: 3,
+            cancel_ref: cancel,
+            base_delay: 0,
+            sleeper: fn _ -> :ok end,
+            admission: fn _ -> :allow end,
+            trace_observer: fn event ->
+              send(owner, {:dispatch_trace, event})
+              :ok
+            end,
+            observer: &send(owner, {:dispatch_lifecycle, &1})
+          ]
+        )
+
+      supervisor = start_supervised!(Task.Supervisor)
+
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn ->
+          boundary_invoke(@gateway, @operation, config)
+        end)
+
+      wires =
+        for _ <- 1..@attempt do
+          assert_receive {:wire_request, wire}, 2000
+          wire
+        end
+
+      send(task.pid, {:cancel, cancel})
+      assert {:error, error} = Task.await(task, 2000)
+      assert error.category == :cancellation
+      assert error.wire_attempt == @attempt
+
+      traces =
+        for _ <- 1..@attempt do
+          assert_receive {:dispatch_trace, %{type: :request} = trace}
+          trace
+        end
+
+      for {trace, wire} <- Enum.zip(traces, wires) do
+        assert_receive {:dispatch_lifecycle, %{type: :attempt_started, metadata: started}}
+        assert_exact_dispatched_request(trace, wire, started)
+        assert trace.ids.logical_request_id == error.logical_request_id
+        assert is_binary(trace.ids.attempt_id) and byte_size(trace.ids.attempt_id) > 10
+      end
+
+      assert List.last(traces).ids.attempt_id == error.attempt_id
+      assert List.last(traces).ids.wire_attempt == error.wire_attempt
+      cancelled_id = error.attempt_id
+
+      refute_received {:dispatch_trace,
+                       %{type: :response_headers, ids: %{attempt_id: ^cancelled_id}}}
+
+      refute_received {:dispatch_trace,
+                       %{type: :response_data, ids: %{attempt_id: ^cancelled_id}}}
+
+      assert length(Enum.uniq(Enum.map(traces, & &1.ids.attempt_id))) == @attempt
+
+      for history <- error.history do
+        assert Enum.any?(traces, &(&1.ids.attempt_id == history.attempt_id))
+        assert history.logical_request_id == error.logical_request_id
+      end
+
+      assert GenServer.call(server, :requests) == wires
+      if @attempt == 2, do: assert(hd(wires) == List.last(wires))
+      refute_receive {:wire_request, _}, 30
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object, :events, :legacy] do
+    @gateway gateway
+    @operation operation
+    test "#{gateway} #{operation} interrupted 503 retries only as admitted HTTP status with immutable bytes" do
+      partial = "partial-error-secret"
+
+      truncated =
+        String.replace(
+          response(503, partial),
+          "Content-Length: #{byte_size(partial)}",
+          "Content-Length: 999"
+        )
+
+      server = start_supervised!({ScriptedCompletionServer, {self(), [truncated, truncated]}})
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+      owner = self()
+
+      config =
+        CompletionConfig.new(
+          recovery: [
+            max_attempts: 2,
+            retryable_categories: [:http],
+            retryable_statuses: [503],
+            base_delay: 0,
+            sleeper: fn _ -> :ok end,
+            admission: fn context ->
+              assert context.failure.http_status == 503
+              assert context.failure.progress.raw_bytes == byte_size(partial)
+              send(owner, {:status_admission, context})
+              :allow
+            end
+          ]
+        )
+
+      assert {:error, error} = boundary_invoke(@gateway, @operation, config)
+      assert error.category == :http
+      assert error.wire_attempt == 2
+      assert_receive {:status_admission, context}
+      assert context.next_attempt == 2
+      assert [first, second] = GenServer.call(server, :requests)
+      assert first == second
+      assert [initial, final] = error.history
+      assert initial.http_status == 503 and final.http_status == 503
+      assert initial.attempt_id != final.attempt_id
+      assert final.attempt_id == error.attempt_id
+      assert initial.logical_request_id == final.logical_request_id
+    end
+  end
+
+  defp assert_exact_dispatched_request(trace, wire, started) do
+    [headers, body] = String.split(wire, "\r\n\r\n", parts: 2)
+    assert trace.body == body
+    assert Jason.decode!(body)["messages"] == [%{"role" => "user", "content" => "payload-secret"}]
+    assert byte_size(body) > 0
+
+    received_headers =
+      for line <- tl(String.split(headers, "\r\n")) do
+        [key, value] = String.split(line, ": ", parts: 2)
+        {String.downcase(key), value}
+      end
+
+    for {key, value} <- trace.headers do
+      assert {String.downcase(key), value} in received_headers
+    end
+
+    assert trace.ids.logical_request_id =~ ~r/\A[0-9a-f-]{36}\z/
+    assert trace.ids.attempt_id =~ ~r/\A[0-9a-f-]{36}\z/
+
+    assert Map.take(started, [:logical_request_id, :attempt_id, :wire_attempt]) == trace.ids
+  end
+
+  defp boundary_invoke(gateway, :events, config) do
+    [{:error, error}] =
+      gateway.complete_stream_events("gpt-4o", [Message.user("payload-secret")], config)
+      |> Enum.to_list()
+
+    {:error, error}
+  end
+
+  defp boundary_invoke(gateway, :legacy, config) do
+    [{:error, error}] =
+      gateway.complete_stream("gpt-4o", [Message.user("payload-secret")], [], config)
+      |> Enum.to_list()
+
+    {:error, error}
+  end
+
+  defp boundary_invoke(gateway, operation, config), do: invoke(gateway, operation, config)
+
   for gateway <- [OpenAI, Ollama, OMLX],
       operation <- [:complete, :complete_object],
       outcome <- [:retry_success, :exhaustion, :malformed, :capture_failure] do
