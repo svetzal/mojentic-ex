@@ -56,6 +56,9 @@ defmodule Mojentic.HTTP.ReqClient do
       {:error, {:http_response, status, headers, body, cause}}, _ ->
         {:error, {:http_response, status, headers, body, cause}}
 
+      {:error, :timeout}, _ ->
+        {:error, %Req.TransportError{reason: :timeout}}
+
       {:error, %Finch.TransportError{reason: reason}}, _ ->
         {:error, %Req.TransportError{reason: reason}}
 
@@ -228,6 +231,12 @@ defmodule Mojentic.HTTP.ReqClient do
 
           {:ok, events} ->
             {Enum.filter(events, &match?({:data, _}, &1)), state}
+
+          {:error, %Finch.TransportError{reason: :timeout}} when elem(state, 0) == :streaming ->
+            # Legacy streams expose :timeout for either timer. Metadata streams
+            # retain the native exception for explicit recovery cause inspection.
+            close_stream(state)
+            {[{:error, :timeout}], :done}
 
           {:error, reason} ->
             close_stream(state)

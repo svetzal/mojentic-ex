@@ -32,6 +32,183 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     :ok
   end
 
+  for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object, :events, :legacy],
+      tracing <- [false, true],
+      attempts <- [1, 3] do
+    @gateway gateway
+    @operation operation
+    @tracing tracing
+    @attempts attempts
+    @tag :stalled_completion_boundary
+    test "#{gateway} #{operation} stalled body tracing #{tracing} attempts #{attempts} preserves timeout without resend" do
+      assert_stalled_completion(@gateway, @operation, @tracing, @attempts)
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object, :events, :legacy],
+      winner <- [:finch, :receive_loop] do
+    @gateway gateway
+    @operation operation
+    @winner winner
+    @tag :stalled_completion_boundary
+    test "#{gateway} #{operation} deterministic #{@winner} body timeout retains its inspectable cause" do
+      error = assert_stalled_completion(@gateway, @operation, {:force, @winner}, 3)
+      assert_receive {:original_timeout, original}
+
+      case {@operation, @winner} do
+        {operation, :finch} when operation in [:events, :legacy] ->
+          assert CompletionError.cause(error) == original
+
+        {operation, :receive_loop} when operation in [:events, :legacy] ->
+          assert CompletionError.cause(error) == :timeout
+
+        _ ->
+          assert %Req.TransportError{reason: :timeout} = CompletionError.cause(error)
+      end
+    end
+  end
+
+  defp assert_stalled_completion(gateway, operation, tracing, attempts) do
+    owner = self()
+    partial = stalled_partial(gateway, operation)
+
+    server =
+      start_supervised!(
+        {ScriptedCompletionServer,
+         {owner, [{:stream_hold, "HTTP/1.1 200 OK\r\nContent-Length: 9999\r\n\r\n" <> partial}]}}
+      )
+
+    assert_receive {:server_port, port}
+    configure(gateway, port)
+
+    for key <- ["OPENAI_TIMEOUT", "OLLAMA_TIMEOUT", "OMLX_TIMEOUT"],
+        do: System.put_env(key, "100")
+
+    recovery = [
+      max_attempts: attempts,
+      admission: fn _ ->
+        send(owner, :unexpected_admission)
+        :allow
+      end,
+      observer: &send(owner, {:stall_lifecycle, &1})
+    ]
+
+    recovery =
+      if tracing,
+        do: Keyword.put(recovery, :trace_observer, stalled_trace_observer(owner, tracing)),
+        else: recovery
+
+    result = stalled_invoke(gateway, operation, CompletionConfig.new(recovery: recovery))
+    assert {:error, error} = List.last(result)
+    assert_stalled_error(error, result, operation, partial)
+
+    assert [history] = error.history
+    assert history.attempt_id == error.attempt_id
+    assert history.logical_request_id == error.logical_request_id
+    assert history.progress == error.progress
+    assert_receive {:stall_lifecycle, %{type: :attempt_started, metadata: started}}
+    assert started.attempt_id == error.attempt_id
+    assert started.logical_request_id == error.logical_request_id
+    assert_receive {:stall_lifecycle, %{type: :attempt_failed, metadata: failed}}
+    assert failed.progress == error.progress
+    assert failed.attempt_id == error.attempt_id
+    assert_receive {:wire_request, wire}
+    assert GenServer.call(server, :requests) == [wire]
+    [headers, body] = String.split(wire, "\r\n\r\n", parts: 2)
+    path = if gateway == Ollama, do: "/api/chat", else: "/v1/chat/completions"
+    assert headers =~ "POST #{path} HTTP/1.1"
+
+    assert %{"messages" => [%{"content" => "payload-secret"}], "model" => "gpt-4o"} =
+             Jason.decode!(body)
+
+    assert_stalled_trace(tracing, wire, started, partial)
+    refute_received :unexpected_admission
+    refute_received {:wire_request, _}
+    error
+  end
+
+  defp stalled_trace_observer(owner, tracing) do
+    fn event ->
+      send(owner, {:stall_trace, event})
+
+      if event.type == :response_data and is_tuple(tracing) do
+        assert_receive {_ref, {:error, %Finch.TransportError{reason: :timeout} = original}} =
+                         message,
+                       2000
+
+        send(owner, {:original_timeout, original})
+        if tracing == {:force, :finch}, do: send(self(), message)
+      end
+
+      :ok
+    end
+  end
+
+  defp assert_stalled_trace(tracing, wire, started, partial) do
+    if tracing do
+      assert_receive {:stall_trace, %{type: :request} = request}
+      assert_exact_dispatched_request(request, wire, started)
+      assert_receive {:stall_trace, %{type: :response_data, body: ^partial}}
+      assert_receive {:stall_trace, %{type: :response_end, outcome: :failed}}
+    else
+      refute_received {:stall_trace, _}
+    end
+  end
+
+  defp assert_stalled_error(error, result, operation, partial) do
+    assert error.category == :client_timeout
+    refute error.retry_eligible
+    assert error.wire_attempt == 1
+    assert error.acceptance == :unknown
+
+    if operation in [:events, :legacy] do
+      case CompletionError.cause(error) do
+        :timeout ->
+          :ok
+
+        %Finch.TransportError{reason: :timeout, source: %Mint.TransportError{reason: :timeout}} ->
+          :ok
+      end
+
+      assert error.progress.headers_received
+      assert error.progress.raw_bytes == byte_size(partial)
+      assert error.progress.observed.content
+      assert error.progress.delivered.content
+      assert error.reason == :stream_interrupted
+      assert error.phase == :streaming
+      assert {:content, "partial"} in result
+    else
+      assert %Req.TransportError{reason: :timeout} = CompletionError.cause(error)
+      assert error.reason == :timeout
+      refute error.progress.headers_received
+      assert error.progress.raw_bytes == 0
+    end
+  end
+
+  defp stalled_partial(Ollama, operation) when operation in [:events, :legacy],
+    do: Jason.encode!(%{message: %{content: "partial"}, done: false}) <> "\n"
+
+  defp stalled_partial(_gateway, operation) when operation in [:events, :legacy],
+    do: "data: " <> Jason.encode!(%{choices: [%{delta: %{content: "partial"}}]}) <> "\n\n"
+
+  defp stalled_partial(_gateway, _operation), do: "partial"
+
+  defp stalled_invoke(gateway, :events, config),
+    do:
+      Enum.to_list(
+        gateway.complete_stream_events("gpt-4o", [Message.user("payload-secret")], config)
+      )
+
+  defp stalled_invoke(gateway, :legacy, config),
+    do:
+      Enum.to_list(
+        gateway.complete_stream("gpt-4o", [Message.user("payload-secret")], [], config)
+      )
+
+  defp stalled_invoke(gateway, operation, config), do: [invoke(gateway, operation, config)]
+
   @tag :dispatch_boundary_proof
   test "dispatched cancellation before headers retains exact request and lifecycle identity" do
     server = start_supervised!({ScriptedCompletionServer, {self(), [:hold]}})

@@ -685,3 +685,156 @@ runtime/dependency files, preserved HEAD and the observed controller-updated
 origin/main, exact trunk gate content,
 whitespace cleanliness and the required nonempty working tree. Edits remain
 uncommitted in the controller-provisioned worktree for Foundry's main landing.
+
+## c14: stalled-body timeout correction on preserved 05e901b
+
+This worktree starts at `05e901b`. The preserved tracing increment remains intact.
+The focused correction is in `Mojentic.HTTP.ReqClient`: a native Finch receive
+notification now produces the same `:timeout` as the receive loop for legacy
+streams without metadata. Recovery streams retain the actual Finch exception,
+including its Mint source, for `CompletionError.cause/1`; their receive-loop
+cause remains `:timeout`. Recovery POSTs wrap the receive-loop timeout as
+`Req.TransportError`, matching both Finch-backed POST failures and ordinary
+retries-disabled Req POSTs. These are compatibility conversions at the HTTP
+boundary, not new retry policy or tracing implementations.
+
+### Boundary proof and compatibility characterization
+
+Before expanding the fixture matrix, documentation or full gates, two real
+Req/socket probes selected each timer deterministically. After the first actual
+body chunk, the consumer waits for Finch's real timeout notification. Requeuing
+that same message selects notification handling; draining it makes ReqClient's
+next receive wait expire. Neither probe fabricates a transport failure. Both
+assert the exact partial chunk, final timeout, server-observed request bytes and
+one complete dispatch. The legacy Finch case rejects the preserved source
+(exit **2**, one failing assertion); the receive-loop case passes. The same probes
+pass after correction (exit **0**, [initial proof](.foundry/logs/corrected-initial.log)).
+The final corrected capture also includes all 77 boundary probes. See [proof.json](.foundry/proof.json),
+[rejecting](.foundry/logs/rejecting.log) and
+[corrected](.foundry/logs/corrected.log).
+
+Ordinary retries-disabled POST characterization observes a native
+`Req.TransportError{reason: :timeout}` and exactly one request. Deterministic
+recovery POST probes select both timers and require that same contract.
+[POST characterization](.foundry/logs/post-characterization/) retains the actual
+passing capture. Traced and untraced completion calls are checked with one and
+three maximum attempts. The 48 natural-scheduling cases cover OpenAI, Ollama and
+oMLX across ordinary, structured, event and legacy streaming completion APIs.
+An additional 24 public probes force each timer with an opt-in trace observer.
+They inspect the original Finch/Mint cause for recovery streaming notification
+failures, the atom for receive-loop stream failures, and Req exceptions for POSTs.
+
+Each public case compares actual request path and encoded message/model bytes,
+trace request bytes and supplied headers when enabled, client-timeout category,
+ineligibility, progress, final error/history/lifecycle identities and a single
+server-observed dispatch despite a configured admission callback and three
+allowed attempts. Streams retain delivered partial content, actual raw bytes,
+streaming phase and explicit interruption. Buffered completions retain their
+existing transport-only timeout progress (zero body bytes and unknown phase);
+this correction does not add successful-response buffering metadata.
+
+The existing full wire matrix continues to cover interrupted non-2xx HTTP-status
+precedence, immutable resend bytes, explicit admission requirements, recovery
+budgets that do not truncate active generation, cancellation after delivery,
+actual socket closure and tool/session safety. The deterministic timer probes
+that drain an already completed Finch notification do **not** assert socket
+closure: that worker has already returned its connection to Finch. Separate
+active-cancellation probes establish closure of locally owned sockets. Neither
+timeout nor local socket closure establishes remote termination.
+
+### Retained failing and passing evidence
+
+Earlier authentic captures are copied byte-for-byte into
+[historical logs](.foundry/logs/historical/), with source paths and SHA-256 hashes
+in [historical-evidence.json](.foundry/historical-evidence.json). In particular,
+`2455693-1791579088675414533` reports **22 doctests, 1,577 tests, zero failures**
+and **89.16%** coverage. The inherited report's 1,583-test summary is not the
+count in that capture. These older logs are historical observations, not current
+gate receipts; no missing process exit receipt is reconstructed.
+
+The later full coverage rejection is retained at
+[baseline-coverage-rejected.log](.foundry/logs/baseline-coverage-rejected.log)
+with its actual exit **2** in [validation-results.json](.foundry/validation-results.json).
+It runs preserved `05e901b` ReqClient with the new boundary assertions:
+**22 doctests, 1,636 tests, 29 failures**, **89.22%** coverage, and the unchanged
+19 integration exclusions. A numerical coverage pass is insufficient: timeout
+behavior still rejects. Some exploratory assertions demanded an atom even from
+recovery streams; characterization showed that preserving the native exception
+is the compatible outcome, so those assertions were refined rather than changing
+that recovery contract. The final correction normalizes only legacy streams and
+POST conversion. The earlier initial probe also exposed that a completed Finch
+timeout does not guarantee server-side socket closure; its complete capture is
+retained under `.foundry/logs/rejecting/` rather than hidden.
+
+The fresh complete project gates and applicable audits use the unchanged pinned
+`scripts/recovery-mix` wrapper. [validation-results.json](.foundry/validation-results.json)
+retains complete stdout/stderr and actual statuses for project checks;
+[capture-index.json](.foundry/capture-index.json) additionally retains intermediate
+Credo rejections and boundary probes. The intermediate full test run also records five overly restrictive native-cause
+assertion failures (exit **2**); branch-specific cause assertions replace them in
+the final validation. Final results are recorded below.
+
+### Synchronization and remaining assertion gaps
+
+Read-only inspection confirms upstream main remains `307185c`, with the existing
+`.tool-versions` selecting Elixir `1.18.5-otp-27` and OTP `28.5.0.7`. The provisioned
+HEAD lacks that file; this work does not remove or replace trunk's copy. Its gate
+configuration already matches trunk. Foundry must preserve both files when landing
+these uncommitted edits. No shared Git mutations, sibling edits, releases, live-model
+requests, dependency/runtime upgrades or coverage reductions occur in this task.
+
+This targeted correction does **not** declare the conformance campaign complete.
+Separate outstanding assertion work remains for exhaustive public broker/session
+correlation of every error/cause/progress field across the full tracing matrix,
+complete immutable native-reasoning/tool/schema payload combinations, and
+complete safe-metadata assertions for every provider failure variant. Existing cases
+provide partial coverage of these areas, not exhaustive proof. Buffered successful-
+status interruptions also retain the progress limitation described above. Disabled
+reasoning parity and ordinary generate finish handling remain deferred.
+
+### Final post-correction validation
+
+All commands below run through `foundry capture --` using the pinned runtime.
+Complete logs and actual statuses are indexed in
+[evidence-manifest.json](.foundry/evidence-manifest.json).
+
+| Command | Exit | Complete capture |
+| --- | --- | --- |
+| `scripts/recovery-mix format --check-formatted` | 0 | [final-format](.foundry/logs/final-format.log) |
+| `scripts/recovery-mix compile --warnings-as-errors` | 0 | [final-compile](.foundry/logs/final-compile.log) |
+| `env MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | [final-compile-test](.foundry/logs/final-compile-test.log) |
+| `scripts/recovery-mix credo --strict` | 0 | [final-credo](.foundry/logs/final-credo.log) |
+| `scripts/recovery-mix test` | 0 | [final-test](.foundry/logs/final-test.log) |
+| `scripts/recovery-mix test --cover` | 0 | [final-coverage](.foundry/logs/final-coverage.log) |
+| `scripts/recovery-mix test test/mojentic/llm/recovery_wire_test.exs test/mojentic/llm/stream_recovery_wire_test.exs test/mojentic/http/req_client_test.exs --trace` | 0 | [final-wire-matrix](.foundry/logs/final-wire-matrix.log) |
+| `scripts/recovery-mix deps.audit` | 0 | [final-deps-audit](.foundry/logs/final-deps-audit.log) |
+| `scripts/recovery-mix hex.audit` | 0 | [final-hex-audit](.foundry/logs/final-hex-audit.log) |
+| `scripts/recovery-mix sobelow --config` | 0 | [final-sobelow](.foundry/logs/final-sobelow.log) |
+| `scripts/recovery-mix hex.outdated --all` | 1 | [final-outdated](.foundry/logs/final-outdated.log) |
+| `scripts/recovery-mix docs` | 0 | [final-docs](.foundry/logs/final-docs.log) |
+| `scripts/recovery-mix dialyzer` | 0 | [final-dialyzer](.foundry/logs/final-dialyzer.log) |
+| `env MIX_ENV=test scripts/recovery-mix dialyzer` | 0 | [final-dialyzer-test](.foundry/logs/final-dialyzer-test.log) |
+
+The final full suite and coverage run each pass **22 doctests and 1,660 tests**,
+with the unchanged **19 integration exclusions**. Coverage is **89.23%**, above
+the unchanged **80%** threshold. The complete real-wire matrix passes **735 tests**;
+the selected timeout matrix passes all **77** probes. Both Dialyzer environments
+report zero errors, skips and unnecessary skips. Cached PLTs were copied read-only
+from the existing pinned-runtime validation cache and validated by Dialyzer.
+No project warnings or Credo issues were suppressed.
+
+MixAudit and Hex audit find no vulnerabilities or retired/advisory packages.
+MixAudit's automatic shared-database refresh is denied by read-only protection;
+[read-only freshness verification](.foundry/logs/advisory-freshness/) confirms
+clean local HEAD equals upstream main. Sobelow retains the library's existing
+missing-router and lockfile keyword warnings; docs retain the existing missing
+LICENSE and igniter usage-rule link warnings. `hex.outdated --all` exits **1** for
+available upgrades, an informational result rather than an advisory finding.
+No dependencies, runtime pins, suppression rules, thresholds or gate settings changed.
+
+[Evidence validation](.foundry/logs/evidence-validation/) checks JSON shape and
+field types, actual nonzero/zero proof exits, byte-complete capture logs, all final
+gate outcomes, historical hashes, unchanged protected files and HEAD, preserved
+trunk runtime/gate content, whitespace and the required nonempty focused working
+tree. Changes are ready for controller-owned synchronization and landing; separate
+conformance assertion work remains outstanding as described above.

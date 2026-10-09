@@ -68,6 +68,106 @@ defmodule Mojentic.HTTP.ReqClientTest do
     assert_receive {:cancel_result, {:error, :closed}}, 2000
   end
 
+  for winner <- [:finch, :receive_loop] do
+    @winner winner
+    @tag :stalled_timeout_proof
+    test "stalled stream #{@winner} timeout retains the legacy timeout contract" do
+      server =
+        start_supervised!(
+          {Mojentic.TestSupport.ScriptedCompletionServer,
+           {self(), [{:stream_hold, "HTTP/1.1 200 OK\r\nContent-Length: 999\r\n\r\npartial"}]}}
+        )
+
+      assert_receive {:server_port, port}
+
+      {:ok, stream} =
+        ReqClient.post_stream("http://127.0.0.1:#{port}/stream", "{}", [],
+          recv_timeout: 100,
+          stream_timeout: :idle
+        )
+
+      events =
+        stream
+        |> Stream.map(fn
+          {:data, "partial"} = event ->
+            # Wait for the actual Finch/socket timeout, rather than injecting one.
+            # Requeue it to select notification handling, or drain it to exercise
+            # the receive loop's own timeout with the same stalled connection.
+            assert_receive {ref, {:error, %Finch.TransportError{reason: :timeout}}} = message,
+                           2000
+
+            assert is_tuple(ref)
+            if @winner == :finch, do: send(self(), message)
+            event
+
+          event ->
+            event
+        end)
+        |> Enum.to_list()
+
+      assert events == [{:data, "partial"}, {:error, :timeout}]
+      assert_receive {:wire_request, request}
+      assert String.ends_with?(request, "\r\n\r\n{}")
+      assert GenServer.call(server, :requests) == [request]
+    end
+  end
+
+  for winner <- [:finch, :receive_loop] do
+    @winner winner
+    @tag :stalled_post_boundary
+    test "recovery POST #{@winner} timeout matches retries-disabled Req POST" do
+      server =
+        start_supervised!(
+          {Mojentic.TestSupport.ScriptedCompletionServer,
+           {self(), [{:stream_hold, "HTTP/1.1 200 OK\r\nContent-Length: 999\r\n\r\npartial"}]}}
+        )
+
+      assert_receive {:server_port, port}
+
+      trace = fn
+        %{type: :response_data} ->
+          assert_receive {_ref, {:error, %Finch.TransportError{reason: :timeout}}} = message, 2000
+          if @winner == :finch, do: send(self(), message)
+          :ok
+
+        _ ->
+          :ok
+      end
+
+      assert {:error, %Req.TransportError{reason: :timeout}} =
+               ReqClient.post("http://127.0.0.1:#{port}/x", "{}", [],
+                 retry: false,
+                 recv_timeout: 100,
+                 recovery_metadata: true,
+                 wire_trace: {trace, %{}}
+               )
+
+      assert_receive {:wire_request, request}
+      assert String.ends_with?(request, "\r\n\r\n{}")
+      assert GenServer.call(server, :requests) == [request]
+    end
+  end
+
+  @tag :stalled_post_boundary
+  test "ordinary retries-disabled POST retains Req timeout and sends once" do
+    server =
+      start_supervised!(
+        {Mojentic.TestSupport.ScriptedCompletionServer,
+         {self(), [{:stream_hold, "HTTP/1.1 200 OK\r\nContent-Length: 999\r\n\r\npartial"}]}}
+      )
+
+    assert_receive {:server_port, port}
+
+    assert {:error, %Req.TransportError{reason: :timeout}} =
+             ReqClient.post("http://127.0.0.1:#{port}/x", "{}", [],
+               retry: false,
+               recv_timeout: 100
+             )
+
+    assert_receive {:wire_request, request}
+    assert GenServer.call(server, :requests) == [request]
+  end
+
   for metadata <- [false, true] do
     @metadata metadata
     test "legacy non-2xx stream metadata #{@metadata} retains immediate status-only contract" do
