@@ -8,21 +8,18 @@ unloads, benchmarks, or tool replay were used.
 
 ## Synchronization correction
 
-The earlier implementation missed the requested pre-coding pull/rebase attempt.
-The previous conformance account incorrectly treated rebasing as inherently
-prohibited. The correction plan supplies these actual formation outcomes:
-fetch exited **0**; pull exited **1** because `FETCH_HEAD` was read-only. That
-failed pull is not successful synchronization, nor evidence of a merge conflict.
-
-For this Foundry worktree, the initial tree was clean at
-`bff29cf28c9899ea5c1cafc6041bae5157d7c9cc`. Before source edits, `git fetch origin`
-exited **0**. HEAD and fetched `origin/main` both resolved to that commit;
-`git log HEAD..origin/main` was empty. There were no subsequent arrivals to
-reconcile and no conflicts. This run's final user requirements expressly prohibit
-rebase and ref modification and give Foundry finalization ownership, so this run
-did not execute pull/rebase, commit, push, tag, release, merge or create a PR.
-The supplied prior failed pull is distinguished from this run's executed fetch.
-The coordinator's AGENTS.md guidance is preserved.
+This correction started with a clean tree at
+`f4f50feea2873eb71564e7562860a4339aea4d38`, exactly the preserved
+`foundry-task/mojentic-ex-mojentic-ex-transient-recovery-v1-c4-2cd3e7` increment.
+Before editing, `git fetch origin` exited **0**. Fetched `origin/main` was
+`bff29cf28c9899ea5c1cafc6041bae5157d7c9cc`; `git rev-list --left-right --count
+HEAD...origin/main` returned **1 0**. No upstream arrivals or conflicts needed
+reconciliation. The final Foundry requirements expressly prohibit rebase and ref
+modification, overriding the plan's pull/rebase request. No pull/rebase was
+attempted in this run, and no commit, push, merge, tag or release was performed.
+Foundry owns finalization; the coordinator's AGENTS.md was preserved unchanged.
+The earlier run reported fetch exit 0 and pull exit 1 (read-only FETCH_HEAD);
+that historical failed pull is not this run's synchronization outcome.
 
 ## Boundary characterization and licensed changes
 
@@ -41,6 +38,41 @@ appends an assistant response only on success. Its token/interaction accounting
 remains outside recovery. Existing Message has no native reasoning-history field;
 recovery preserves the entire adapted wire payload without inventing one.
 Tests retain existing parser-specific reasoning behavior.
+
+## Cancellation dispatch accounting correction
+
+The licensed change is limited to Public error and progress model, Policy
+semantics, Admission and Observability in TRANSIENT-RECOVERY-2026-10.md, and
+RECOVERY-REQUEST-2026-10.txt sections 2–5. `Recovery.request/3` now distinguishes
+cancellation while the HTTP worker is still in its pre-dispatch guard from
+cancellation after dispatch authorization. The worker reports readiness; the
+caller checks cancellation, emits `attempt_started`, and authorizes the Req
+boundary. A pre-dispatch stop returns `{:not_sent, :cancelled}` so the recovery
+loop retains its previous state, count and history. The same monitored cleanup
+is used for request, admission and backoff workers. No deadline or generation
+timeout was added.
+
+All cases below call production `complete/4` or `complete_object/4` with
+`Mojentic.HTTP.ReqClient`, for OpenAI, Ollama and OMLX. There are 24 cases:
+
+| Named public-entrypoint case (provider and operation prefix) | Exact assertions |
+| --- | --- |
+| `cancellation inside initial worker guard has no wire lifecycle` | Zero server requests; wire_attempt 0; empty history; exactly `[cancelled]`; event metadata equals the complete safe final error, including exact logical/attempt IDs. |
+| `cancellation inside retry worker guard retains only dispatched failure` | Exactly the first 503 request, original HTTP category/status/provider request ID/Retry-After/private response cause, one failure with the original logical and attempt IDs, wire_attempt 1; exactly `[attempt_started, attempt_failed, admission_pending, admission_allowed, backoff_started, retry_started, cancelled]`; every event keeps that first identity/count, retry next_attempt 2, failure history and final safe metadata match exactly. |
+| `cancellation after initial server dispatch retains actual attempts` | One complete server-observed payload; cancellation history entry equals the started attempt identity, wire_attempt 1; exactly `[attempt_started, attempt_failed, cancelled]`; failure history and final metadata match exactly. |
+| `cancellation after retry server dispatch retains actual attempts` | Exactly two identical complete server-observed payloads; history contains the first HTTP failure and dispatched cancellation, distinct exact attempt IDs under one logical ID, counts 1 and 2; exactly `[attempt_started, attempt_failed, admission_pending, admission_allowed, backoff_started, retry_started, attempt_started, attempt_failed, cancelled]`; first six events use the first failure ID/count, last three use the second ID/count, exact history and final safe metadata. |
+
+Pre-dispatch probes use the existing policy clock to synchronize **inside the
+HTTP worker's final guard**, distinguish its PID from the completion caller,
+and block on a receive. Retry synchronization selects the second HTTP worker
+using a supervised Agent. After the guard message, cancellation is sent to the
+public completion caller. A monitor proves the blocked worker is killed before
+completion returns. Post-dispatch probes wait for a full request independently
+observed by the loopback TCP server, which holds the response. Each completion
+returns within the bounded Task await and no later request is observed. No
+sleep, masked IDs, alternative accepted outcome or substituted HTTP gateway is
+used. Existing recovery cases continue to characterize frozen parsing, successful
+results, immutable payloads, structured errors, tool depth and session history.
 
 ## Migration and options
 
@@ -133,8 +165,8 @@ is preserved. Applications remain responsible for their own hooks and tool logs.
 
 Events include attempt_started/succeeded/failed, admission_pending/allowed/rejected/required,
 backoff_started, retry_started, exhausted and cancelled. Final events carry actual wire counts
-and ordered history. A dispatch cancelled or refused after its start notification
-has no additional wire attempt in the final outcome. Local UUIDs correlate events;
+and ordered history. A cancellation before dispatch emits no attempt start or
+failure; cancellation after dispatch retains that actual attempt. Local UUIDs correlate events;
 they provide no provider-side idempotency.
 
 `Recovery.capabilities/1` reports implemented boundary support for all three
@@ -183,23 +215,31 @@ Existing Mox tests mock only the HTTP gateway boundary, not Req internals.
 | `real Req sleeper FAILURE failure never enters safe errors history events or logs` | Secret-bearing return and raised exception become backoff_failed; exactly one request, no secret in errors/history/events/logs |
 | `real Req recovery does not replenish broker tool depth` | A recovered second tool request still exhausts depth one; one execution |
 
-The proof was run before fixture/documentation expansion and the full quality
-suite. The original implementation rejected with actual exit **2** because it
-rejected bounded recovery before dispatch. The corrected source passed with
-exit **0**, including pending admission, identical wire bytes and ordered exact
-metadata. `.foundry/proof.json` and its existing logs record these commands and
-actual outcomes. The source change implements behavior, not a marker toggle.
+The correction proof ran before expanding the fixture matrix, documentation or
+full quality suite. After restoring dependencies from the unchanged lockfile,
+the original preserved source rejected the real Req retry-guard probe with
+actual exit **2**: cancellation replaced the first HTTP failure, with
+resend_permission `:not_granted` instead of `:cancelled`. The corrected source
+passed the same probe with actual exit **0**, retaining exactly the original
+failure identity/history and seven-event sequence. `.foundry/proof.json` records
+the behavioral source change, actual commands/codes, and existing
+`.foundry/logs/rejecting.log` and `corrected.log`. The first dependency-missing
+invocation was not treated as a behavioral rejection.
+`proof-validation.log` records successful validation of the JSON shape, field
+types, observed exit codes and both existing behavioral logs.
 
 ## Final validation
 
-Every acceptance row above passed. `.foundry/logs/cases.log` retains all individual
-case names and results: **316 focused tests, zero failures**. The full suite
-passed **22 doctests and 1,154 tests**, with the existing **19 integration
-exclusions**. Coverage is **88.57%**, above the unchanged **80%** threshold.
-Final compile, test and focused-test stderr are empty. Strict Credo reports zero
-issues. The test support module was moved out of a test file to remove a full-suite
-load-order failure. Generated refusal tests use a helper to eliminate compiler
-warnings about constant comparisons. No warnings or checks were suppressed.
+The full suite passes **22 doctests and 1,178 tests**, zero failures, with the
+existing **19 integration exclusions**. Coverage is **88.65%**, above the
+unchanged **80%** threshold. Focused recovery characterization passes **340
+cases**, including all 24 added dispatch cancellation cases. Named results are
+retained in `.foundry/logs/cases.log`. The pre-existing request/admission/backoff
+cancellation tests now assert the exact phase-specific category and cause rather
+than accepting alternative outcomes. Strict Credo initially rejected the new
+retry assertion helper's complexity; extracting shared exact event-ID assertions
+resolved it without suppression. No threshold, exclusion or advisory suppression
+was added or changed.
 
 | Command | Actual result | Log in `.foundry/logs/` |
 | --- | --- | --- |
@@ -207,31 +247,40 @@ warnings about constant comparisons. No warnings or checks were suppressed.
 | `mix compile --warnings-as-errors` | Exit 0 | compile.log |
 | `MIX_ENV=test mix compile --warnings-as-errors` | Exit 0 | compile-test.log |
 | `mix credo --strict` | Exit 0, zero issues | credo.log |
-| `mix test --cover` | Exit 0, 88.57% | coverage.log |
+| `mix test --cover` | Exit 0, 88.65% | coverage.log |
 | `mix test` | Exit 0, zero failures | test.log |
-| Focused recovery tests with `--trace` | Exit 0, 316 tests | cases.log |
-| Final admission proof | Exit 0 | corrected.log |
+| `mix test test/mojentic/llm/recovery_test.exs test/mojentic/llm/recovery_wire_test.exs --trace` | Exit 0, 340 cases | cases.log |
+| Dispatch matrix with `--only dispatch_proof --only dispatch_accounting --trace` | Exit 0, 24 selected cases | dispatch-cases.log |
+| Initial retry-guard behavioral proof, preserved source | Exit 2, expected rejection | rejecting.log |
+| Same behavioral proof, corrected source | Exit 0 | corrected.log |
 | `mix deps.audit` | Exit 0, no vulnerabilities in checked database | deps-audit.log |
 | `mix hex.audit` | Exit 0, no retired/security advisory packages | hex-audit.log |
 | `mix sobelow --config` | Exit 0, no findings under existing configuration | sobelow.log |
 | `mix docs` | Exit 0, existing unresolved tracer type-reference warnings | docs.log |
 | `mix hex.outdated --all` | Exit 1, updates available, informational | hex-outdated.log |
-| `mix dialyzer` | Exit 1, unavailable task | dialyzer.log |
+| `mix dialyzer` | Exit 1, task unavailable | dialyzer.log |
 
-Commands ran through `foundry capture` with `/tmp/mojentic-mix`, selecting the
-installed pinned Elixir **1.18.5** and OTP **28.5.0.7**, with writable
-`HEX_HOME=/tmp/mojentic-recovery-hex`. The toolchain log records the runtime.
+Commands ran through `foundry capture` and `/tmp/mojentic-mix`, selecting the
+installed CI-pinned Elixir **1.18.5** and OTP **28.5.0.7**, with writable
+`HEX_HOME=/tmp/mojentic-recovery-hex`. `toolchain.log` records the runtime.
 Dependencies were restored from the existing lockfile. No dependency, package,
-supported-version or CI pin changed, and no precommit alias is configured.
+runtime or CI pin changed; no precommit alias is configured. Both compile logs
+are empty after successful final checks.
 
-MixAudit's shared advisory database could not refresh because its FETCH_HEAD is
-read-only. Read-only comparison confirmed local HEAD and upstream main both equal
-`935abf7410a2bbb18e12579dee6e31267c3ed244`; advisory-local.log and
-advisory-remote.log retain the evidence. No advisory suppression changed.
-Sobelow emits existing lockfile quoted-keyword warnings without findings; this
-is not a Phoenix project. Docs generation retains existing undefined/private
-`TracerEvent.t/0` references. Dialyxir is absent, so Dialyzer/PLT verification
-remains unavailable and is not claimed as passing. Adding a dependency or
-changing its CI cache conflicts with the dependency freeze. Sleeper failures are normalized to `:backoff_failed`; arbitrary callback return
-values and exceptions never enter safe metadata. These limitations
-are recorded, not waived. Changes remain uncommitted for Foundry finalization.
+MixAudit could not refresh its shared advisory database because FETCH_HEAD is
+read-only. `advisory-local.log` and `advisory-remote.log` independently confirm
+local HEAD and upstream main both equal
+`935abf7410a2bbb18e12579dee6e31267c3ed244`. No advisory was ignored. Sobelow
+retains its existing configuration and emits existing lockfile quoted-keyword
+warnings; this is not a Phoenix project. Docs retain existing undefined/private
+`TracerEvent.t/0` references outside the licensed correction. Dialyxir is absent,
+so Dialyzer and its PLT/cache prerequisite are unavailable and are not claimed as
+passing; adding dependencies or changing CI is outside this increment's scope.
+The recovery guide was reviewed and remains aligned with the public cancellation
+and admission API.
+
+A final read-only `git ls-remote origin refs/heads/main` confirms main still at
+`bff29cf28c9899ea5c1cafc6041bae5157d7c9cc` (`sync-remote.log`), with local HEAD,
+fetched main and preserved c4 identity recorded in `sync-local.log`. No arrivals
+needed reconciliation. Changes remain in the working tree for Foundry review
+and finalization.

@@ -33,16 +33,23 @@ defmodule Mojentic.LLM.CompletionRequest do
          ids,
          deadline
        ) do
-    emit(
-      recovery,
-      :attempt_started,
-      Map.merge(ids, %{phase: :unknown, progress: progress(nil, "")})
-    )
+    started = fn ->
+      emit(
+        recovery,
+        :attempt_started,
+        Map.merge(ids, %{phase: :unknown, progress: progress(nil, "")})
+      )
+    end
 
     result =
-      Mojentic.LLM.Recovery.request(recovery, deadline, fn ->
-        client.post(url, body, headers, Keyword.merge(opts, retry: false, redirect: false))
-      end)
+      Mojentic.LLM.Recovery.request(
+        recovery,
+        deadline,
+        {started,
+         fn ->
+           client.post(url, body, headers, Keyword.merge(opts, retry: false, redirect: false))
+         end}
+      )
 
     case result do
       {:not_sent, reason} -> {:not_sent, reason}

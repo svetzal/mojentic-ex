@@ -731,10 +731,313 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       send(task.pid, {:cancel, cancel})
       assert {:error, error} = Task.await(task, 2000)
-      assert error.category == :cancellation or error.resend_permission == :cancelled
+      assert_cancelled_phase(@phase, error)
       assert error.wire_attempt == 1
       assert GenServer.call(server, :requests) == [request]
       assert_receive {:cancel_event, %{type: :cancelled}}
+    end
+  end
+
+  defp assert_cancelled_phase(:request, error) do
+    assert error.category == :cancellation
+    assert error.reason == :cancelled
+    assert CompletionError.cause(error) == :cancelled
+  end
+
+  defp assert_cancelled_phase(phase, error) when phase in [:admission, :backoff] do
+    assert error.category == :http
+    assert error.reason == :http_status
+    assert error.http_status == 503
+    assert error.resend_permission == :cancelled
+    assert {:ok, %{status_code: 503, body: "response-secret"}} = CompletionError.cause(error)
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX], operation <- [:complete, :complete_object] do
+    @gateway gateway
+    @operation operation
+    @tag :dispatch_proof
+    test "#{gateway} #{operation} cancellation inside retry worker guard retains only dispatched failure" do
+      server =
+        start_supervised!(
+          {ScriptedCompletionServer, {self(), [response(503, "response-secret"), :hold]}}
+        )
+
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+      owner = self()
+      cancel = make_ref()
+      supervisor = start_supervised!(Task.Supervisor)
+      guards = start_supervised!({Agent, fn -> 0 end})
+
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn ->
+          caller = self()
+
+          clock = fn ->
+            if self() != caller do
+              number = Agent.get_and_update(guards, fn n -> {n + 1, n + 1} end)
+
+              if number == 2 do
+                send(owner, {:dispatch_guard, self()})
+
+                receive do
+                  :release_guard -> :ok
+                end
+              end
+            end
+
+            0
+          end
+
+          config =
+            CompletionConfig.new(
+              recovery: [
+                max_attempts: 3,
+                deadline: 100_000,
+                clock: clock,
+                cancel_ref: cancel,
+                admission: fn _ -> :allow end,
+                base_delay: 0,
+                sleeper: fn _ -> :ok end,
+                observer: &send(owner, {:dispatch_event, &1})
+              ]
+            )
+
+          invoke(@gateway, @operation, config)
+        end)
+
+      assert_receive {:wire_request, request}, 2000
+      assert_payload(request, @gateway, @operation)
+      assert_receive {:dispatch_guard, worker}, 2000
+      monitor = Process.monitor(worker)
+      send(task.pid, {:cancel, cancel})
+      assert {:error, error} = Task.await(task, 2000)
+      assert_receive {:DOWN, ^monitor, :process, ^worker, :killed}
+      assert GenServer.call(server, :requests) == [request]
+      refute_received {:wire_request, _}
+      assert error.provider == provider(@gateway)
+      assert error.operation == @operation
+      assert error.resend_permission == :cancelled
+      assert error.category == :http
+      assert error.http_status == 503
+      assert error.provider_request_id == "wire-request-73"
+      assert error.retry_after == {:delay_seconds, 11}
+      assert {:ok, %{status_code: 503, body: "response-secret"}} = CompletionError.cause(error)
+      assert error.wire_attempt == 1
+      assert [failure] = error.history
+      assert failure.logical_request_id == error.logical_request_id
+      assert failure.attempt_id == error.attempt_id
+      assert failure.wire_attempt == 1
+      assert failure.http_status == 503
+
+      events = drain_dispatch_events()
+
+      assert Enum.map(events, & &1.type) == [
+               :attempt_started,
+               :attempt_failed,
+               :admission_pending,
+               :admission_allowed,
+               :backoff_started,
+               :retry_started,
+               :cancelled
+             ]
+
+      assert_event_identity(events, error)
+
+      assert Enum.at(events, 1).metadata.history == [failure]
+      assert Enum.at(events, 5).metadata.next_attempt == 2
+      assert List.last(events).metadata == CompletionError.safe_metadata(error)
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX], operation <- [:complete, :complete_object] do
+    @gateway gateway
+    @operation operation
+    @tag :dispatch_accounting
+    test "#{gateway} #{operation} cancellation inside initial worker guard has no wire lifecycle" do
+      server = start_supervised!({ScriptedCompletionServer, {self(), [:hold]}})
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+      owner = self()
+      cancel = make_ref()
+      supervisor = start_supervised!(Task.Supervisor)
+
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn ->
+          caller = self()
+
+          clock = fn ->
+            if self() != caller do
+              send(owner, {:initial_guard, self()})
+
+              receive do
+                :release_guard -> :ok
+              end
+            end
+
+            0
+          end
+
+          config =
+            CompletionConfig.new(
+              recovery: [
+                max_attempts: 3,
+                deadline: 100_000,
+                clock: clock,
+                cancel_ref: cancel,
+                observer: &send(owner, {:dispatch_event, &1})
+              ]
+            )
+
+          invoke(@gateway, @operation, config)
+        end)
+
+      assert_receive {:initial_guard, worker}, 2000
+      monitor = Process.monitor(worker)
+      send(task.pid, {:cancel, cancel})
+      assert {:error, error} = Task.await(task, 2000)
+      assert_receive {:DOWN, ^monitor, :process, ^worker, :killed}
+      assert GenServer.call(server, :requests) == []
+      refute_received {:wire_request, _}
+      assert error.provider == provider(@gateway)
+      assert error.operation == @operation
+      assert error.category == :cancellation
+      assert error.reason == :cancelled
+      assert error.resend_permission == :cancelled
+      assert error.wire_attempt == 0
+      assert error.history == []
+      assert CompletionError.cause(error) == :cancelled
+      assert [%{type: :cancelled, metadata: metadata}] = drain_dispatch_events()
+      assert metadata == CompletionError.safe_metadata(error)
+      assert metadata.logical_request_id == error.logical_request_id
+      assert metadata.attempt_id == error.attempt_id
+      assert metadata.wire_attempt == 0
+      assert metadata.history == []
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object],
+      dispatch <- [:initial, :retry] do
+    @gateway gateway
+    @operation operation
+    @dispatch dispatch
+    @tag :dispatch_accounting
+    test "#{gateway} #{operation} cancellation after #{dispatch} server dispatch retains actual attempts" do
+      responses = if @dispatch == :initial, do: [:hold], else: [response(503, "failed"), :hold]
+      server = start_supervised!({ScriptedCompletionServer, {self(), responses}})
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+      owner = self()
+      cancel = make_ref()
+      supervisor = start_supervised!(Task.Supervisor)
+
+      config =
+        CompletionConfig.new(
+          recovery: [
+            max_attempts: 3,
+            cancel_ref: cancel,
+            base_delay: 0,
+            sleeper: fn _ -> :ok end,
+            admission: fn _ -> :allow end,
+            observer: &send(owner, {:dispatch_event, &1})
+          ]
+        )
+
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn -> invoke(@gateway, @operation, config) end)
+
+      assert_receive {:wire_request, first}, 2000
+      assert_payload(first, @gateway, @operation)
+
+      requests =
+        if @dispatch == :retry do
+          assert_receive {:wire_request, second}, 2000
+          assert second == first
+          [first, second]
+        else
+          [first]
+        end
+
+      send(task.pid, {:cancel, cancel})
+      assert {:error, error} = Task.await(task, 2000)
+      assert GenServer.call(server, :requests) == requests
+      refute_received {:wire_request, _}
+      assert error.provider == provider(@gateway)
+      assert error.operation == @operation
+      assert error.category == :cancellation
+      assert error.reason == :cancelled
+      assert CompletionError.cause(error) == :cancelled
+      events = drain_dispatch_events()
+      assert_dispatched_cancellation(@dispatch, error, events)
+    end
+  end
+
+  defp assert_dispatched_cancellation(:initial, error, events) do
+    assert Enum.map(events, & &1.type) == [:attempt_started, :attempt_failed, :cancelled]
+    assert error.wire_attempt == 1
+    assert [failure] = error.history
+    assert failure.category == :cancellation
+    assert failure.reason == :cancelled
+    assert failure.attempt_id == error.attempt_id
+    assert failure.logical_request_id == error.logical_request_id
+    assert failure.wire_attempt == 1
+
+    assert_event_identity(events, error)
+
+    assert Enum.at(events, 1).metadata.history == [failure]
+    assert List.last(events).metadata == CompletionError.safe_metadata(error)
+  end
+
+  defp assert_dispatched_cancellation(:retry, error, events) do
+    assert Enum.map(events, & &1.type) == [
+             :attempt_started,
+             :attempt_failed,
+             :admission_pending,
+             :admission_allowed,
+             :backoff_started,
+             :retry_started,
+             :attempt_started,
+             :attempt_failed,
+             :cancelled
+           ]
+
+    assert error.wire_attempt == 2
+    assert [first, cancelled] = error.history
+    assert first.category == :http
+    assert first.http_status == 503
+    assert first.wire_attempt == 1
+    assert cancelled.category == :cancellation
+    assert cancelled.reason == :cancelled
+    assert cancelled.wire_attempt == 2
+    assert cancelled.attempt_id == error.attempt_id
+    assert first.attempt_id != error.attempt_id
+
+    for failure <- error.history,
+        do: assert(failure.logical_request_id == error.logical_request_id)
+
+    assert_event_identity(Enum.take(events, 6), first)
+    assert_event_identity(Enum.drop(events, 6), cancelled)
+
+    assert Enum.at(events, 1).metadata.history == [first]
+    assert Enum.at(events, 5).metadata.next_attempt == 2
+    assert Enum.at(events, 7).metadata.history == [first, cancelled]
+    assert List.last(events).metadata == CompletionError.safe_metadata(error)
+  end
+
+  defp assert_event_identity(events, ids) do
+    for event <- events do
+      assert event.metadata.logical_request_id == ids.logical_request_id
+      assert event.metadata.attempt_id == ids.attempt_id
+      assert event.metadata.wire_attempt == ids.wire_attempt
+    end
+  end
+
+  defp drain_dispatch_events do
+    receive do
+      {:dispatch_event, event} -> [event | drain_dispatch_events()]
+    after
+      0 -> []
     end
   end
 

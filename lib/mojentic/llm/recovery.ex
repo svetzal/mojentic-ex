@@ -267,23 +267,23 @@ defmodule Mojentic.LLM.Recovery do
   end
 
   @doc false
-  def request(opts, deadline, callback) do
+  def request(opts, deadline, callback) when is_function(callback, 0),
+    do: request(opts, deadline, {fn -> :ok end, callback})
+
+  def request(opts, deadline, {started, callback}) do
     case guard_send(opts, deadline) do
       :ok ->
         result =
-          if opts[:cancel_ref],
-            do:
-              work(opts, nil, fn ->
-                case guard_send(opts, deadline) do
-                  :ok -> callback.()
-                  reason -> {:not_sent, reason}
-                end
-              end),
-            else: callback.()
+          if opts[:cancel_ref] do
+            request_work(opts, deadline, started, callback)
+          else
+            started.()
+            callback.()
+          end
 
-        case guard_send(opts, nil) do
-          :cancelled -> {:error, :cancelled}
-          :ok -> request_result(result)
+        case result do
+          {:not_sent, _} -> result
+          _ -> request_result(opts, result)
         end
 
       reason ->
@@ -291,8 +291,75 @@ defmodule Mojentic.LLM.Recovery do
     end
   end
 
-  defp request_result(:cancelled), do: {:error, :cancelled}
-  defp request_result(result), do: result
+  defp request_result(opts, result) do
+    case guard_send(opts, nil) do
+      :cancelled -> {:error, :cancelled}
+      :ok -> result
+    end
+  end
+
+  defp request_work(opts, deadline, started, callback) do
+    owner = self()
+    ref = make_ref()
+
+    {pid, monitor} =
+      spawn_monitor(fn ->
+        result =
+          try do
+            case guard_send(opts, deadline) do
+              :ok ->
+                send(owner, {ref, :dispatch_ready})
+
+                receive do
+                  {^ref, :dispatch} -> callback.()
+                end
+
+              reason ->
+                {:not_sent, reason}
+            end
+          rescue
+            exception -> {:error, exception}
+          catch
+            kind, cause -> {:error, {kind, cause}}
+          end
+
+        send(owner, {ref, result})
+      end)
+
+    try do
+      await_request(opts, ref, pid, monitor, started, false)
+    after
+      stop_work(pid, monitor, ref)
+    end
+  end
+
+  defp await_request(opts, ref, pid, monitor, started, dispatched) do
+    cancel = opts[:cancel_ref]
+
+    receive do
+      {^ref, :dispatch_ready} ->
+        # The worker's final guard has completed. Account only after the caller
+        # has checked cancellation, before authorizing the HTTP boundary.
+        case guard_send(opts, nil) do
+          :ok ->
+            started.()
+            send(pid, {ref, :dispatch})
+            await_request(opts, ref, pid, monitor, started, true)
+
+          reason ->
+            {:not_sent, reason}
+        end
+
+      {^ref, result} ->
+        result
+
+      {:DOWN, ^monitor, :process, ^pid, _reason} ->
+        {:error, :rejected}
+
+      {:cancel, ^cancel} ->
+        if dispatched, do: {:error, :cancelled}, else: {:not_sent, :cancelled}
+    end
+  end
 
   defp work(opts, deadline, callback) do
     owner = self()
@@ -315,20 +382,24 @@ defmodule Mojentic.LLM.Recovery do
     try do
       await_work(opts, deadline, ref, monitor)
     after
-      termination = Process.monitor(pid)
-      Process.exit(pid, :kill)
+      stop_work(pid, monitor, ref)
+    end
+  end
 
-      receive do
-        {:DOWN, ^termination, :process, ^pid, _} -> :ok
-      end
+  defp stop_work(pid, monitor, ref) do
+    termination = Process.monitor(pid)
+    Process.exit(pid, :kill)
 
-      Process.demonitor(monitor, [:flush])
+    receive do
+      {:DOWN, ^termination, :process, ^pid, _} -> :ok
+    end
 
-      receive do
-        {^ref, _late_result} -> :ok
-      after
-        0 -> :ok
-      end
+    Process.demonitor(monitor, [:flush])
+
+    receive do
+      {^ref, _late_result} -> :ok
+    after
+      0 -> :ok
     end
   end
 
