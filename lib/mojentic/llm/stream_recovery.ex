@@ -220,23 +220,37 @@ defmodule Mojentic.LLM.StreamRecovery do
 
   defp finish(%{provider: :ollama, buffer: buffer} = state) when buffer != "" do
     {frames, state} = frames("\n", state)
-    state = Enum.reduce(frames, state, &observe/2)
 
-    {events, state} =
-      if state.mode == :events do
-        {events, _evidence} = state.parser.finish(state.parser_state)
-        {events, state}
-      else
-        parse("", frames, state)
+    with {:ok, state} <- observe_frames(frames, state),
+         {:ok, events, state} <- finish_events(frames, state) do
+      case deliver(events, state) do
+        {:continue, state} -> failure(:incomplete_stream, state)
+        result -> result
       end
-
-    case deliver(events, state) do
-      {:continue, state} -> failure(:incomplete_stream, state)
-      result -> result
+    else
+      {:parser_error, exception, state} -> failure({:parser_failure, exception}, state)
     end
   end
 
   defp finish(state), do: failure(:incomplete_stream, state)
+
+  defp finish_events(_frames, %{mode: :events} = state) do
+    safely(state, fn ->
+      {events, _evidence} = state.parser.finish(state.parser_state)
+      {:ok, events, state}
+    end)
+  end
+
+  defp finish_events(frames, state), do: parse("", frames, state)
+
+  defp safe_item({:data, chunk}, state) do
+    state = %{
+      state
+      | progress: %{state.progress | raw_bytes: state.progress.raw_bytes + byte_size(chunk)}
+    }
+
+    item({:data, chunk}, state)
+  end
 
   defp safe_item(item, state) do
     item(item, state)
@@ -259,16 +273,34 @@ defmodule Mojentic.LLM.StreamRecovery do
   defp item({:error, reason}, state), do: failure(reason, state)
 
   defp item({:data, chunk}, state) do
-    state = %{
-      state
-      | progress: %{state.progress | raw_bytes: state.progress.raw_bytes + byte_size(chunk)}
-    }
-
     {frames, state} = frames(chunk, state)
-    state = Enum.reduce(frames, state, &observe/2)
-    send(state.tracker, {:stream_progress, self(), snapshot(state)})
-    {events, state} = parse(chunk, frames, state)
-    deliver(events, state)
+
+    with {:ok, state} <- observe_frames(frames, state),
+         {:ok, events, state} <- parse(chunk, frames, state) do
+      send(state.tracker, {:stream_progress, self(), snapshot(state)})
+      deliver(events, state)
+    else
+      {:parser_error, exception, state} -> failure({:parser_failure, exception}, state)
+    end
+  rescue
+    exception -> failure({:parser_failure, exception}, state)
+  end
+
+  # Rescue at the frame boundary so observations from earlier frames survive.
+  # Parsing a chunk is atomic for delivery: an exception yields none of its events.
+  defp observe_frames(frames, state) do
+    Enum.reduce_while(frames, {:ok, state}, fn frame, {:ok, current} ->
+      case safely(current, fn -> {:ok, observe(frame, current)} end) do
+        {:ok, updated} -> {:cont, {:ok, updated}}
+        error -> {:halt, error}
+      end
+    end)
+  end
+
+  defp safely(state, fun) do
+    fun.()
+  rescue
+    exception -> {:parser_error, exception, state}
   end
 
   defp frames(chunk, state) do
@@ -318,37 +350,50 @@ defmodule Mojentic.LLM.StreamRecovery do
   end
 
   defp parse(chunk, _frames, %{mode: :events} = state) do
-    {events, parser_state} = state.parser.parse(state.parser_state, chunk)
-    {events, %{state | parser_state: parser_state}}
+    send(state.tracker, {:stream_progress, self(), snapshot(state)})
+
+    safely(state, fn ->
+      {events, parser_state} = state.parser.parse(state.parser_state, chunk)
+      {:ok, events, %{state | parser_state: parser_state}}
+    end)
   end
 
   defp parse(_chunk, frames, state) do
-    Enum.reduce(frames, {[], state}, fn frame, {events, state} ->
-      delta = message(frame)
-      content = if present?(delta["content"]), do: [{:content, delta["content"]}], else: []
-      reasoning = delta["thinking"] || delta["reasoning_content"]
-      thinking = if present?(reasoning), do: [{:thinking, reasoning}], else: []
-      state = accumulate(delta["tool_calls"] || [], state)
-      reason = get_in(frame, ["choices", Access.at(0), "finish_reason"])
-      done = frame["done"] == true or reason in ["stop", "tool_calls"]
-      calls = if done, do: complete_tools(state.tools), else: []
-      tools = if calls == [], do: [], else: [{:tool_calls, calls}]
+    send(state.tracker, {:stream_progress, self(), snapshot(state)})
 
-      observed = %{
-        state.progress.observed
-        | completed_tool_calls: state.progress.observed.completed_tool_calls + length(calls)
-      }
-
-      state = %{
-        state
-        | finished: done or state.finished,
-          progress: %{state.progress | observed: observed}
-      }
-
-      terminal = legacy_terminal(frame, state, done, calls)
-
-      {events ++ thinking ++ content ++ tools ++ terminal, state}
+    Enum.reduce_while(frames, {:ok, [], state}, fn frame, {:ok, events, current} ->
+      case safely(current, fn -> parse_frame(frame, events, current) end) do
+        {:ok, _, _} = parsed -> {:cont, parsed}
+        error -> {:halt, error}
+      end
     end)
+  end
+
+  defp parse_frame(frame, events, state) do
+    delta = message(frame)
+    content = if present?(delta["content"]), do: [{:content, delta["content"]}], else: []
+    reasoning = delta["thinking"] || delta["reasoning_content"]
+    thinking = if present?(reasoning), do: [{:thinking, reasoning}], else: []
+    state = accumulate(delta["tool_calls"] || [], state)
+    reason = get_in(frame, ["choices", Access.at(0), "finish_reason"])
+    done = frame["done"] == true or reason in ["stop", "tool_calls"]
+    calls = if done, do: complete_tools(state.tools), else: []
+    tools = if calls == [], do: [], else: [{:tool_calls, calls}]
+
+    observed = %{
+      state.progress.observed
+      | completed_tool_calls: state.progress.observed.completed_tool_calls + length(calls)
+    }
+
+    state = %{
+      state
+      | finished: done or state.finished,
+        progress: %{state.progress | observed: observed}
+    }
+
+    terminal = legacy_terminal(frame, state, done, calls)
+
+    {:ok, events ++ thinking ++ content ++ tools ++ terminal, state}
   end
 
   defp legacy_terminal(frame, state, done, calls) do

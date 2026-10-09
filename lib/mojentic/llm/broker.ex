@@ -614,7 +614,9 @@ defmodule Mojentic.LLM.Broker do
 
     response = build_gateway_response(acc_content, tool_calls)
     new_messages = messages ++ [build_assistant_message(response)]
-    final_messages = execute_and_append_tool_results(broker, tool_calls, tools, new_messages)
+
+    final_messages =
+      execute_and_append_tool_results(broker, tool_calls, tools, new_messages, config)
 
     recursive_stream =
       do_generate_stream(
@@ -637,7 +639,7 @@ defmodule Mojentic.LLM.Broker do
     }
   end
 
-  defp execute_and_append_tool_results(broker, tool_calls, tools, messages) do
+  defp execute_and_append_tool_results(broker, tool_calls, tools, messages, config) do
     executions =
       tool_calls
       |> Enum.with_index()
@@ -653,7 +655,7 @@ defmodule Mojentic.LLM.Broker do
         broker.tool_context
       )
 
-    append_outcome_messages(broker, tool_calls, outcomes, messages)
+    append_outcome_messages(broker, tool_calls, outcomes, messages, config)
   end
 
   # Private functions
@@ -707,7 +709,7 @@ defmodule Mojentic.LLM.Broker do
     Map.get(tool_call, :id) || "call-#{idx}"
   end
 
-  defp append_outcome_messages(broker, tool_calls, outcomes, messages, config \\ nil) do
+  defp append_outcome_messages(broker, tool_calls, outcomes, messages, config) do
     tool_calls
     |> Enum.zip(outcomes)
     |> Enum.reduce(messages, fn {tool_call, outcome}, acc ->
