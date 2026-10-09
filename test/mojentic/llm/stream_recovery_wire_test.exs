@@ -161,7 +161,10 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
                  request_event.ids
 
         [headers] = Enum.filter(events, &(&1.type == :response_headers))
+        [_, expected_status] = Regex.run(~r/^HTTP\/1\.1 (\d+)/, response)
+        assert headers.status == String.to_integer(expected_status)
         assert {"x-request-id", "fixture-73"} in headers.headers
+        assert_wire_request(request_event, Enum.at(requests, number - 1), started.metadata)
       end
 
       refute inspect(lifecycle) =~ "sentinel"
@@ -808,82 +811,121 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
 
   for gateway <- [OpenAI, Ollama, OMLX] do
     @gateway gateway
-    test "#{gateway} broker executes completed tool once then propagates follow-up interruption" do
-      server =
-        server(@gateway, [
+    for caller <- [:broker, :session], tracing <- [false, true] do
+      @caller caller
+      @tracing tracing
+      @tag :tool_trace_review
+      test "#{gateway} #{@caller} tracing #{@tracing} preserves exact tool history and follow-up interruption" do
+        responses = [
           tool_response(@gateway),
           http(503, "sentinel-error"),
           truncated(partial(@gateway, :content))
-        ])
+        ]
 
-      tool = %Mojentic.TestSupport.CountingTool{owner: self()}
-      broker = Broker.new("gpt-4o", @gateway)
-      owner = self()
-      config = %{config(observer: &send(owner, {:event, &1})) | max_tool_iterations: 1}
+        server = server(@gateway, responses)
+        tool = %Mojentic.TestSupport.CountingTool{owner: self()}
+        broker = Broker.new("gpt-4o", @gateway)
+        owner = self()
+        recovery = [observer: &send(owner, {:event, &1})]
 
-      assert ["sentinel-output", {:error, error}] =
-               Broker.generate_stream(broker, [Message.user("sentinel-input")], [tool], config)
-               |> Enum.to_list()
+        recovery =
+          if @tracing do
+            Keyword.put(recovery, :trace_observer, fn event ->
+              send(owner, {:tool_trace, event})
+              :ok
+            end)
+          else
+            recovery
+          end
 
-      assert error.reason == :stream_interrupted
-      lifecycle = collect_events()
+        config = %{config(recovery) | max_tool_iterations: 1}
+        session = ChatSession.new(broker, tools: [tool])
+        original = ChatSession.messages(session)
 
-      assert Enum.map(lifecycle, & &1.type) == [
-               :attempt_started,
-               :attempt_succeeded,
-               :attempt_started,
-               :attempt_failed,
-               :admission_pending,
-               :admission_allowed,
-               :backoff_started,
-               :retry_started,
-               :attempt_started,
-               :attempt_failed,
-               :exhausted
-             ]
+        stream =
+          case @caller do
+            :broker ->
+              Broker.generate_stream(broker, [Message.user("sentinel-input")], [tool], config)
 
-      [tool_attempt, followup, retry] = Enum.filter(lifecycle, &(&1.type == :attempt_started))
-      assert Enum.map([tool_attempt, followup, retry], & &1.metadata.wire_attempt) == [1, 1, 2]
-      assert tool_attempt.metadata.logical_request_id != followup.metadata.logical_request_id
-      assert followup.metadata.logical_request_id == retry.metadata.logical_request_id
-      assert followup.metadata.attempt_id != retry.metadata.attempt_id
+            :session ->
+              {:ok, stream, handle} =
+                ChatSession.send_stream(session, "sentinel-input", recovery: config.recovery)
 
-      assert Enum.map(error.history, & &1.attempt_id) == [
-               followup.metadata.attempt_id,
-               retry.metadata.attempt_id
-             ]
+              send(owner, {:session_handle, handle})
+              stream
+          end
 
-      assert Enum.map(error.history, & &1.http_status) == [503, 200]
-      assert_receive {:tool_executed, %{"value" => "sentinel-tool"}}
-      refute_receive {:tool_executed, _}
-      [first, second, third] = GenServer.call(server, :requests)
-      assert second == third
-      assert length(body(first)["messages"]) == 1
-      messages = body(second)["messages"]
+        assert ["sentinel-output", {:error, error}] = Enum.to_list(stream)
+        assert error.reason == :stream_interrupted
+        assert error.http_status == 200
+        assert error.progress.headers_received
+        assert error.progress.raw_bytes == byte_size(partial(@gateway, :content))
+        assert error.progress.observed.content
+        assert error.progress.delivered.content
+        lifecycle = collect_events()
 
-      assert Enum.any?(
-               messages,
-               &(&1["role"] == "tool" and &1["content"] == Jason.encode!("tool-result-secret"))
-             )
+        assert Enum.map(lifecycle, & &1.type) == [
+                 :attempt_started,
+                 :attempt_succeeded,
+                 :attempt_started,
+                 :attempt_failed,
+                 :admission_pending,
+                 :admission_allowed,
+                 :backoff_started,
+                 :retry_started,
+                 :attempt_started,
+                 :attempt_failed,
+                 :exhausted
+               ]
 
-      assert Enum.count(messages, &(&1["role"] == "tool")) == 1
-    end
+        [tool_attempt, followup, retry] =
+          Enum.filter(lifecycle, &(&1.type == :attempt_started))
 
-    test "#{gateway} session refuses to finalize partial output after a completed tool" do
-      server = server(@gateway, [tool_response(@gateway), truncated(partial(@gateway, :content))])
-      tool = %Mojentic.TestSupport.CountingTool{owner: self()}
-      session = ChatSession.new(Broker.new("gpt-4o", @gateway), tools: [tool])
-      original = ChatSession.messages(session)
+        assert Enum.map([tool_attempt, followup, retry], & &1.metadata.wire_attempt) == [1, 1, 2]
+        assert tool_attempt.metadata.logical_request_id != followup.metadata.logical_request_id
+        assert followup.metadata.logical_request_id == retry.metadata.logical_request_id
+        assert followup.metadata.attempt_id != retry.metadata.attempt_id
+        assert error.logical_request_id == retry.metadata.logical_request_id
+        assert error.attempt_id == retry.metadata.attempt_id
+        assert error.wire_attempt == 2
 
-      assert {:ok, stream, handle} =
-               ChatSession.send_stream(session, "sentinel-input", recovery: config().recovery)
+        assert Enum.map(error.history, &trace_ids/1) ==
+                 Enum.map([followup, retry], &trace_ids(&1.metadata))
 
-      assert ["sentinel-output", {:error, error}] = Enum.to_list(stream)
-      assert ChatSession.finalize_stream(handle) == {:error, error}
-      assert ChatSession.messages(session) == original
-      assert_receive {:tool_executed, %{"value" => "sentinel-tool"}}
-      refute_receive {:tool_executed, _}
-      assert length(GenServer.call(server, :requests)) == 2
+        assert Enum.map(error.history, & &1.http_status) == [503, 200]
+        assert List.last(error.history).progress == error.progress
+        assert_receive {:tool_executed, %{"value" => "sentinel-tool"}}
+        refute_receive {:tool_executed, _}
+        [first, second, third] = requests = GenServer.call(server, :requests)
+        assert second == third
+        initial = body(first)["messages"]
+        assert List.last(initial) == %{"role" => "user", "content" => "sentinel-input"}
+        messages = body(second)["messages"]
+        assert Enum.drop(messages, -2) == initial
+        [assistant, result] = Enum.take(messages, -2)
+        assert assistant["role"] == "assistant"
+        assert length(assistant["tool_calls"]) == 1
+        assert result["role"] == "tool"
+        assert result["content"] == Jason.encode!("tool-result-secret")
+        assert Enum.count(messages, &(&1["role"] == "tool")) == 1
+
+        traces = exact_messages(:tool_trace)
+
+        if @tracing do
+          assert_stream_trace(traces, lifecycle, requests, responses)
+        else
+          assert traces == []
+        end
+
+        if @caller == :session do
+          assert_receive {:session_handle, handle}
+          assert ChatSession.finalize_stream(handle) == {:error, error}
+          assert ChatSession.messages(session) == original
+        end
+
+        refute inspect(lifecycle) =~ "sentinel"
+        refute inspect(error) =~ "sentinel"
+      end
     end
 
     test "#{gateway} broker recovery does not replenish streaming tool depth" do
@@ -1488,6 +1530,49 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       :backoff_started,
       :cancelled
     ]
+
+  defp trace_ids(metadata),
+    do: Map.take(metadata, [:logical_request_id, :attempt_id, :wire_attempt])
+
+  defp assert_wire_request(event, wire, metadata) do
+    [headers, encoded] = String.split(wire, "\r\n\r\n", parts: 2)
+    assert event.body == encoded
+    assert event.method == :post
+    assert event.ids == trace_ids(metadata)
+    assert event.ids.logical_request_id =~ ~r/\A[0-9a-f-]{36}\z/
+    assert event.ids.attempt_id =~ ~r/\A[0-9a-f-]{36}\z/
+
+    received_headers =
+      for line <- tl(String.split(headers, "\r\n")) do
+        [key, value] = String.split(line, ": ", parts: 2)
+        {String.downcase(key), value}
+      end
+
+    for {key, value} <- event.headers do
+      assert {String.downcase(key), value} in received_headers
+    end
+  end
+
+  defp assert_stream_trace(traces, lifecycle, requests, responses) do
+    starts = Enum.filter(lifecycle, &(&1.type == :attempt_started))
+    captures = Enum.filter(traces, &(&1.type == :request))
+    assert Enum.map(captures, & &1.ids) == Enum.map(starts, &trace_ids(&1.metadata))
+
+    for {{capture, start}, {wire, response}} <-
+          Enum.zip(Enum.zip(captures, starts), Enum.zip(requests, responses)) do
+      assert_wire_request(capture, wire, start.metadata)
+      [_, expected_body] = String.split(response, "\r\n\r\n", parts: 2)
+      [_, status] = Regex.run(~r/^HTTP\/1\.1 (\d+)/, response)
+      events = Enum.filter(traces, &(&1.ids == capture.ids))
+      [headers] = Enum.filter(events, &(&1.type == :response_headers))
+      assert headers.status == String.to_integer(status)
+      assert {"x-request-id", "fixture-73"} in headers.headers
+
+      assert Enum.filter(events, &(&1.type == :response_data))
+             |> Enum.map(& &1.body)
+             |> IO.iodata_to_binary() == expected_body
+    end
+  end
 
   defp assert_ids(events, attempts) do
     starts = Enum.filter(events, &(&1.type == :attempt_started))

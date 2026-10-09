@@ -12,8 +12,9 @@ the separate opt-in exact wire trace increment.
 The c9 sections below describe the preserved implementation and its historical
 validation. Their original capture files are absent from this worktree; log
 references in those sections are historical, not fresh executable proof. The
-c10 sections are also historical; the c11 section records this run's actual
-commands and outcomes.
+c10, c11 and c12 sections are also historical. Their capture files are absent
+from this controller-provisioned worktree. The c13 section records this run's
+actual synchronization evidence, independent review and fresh validation.
 
 ## Synchronization correction (c9, historical)
 
@@ -106,8 +107,9 @@ and attempt identities in the final error, history and failure lifecycle records
 The historical report described a failure with zero completed calls instead of
 two, followed by a passing correction. Its rejecting and passing logs are absent
 here, so those reported exit codes are not executable evidence for this run.
-This correction retains all six probes; fresh execution is recorded below. The
-current `.foundry/proof.json` verifies project type analysis directly.
+The preserved source retains all six probes. The c10 run used a direct
+type-analysis proof; the current `.foundry/proof.json` records the independent
+c13 behavioral boundary probe described in the final section.
 
 Legacy streaming now observes and assembles each frame before advancing to the
 next frame. A later observation exception retains already assembled completed
@@ -188,7 +190,7 @@ request bytes independently of response observation. Lifecycle counts and masked
 IDs do not substitute for exact evidence. Deterministic fixture equality verifies the semantic payload;
 it does not establish provider-side idempotency or remote termination.
 
-## Type-analysis prerequisite correction (c10)
+## Type-analysis prerequisite correction (c10, historical)
 
 This correction starts at `3f1bb3f9ed5aecd203b50ce32a07e8eaace6ad0f`.
 The initial worktree was clean. Historical c9 validation described successful
@@ -347,7 +349,7 @@ Its captured output is `proof-validation.log`. Source/configuration changes rema
 in the working tree for Foundry review and finalization.
 
 
-## c11: opt-in per-wire exact evidence
+## c11: opt-in per-wire exact evidence (historical)
 
 This correction starts at `04bee5c46a4728e148c75533710abf0c6935dc35`.
 The initial status was clean. AGENTS.md, locked dependencies, runtime pins,
@@ -390,9 +392,9 @@ and `Mojentic.LLM.Recovery` for event fields and callback return requirements.
 ### Behavioral proof and concrete cases
 
 The preserved c11 increment added the real-boundary streaming capture and
-capture-failure regressions listed below. The current c12 behavioral proof and
-fresh validation artifacts are documented in the final section; historical c11
-counts are not used as evidence of this worktree's current behavior.
+capture-failure regressions listed below. The historical c12 behavioral proof
+is described below; fresh c13 artifacts are recorded in the final section. Historical counts and missing capture files are
+not evidence of this worktree's current behavior.
 
 The following generated test names use the provider's full Elixir module name in
 actual ExUnit output; each matrix includes OpenAI, Ollama and OMLX:
@@ -418,10 +420,11 @@ trace callbacks alone retain raw request/response/credential evidence. Full
 concrete names and byte/identity cases are in [wire-matrix.log](.foundry/logs/wire-matrix.log).
 
 
-## Wire-boundary correction of preserved c11 (c12)
+## Wire-boundary correction of preserved c11 (c12, historical)
 
-HEAD remains `d04f4325d053e39f4ead00afeeb05949fcc6b2f0`. This correction extends
-that exact-tracing increment; it does not replace it. `AGENTS.md`, the source
+The historical c12 run started at `d04f4325d053e39f4ead00afeeb05949fcc6b2f0`
+and was preserved as `c7155ad4ac49734afb68bcef2309c712788f76a8`. It extended
+that exact-tracing increment; it did not replace it. `AGENTS.md`, the source
 requirements, runtime pins, versions and locked dependencies are preserved.
 Fetch was attempted twice and returned **255** because the shared Git
 `FETCH_HEAD` is read-only ([captured result](.foundry/logs/git-sync.log)).
@@ -450,8 +453,9 @@ notification. Local cancellation still does not prove remote termination.
 
 ### Behavioral proof and deterministic assertion coverage
 
-[proof.json](.foundry/proof.json) records
+The historical c12 proof selected
 `dispatched cancellation before headers retains exact request and lifecycle identity`.
+The current [proof.json](.foundry/proof.json) belongs to the independent c13 run.
 The rejecting probe exited **2**: the server received the complete request but
 there was no request trace after cancellation. The corrected probe exited **0**
 with concrete encoded body/header comparisons and actual lifecycle/error IDs.
@@ -546,4 +550,138 @@ privacy defaults and tool/session safety tests remain intact.
 JSON shape and field types, nonzero rejecting/zero corrected exits, byte-complete
 capture logs, all actual gate results, pinned runtime, advisory freshness,
 unchanged protected files/HEAD and a nonempty, whitespace-clean working tree.
-Changes remain uncommitted for Foundry review and finalization.
+That historical correction was preserved in `c7155ad`. Current synchronization
+and controller-owned finalization are described below.
+
+
+## c13: independent review and controller-owned landing
+
+This controller-provisioned validation worktree started clean at preserved
+`c7155ad4ac49734afb68bcef2309c712788f76a8`. Local `origin/main` was already
+`b5ac5932ee07cfb0965ffb3a106490720d55ec4f`. An actual read-only
+`git ls-remote origin refs/heads/main` returned that same commit with exit **0**;
+its complete capture is retained under `.foundry/logs/synchronization/`.
+The local ancestry/content checks are retained under
+`.foundry/logs/local-synchronization/`: the shared ancestor is
+`04bee5c46a4728e148c75533710abf0c6935dc35`, and trunk's only subsequent change
+is `.hone-gates.json`. This run applies exactly trunk's gate configuration,
+retaining `scripts/recovery-mix` and the preserved tracing increment. This is
+content reconciliation, not a claim that HEAD was rebased or landed on main.
+No access to writable shared Git metadata is needed. This task modified no refs.
+Foundry owns the subsequent main landing; this run leaves reviewable edits in
+its provisioned worktree and performs no commit, push, merge, rebase, tag or release.
+AGENTS.md, runtime pins, dependencies, coverage threshold and audit scope remain
+unchanged. Historical FETCH_HEAD denials describe prior runs, not this run's
+synchronization evidence.
+
+At final evidence validation, the controller-managed `origin/main` had advanced
+to `307185cfed3ac3824681092bc4df68cf9df8929b`. The validator correctly rejected
+its initial assumption that this shared remote-tracking ref would remain at
+`b5ac593`; that failed validation capture is retained. A fresh actual read-only
+[remote check](.foundry/logs/synchronization-final/) confirms upstream main matches
+`307185c`. Its sole additional change is `.tool-versions`, selecting the same
+Elixir `1.18.5-otp-27` and Erlang `28.5.0.7` already enforced by the retained
+wrapper and CI. This task does not edit or remove that concurrent trunk change;
+Foundry's landing must preserve it. No additional runtime, source or gate change
+is needed. The initial `b5ac593` observations remain actual start-of-run evidence,
+not stale claims about final trunk state. The final validator records the new
+controller state while continuing to require the preserved task HEAD.
+
+### Proof first and skeptical review
+
+Before expanding tests or documentation or running the full quality suite, the
+real Req/socket/public OpenAI completion boundary exercised cancellation after
+the server received the complete request but before response headers. Temporarily
+using `d04f432`'s WireTrace implementation reproduces the rejecting behavior:
+request capture waits for the blocking HTTP continuation, so cancellation loses
+request evidence (exit **2**, assertion at the request-trace receipt).
+Restoring preserved `c7155ad` captures before waiting for headers and passes the
+same probe (exit **0**). The server-observed encoded body, supplied headers and
+actual logical/attempt identities are compared. This is a source regression
+probe, not a marker toggle or synthetic event/count test. No additional production
+defect was demonstrated; the preserved implementation remains intact.
+[proof.json](.foundry/proof.json) records the actual commands and statuses with
+complete [rejecting](.foundry/logs/rejecting.log) and
+[corrected](.foundry/logs/corrected.log) capture logs.
+
+Review found evidence gaps: the streaming raw-trace matrix did not assert numeric
+response status or supplied request headers, and session tool interruption relied
+on a request count. These assertions now compare concrete server-observed bytes,
+headers and lifecycle identities. Broker and session follow-up interruption runs
+for OpenAI, Ollama and oMLX with tracing both enabled and disabled. It asserts
+unchanged initial history, identical retry bytes including the prior tool result,
+a distinct follow-up logical ID, exact ordered failure identities/statuses,
+partial observed/delivered content and raw byte progress, a single concrete tool
+invocation, and unsuccessful session finalization with original history intact.
+The ordinary/structured trace matrix also checks supplied headers against the
+actual server request. No masked identifiers or count-only results establish
+conformance; socket tests use the public APIs and real ReqClient.
+
+| Normative case | Independently inspected public-boundary assertions |
+| --- | --- |
+| 503 recovery | Ordinary/structured `real Req 503 recovers` and exact trace families; streaming `recovers 503` and exact trace families compare immutable bytes, concrete IDs and ordered lifecycle |
+| 429 and Retry-After | Real Req seconds/date/invalid metadata, ceiling and budget refusal; streaming ceiling refusal retains numeric status and prevents resend |
+| Persistent 504 | Ordinary/structured bounded exact histories and streaming persistent failures; exact trace exhaustion retains final response bytes |
+| Ambiguous timeout/admission | Real Req pending explicit allow/reject and blocked admission cancellation; no second request while pending; immutable authorized resend |
+| Cancellation | Guard-before-dispatch, server-dispatch-before-headers, request/admission/backoff and capture cancellation matrices; exact cancelled attempt evidence and no later request |
+| Partial semantic progress | Public stream reasoning/content/tool-fragment matrices, completed fragmented tools and parser/observation exceptions; exact progress and no replay or execution of incomplete tools |
+| Permanent/protocol failures | Public real Req 400/401, malformed JSON/structured content and unknown transport errors; numeric status and cause classification; unsupported policy is rejected before dispatch |
+| Keepalive only | Raw bytes present with no delivered semantics; a permitted retry preserves the complete request |
+| Compatibility/privacy | Existing default one-attempt and successful legacy APIs; non-recovery Req characterization; safe errors, serialization, lifecycle and broker tracer assertions exclude sentinels |
+| Tool/session safety | Tracing on/off follow-up interruption matrix above, ordinary exact tool-result recovery, capture-failure tool prevention, unchanged session history and bounded tool depth |
+| Capabilities | Existing capability assertions and migration table distinguish supported local cancellation from unsupported/unknown remote facilities; realtime/embeddings remain outside scope |
+
+### Fresh validation
+
+Complete captures and actual exit codes are recorded in
+[gate-results.json](.foundry/gate-results.json). No historical capture is used
+as fresh validation. Each directory below contains the complete captured stdout
+and stderr; the manifest records the actual process status.
+
+| Command | Exit | Complete captures |
+| --- | --- | --- |
+| `scripts/recovery-mix format --check-formatted` | 0 | [format](.foundry/logs/format/) |
+| `scripts/recovery-mix compile --warnings-as-errors` | 0 | [compile](.foundry/logs/compile/) |
+| `MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | [compile-test](.foundry/logs/compile-test/) |
+| `scripts/recovery-mix credo --strict` | 0 | [credo](.foundry/logs/credo/) |
+| `scripts/recovery-mix test --cover` | 0 | [test](.foundry/logs/test/) |
+| `scripts/recovery-mix deps.audit` | 0 | [deps-audit](.foundry/logs/deps-audit/) |
+| `scripts/recovery-mix hex.audit` | 0 | [hex-audit](.foundry/logs/hex-audit/) |
+| `scripts/recovery-mix hex.outdated --all` | 1 | [outdated](.foundry/logs/outdated/) |
+| `scripts/recovery-mix sobelow --config` | 0 | [sobelow](.foundry/logs/sobelow/) |
+| `scripts/recovery-mix docs` | 0 | [docs](.foundry/logs/docs/) |
+| `scripts/recovery-mix dialyzer` | 0 | [dialyzer-dev](.foundry/logs/dialyzer-dev/) |
+| `MIX_ENV=test scripts/recovery-mix dialyzer` | 0 | [dialyzer-test](.foundry/logs/dialyzer-test/) |
+| `scripts/recovery-mix test test/mojentic/llm/recovery_wire_test.exs test/mojentic/llm/stream_recovery_wire_test.exs test/mojentic/http/req_client_test.exs --trace` | 0 | [wire-matrix](.foundry/logs/wire-matrix/) |
+| `scripts/recovery-mix test test/mojentic/llm/stream_recovery_wire_test.exs --only tool_trace_review --trace` | 0 | [tool-review](.foundry/logs/tool-review/) |
+| `scripts/recovery-mix format --check-formatted` | 0 | [final-format](.foundry/logs/final-format/) |
+| `scripts/recovery-mix credo --strict` | 0 | [final-credo](.foundry/logs/final-credo/) |
+
+The final full suite passes **22 doctests and 1,583 tests**, with the unchanged
+**19 integration exclusions**. Coverage is **89.16%**, above the unchanged **80%**
+threshold. The named real-wire/ReqClient matrix passes **658 tests**; the selected
+new broker/session tracing matrix passes all **12 cases**. Final coverage executes
+all those boundary cases with the final header-value and concrete UUID assertions.
+Credo reports no issues. Both development and test Dialyzer report zero errors,
+zero skips and zero unnecessary skips. Compilation passes with warnings as errors
+in both environments; no project warnings were suppressed.
+
+MixAudit reports no vulnerabilities, and Hex audit reports no retired or
+security-advisory packages. MixAudit's automatic database refresh emits a read-only
+FETCH_HEAD denial; independent read-only [freshness verification](.foundry/logs/advisory-freshness/)
+confirms both the clean local database and upstream main are
+`935abf7410a2bbb18e12579dee6e31267c3ed244`. No shared advisory checkout was edited.
+`hex.outdated --all` exits **1** for available upgrades, an informational result,
+not an advisory finding. Dependencies and audit scope are unchanged.
+Sobelow exits zero, retaining this library's existing non-Phoenix/router and
+lockfile-keyword warnings. Documentation builds successfully with the existing
+missing LICENSE and igniter usage-rule link warnings. The guide's tracing contract
+matches the preserved implementation; no runtime/documentation API change was needed.
+
+[Evidence validation](.foundry/logs/evidence-validation-final/) verifies the exact
+behavioral JSON shape, field types, actual rejecting/passing statuses and complete
+logs, every required gate result, both Dialyzer environments, protected source and
+runtime/dependency files, preserved HEAD and the observed controller-updated
+origin/main, exact trunk gate content,
+whitespace cleanliness and the required nonempty working tree. Edits remain
+uncommitted in the controller-provisioned worktree for Foundry's main landing.

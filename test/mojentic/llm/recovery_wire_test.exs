@@ -469,6 +469,12 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
         assert Map.take(started.metadata, [:logical_request_id, :attempt_id, :wire_attempt]) ==
                  request_event.ids
+
+        assert_exact_dispatched_request(
+          request_event,
+          Enum.at(requests, number - 1),
+          started.metadata
+        )
       end
 
       ids = Enum.filter(traces, &(&1.type == :request)) |> Enum.map(& &1.ids)
