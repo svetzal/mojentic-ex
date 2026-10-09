@@ -3,7 +3,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
   import ExUnit.CaptureLog
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, CompletionError, Message}
   alias Mojentic.LLM.Gateways.{OpenAI, Ollama, OMLX}
-  alias Mojentic.TestSupport.ScriptedCompletionServer
+  alias Mojentic.TestSupport.{DecodingEvidence, ScriptedCompletionServer}
   alias Mojentic.Tracer.TracerSystem
 
   @env_keys [
@@ -30,6 +30,108 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     end)
 
     :ok
+  end
+
+  @tag :decoding_proof
+  test "OpenAI complete_object real Req retains invalid structured content and exact lifecycle" do
+    body = Jason.encode!(%{choices: [%{message: %{content: "response-secret"}}]})
+
+    server =
+      start_supervised!(
+        {ScriptedCompletionServer, {self(), [response(200, body), response(200, "{}")]}}
+      )
+
+    assert_receive {:server_port, port}
+    configure(OpenAI, port)
+    owner = self()
+    config = CompletionConfig.new(recovery: [observer: &send(owner, {:decoding_event, &1})])
+
+    logs =
+      capture_log(fn ->
+        assert {:error, %CompletionError{} = error} = invoke(OpenAI, :complete_object, config)
+
+        DecodingEvidence.assert_failure(
+          error,
+          OpenAI,
+          :complete_object,
+          :invalid_structured_content,
+          body,
+          :invalid_json_object,
+          %{DecodingEvidence.empty() | content: true},
+          {"wire-request-73", {:delay_seconds, 11}}
+        )
+      end)
+
+    assert_receive {:wire_request, request}
+    assert_payload(request, OpenAI, :complete_object)
+    assert GenServer.call(server, :requests) == [request]
+    refute_received {:wire_request, _}
+
+    for secret <- [
+          "payload-secret",
+          "response-secret",
+          "credential-secret",
+          "tool-secret",
+          "reasoning-secret"
+        ],
+        do: refute(logs =~ secret)
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object],
+      kind <- [
+        :invalid_outer_json,
+        :invalid_structured_content,
+        :provider_error,
+        :parser_exception
+      ],
+      kind != :invalid_structured_content or operation == :complete_object do
+    @gateway gateway
+    @operation operation
+    @kind kind
+
+    test "#{gateway} #{operation} real Req decoding #{kind} retains exact evidence without resends" do
+      {body, cause, observed} = DecodingEvidence.fixture(@gateway, @operation, @kind)
+
+      server =
+        start_supervised!(
+          {ScriptedCompletionServer, {self(), [response(200, body), response(200, "{}")]}}
+        )
+
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+      owner = self()
+      config = CompletionConfig.new(recovery: [observer: &send(owner, {:decoding_event, &1})])
+
+      logs =
+        capture_log(fn ->
+          assert {:error, error} = invoke(@gateway, @operation, config)
+
+          DecodingEvidence.assert_failure(
+            error,
+            @gateway,
+            @operation,
+            @kind,
+            body,
+            cause,
+            observed,
+            {"wire-request-73", {:delay_seconds, 11}}
+          )
+        end)
+
+      DecodingEvidence.assert_private(logs)
+      assert_receive {:wire_request, request}
+      assert_payload(request, @gateway, @operation)
+      [headers, payload] = String.split(request, "\r\n\r\n", parts: 2)
+      assert String.downcase(headers) =~ "content-type: application/json"
+      assert String.downcase(headers) =~ "content-length: #{byte_size(payload)}"
+
+      if @gateway != Ollama,
+        do: assert(String.downcase(headers) =~ "authorization: bearer credential-secret")
+
+      assert GenServer.call(server, :requests) == [request]
+      refute_received {:wire_request, _}
+    end
   end
 
   for gateway <- [OpenAI, Ollama, OMLX], operation <- [:complete, :complete_object] do

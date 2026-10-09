@@ -5,6 +5,8 @@ defmodule Mojentic.LLM.RecoveryTest do
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, CompletionError, Message}
   alias Mojentic.LLM.Gateways.{OpenAI, Ollama, OMLX}
 
+  alias Mojentic.TestSupport.DecodingEvidence
+
   setup :verify_on_exit!
 
   test "public OpenAI completion preserves exact failure metadata without leaking body" do
@@ -110,29 +112,107 @@ defmodule Mojentic.LLM.RecoveryTest do
       end
     end
 
-    test "#{gateway} #{operation} rejects malformed responses and retains parser causes" do
-      for body <- [
-            "response-secret",
-            ~s({"choices":[{"message":{"content":"response-secret","reasoning_content":"reasoning-secret","tool_calls":[]}}],"message":{"content":"response-secret","thinking":"reasoning-secret"}})
-          ] do
-        expect_request(@gateway, @operation, {:ok, %{status_code: 200, body: body, headers: []}})
-        result = invoke(@gateway, @operation, CompletionConfig.new(recovery: []))
+    for kind <- [
+          :invalid_outer_json,
+          :invalid_structured_content,
+          :provider_error,
+          :parser_exception
+        ],
+        kind != :invalid_structured_content or operation == :complete_object do
+      @kind kind
+      test "#{gateway} #{operation} decoding #{@kind} preserves exact cause metadata and ordered identities" do
+        {body, cause, observed} = DecodingEvidence.fixture(@gateway, @operation, @kind)
+        response = {:ok, %{status_code: 200, body: body, headers: []}}
+        owner = self()
+        config = CompletionConfig.new(recovery: [observer: &send(owner, {:decoding_event, &1})])
+        expect_request(@gateway, @operation, response)
 
-        if body == "response-secret" or @operation == :complete_object do
-          assert {:error, error} = result
-          assert error.category == :protocol
-          assert error.phase == :decoding
-          assert error.acceptance == :yes
-          refute error.retry_eligible
-          assert error.progress.delivered == empty_semantic()
-          assert error.progress.observed.content == (body != "response-secret")
-          assert error.progress.observed.reasoning == (body != "response-secret")
-          assert CompletionError.cause(error) in [:invalid_response, :invalid_json_object]
-          assert_private(Jason.encode!(error))
-        else
-          assert {:ok, response} = result
-          assert response.content == "response-secret"
-        end
+        log =
+          capture_log(fn ->
+            assert {:error, error} = invoke(@gateway, @operation, config)
+
+            DecodingEvidence.assert_failure(
+              error,
+              @gateway,
+              @operation,
+              @kind,
+              body,
+              cause,
+              observed
+            )
+          end)
+
+        DecodingEvidence.assert_private(log)
+
+        # The same input keeps the legacy parser return or exception unchanged.
+        expect_request(@gateway, @operation, response, false)
+        assert_legacy_failure(@gateway, @operation, cause)
+      end
+    end
+
+    if operation == :complete do
+      test "#{gateway} complete accepts invalid structured content as unchanged ordinary text" do
+        {body, :success, observed} =
+          DecodingEvidence.fixture(@gateway, :complete, :invalid_structured_content)
+
+        response = {:ok, %{status_code: 200, body: body, headers: []}}
+        expect_request(@gateway, :complete, response, false)
+        assert {:ok, legacy} = invoke(@gateway, :complete, CompletionConfig.new())
+        expect_request(@gateway, :complete, response)
+        owner = self()
+        config = CompletionConfig.new(recovery: [observer: &send(owner, {:decoding_event, &1})])
+
+        log =
+          capture_log(fn ->
+            assert {:ok, ^legacy} = invoke(@gateway, :complete, config)
+            assert legacy.content == "response-secret"
+            assert legacy.object == nil
+            assert legacy.tool_calls == []
+            assert legacy.thinking == if(@gateway == OpenAI, do: nil, else: "reasoning-secret")
+            empty = DecodingEvidence.empty()
+            assert_receive {:decoding_event, started}
+            assert started.type == :attempt_started
+            assert UUID.info!(started.metadata.logical_request_id)[:version] == 4
+            assert UUID.info!(started.metadata.attempt_id)[:version] == 4
+            refute started.metadata.logical_request_id == started.metadata.attempt_id
+
+            assert started.metadata == %{
+                     logical_request_id: started.metadata.logical_request_id,
+                     attempt_id: started.metadata.attempt_id,
+                     wire_attempt: 1,
+                     phase: :unknown,
+                     progress: %{
+                       headers_received: false,
+                       raw_bytes: 0,
+                       observed: empty,
+                       delivered: empty
+                     }
+                   }
+
+            delivered = %{observed | reasoning: @gateway != OpenAI}
+            assert_receive {:decoding_event, completed}
+
+            assert completed == %{
+                     type: :attempt_succeeded,
+                     metadata: %{
+                       logical_request_id: started.metadata.logical_request_id,
+                       attempt_id: started.metadata.attempt_id,
+                       wire_attempt: 1,
+                       phase: :decoding,
+                       progress: %{
+                         headers_received: true,
+                         raw_bytes: byte_size(body),
+                         observed: observed,
+                         delivered: delivered
+                       }
+                     }
+                   }
+
+            refute_received {:decoding_event, _}
+            DecodingEvidence.assert_private(inspect([started, completed]))
+          end)
+
+        DecodingEvidence.assert_private(log)
       end
     end
 
@@ -245,43 +325,6 @@ defmodule Mojentic.LLM.RecoveryTest do
 
       assert invoke(@gateway, @operation, CompletionConfig.new()) ==
                invoke(@gateway, @operation, CompletionConfig.new(recovery: []))
-    end
-
-    test "#{gateway} #{operation} provider response and parser exceptions stay private" do
-      provider_body = ~s({"error":{"code":"bad_request","message":"response-secret"}})
-
-      expect_request(
-        @gateway,
-        @operation,
-        {:ok, %{status_code: 200, body: provider_body, headers: []}}
-      )
-
-      assert {:error, error} = invoke(@gateway, @operation, CompletionConfig.new(recovery: []))
-      assert error.category == :provider_response
-      assert error.provider_code == "bad_request"
-      refute error.retry_eligible
-
-      body =
-        if @gateway == Ollama,
-          do: ~s({"message":"response-secret"}),
-          else: ~s({"choices":[{"message":"response-secret"}]})
-
-      expect_request(@gateway, @operation, {:ok, %{status_code: 200, body: body, headers: []}})
-
-      log =
-        capture_log(fn ->
-          assert {:error, error} =
-                   invoke(@gateway, @operation, CompletionConfig.new(recovery: []))
-
-          assert error.category == :protocol
-          refute error.retry_eligible
-          assert_private(inspect(error))
-          assert_private(Jason.encode!(error))
-          cause = CompletionError.cause(error)
-          assert is_exception(cause) or cause == :invalid_response
-        end)
-
-      assert_private(log)
     end
 
     test "#{gateway} #{operation} cancellation and unknown transport causes are ineligible" do
@@ -647,6 +690,19 @@ defmodule Mojentic.LLM.RecoveryTest do
 
   defp invoke(gateway, :complete_object, config),
     do: gateway.complete_object("gpt-4o", @messages, @schema, config)
+
+  defp assert_legacy_failure(gateway, operation, %{__exception__: true} = cause) do
+    raised =
+      assert_raise cause.__struct__, fn ->
+        invoke(gateway, operation, CompletionConfig.new())
+      end
+
+    assert raised === cause
+  end
+
+  defp assert_legacy_failure(gateway, operation, cause) do
+    assert invoke(gateway, operation, CompletionConfig.new()) === {:error, cause}
+  end
 
   defp provider(OpenAI), do: :openai
   defp provider(Ollama), do: :ollama
