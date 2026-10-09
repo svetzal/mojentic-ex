@@ -2,32 +2,32 @@
   "gates": [
     {
       "name": "format",
-      "command": "mix format --check-formatted",
+      "command": "scripts/recovery-mix format --check-formatted",
       "required": true
     },
     {
       "name": "compile",
-      "command": "mix compile --warnings-as-errors",
+      "command": "scripts/recovery-mix compile --warnings-as-errors",
       "required": true
     },
     {
       "name": "credo",
-      "command": "mix credo --strict",
+      "command": "scripts/recovery-mix credo --strict",
       "required": true
     },
     {
       "name": "test",
-      "command": "mix test --cover",
+      "command": "scripts/recovery-mix test --cover",
       "required": true
     },
     {
       "name": "deps-audit",
-      "command": "mix deps.audit",
+      "command": "scripts/recovery-mix deps.audit",
       "required": false
     },
     {
       "name": "sobelow",
-      "command": "mix sobelow --config",
+      "command": "scripts/recovery-mix sobelow --config",
       "required": false
     }
   ]
