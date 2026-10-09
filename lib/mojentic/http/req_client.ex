@@ -27,7 +27,7 @@ defmodule Mojentic.HTTP.ReqClient do
 
   @impl true
   def post(url, body, headers, opts) do
-    if Keyword.get(opts, :wire_trace) do
+    if Keyword.get(opts, :wire_trace) || Keyword.get(opts, :recovery_metadata, false) do
       traced_post(url, body, headers, opts)
     else
       ordinary_post(url, body, headers, opts)
@@ -52,6 +52,9 @@ defmodule Mojentic.HTTP.ReqClient do
 
       {:error, {:http_response, status, headers, body}}, _ ->
         {:ok, %{status_code: status, headers: headers, body: body}}
+
+      {:error, {:http_response, status, headers, body, cause}}, _ ->
+        {:error, {:http_response, status, headers, body, cause}}
 
       {:error, %Finch.TransportError{reason: reason}}, _ ->
         {:error, %Req.TransportError{reason: reason}}
@@ -103,7 +106,8 @@ defmodule Mojentic.HTTP.ReqClient do
             Keyword.get(opts, :stream_timeout, :absolute),
             Keyword.get(opts, :stream_metadata, false),
             Keyword.get(opts, :cancel_ref),
-            not is_nil(Keyword.get(opts, :wire_trace))
+            not is_nil(Keyword.get(opts, :wire_trace)) or
+              Keyword.get(opts, :recovery_metadata, false)
           )
         end,
         &next_stream/1,
@@ -170,8 +174,11 @@ defmodule Mojentic.HTTP.ReqClient do
         {[{:error, {:http_response, response.status, flatten_headers(response.headers), body}}],
          :done}
 
-      {events, :done} ->
-        {events, :done}
+      {[{:error, cause}], :done} ->
+        {[
+           {:error,
+            {:http_response, response.status, flatten_headers(response.headers), body, cause}}
+         ], :done}
 
       {events, _} ->
         chunks = for {:data, chunk} <- events, do: chunk

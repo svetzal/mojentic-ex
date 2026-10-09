@@ -68,6 +68,49 @@ defmodule Mojentic.HTTP.ReqClientTest do
     assert_receive {:cancel_result, {:error, :closed}}, 2000
   end
 
+  for metadata <- [false, true] do
+    @metadata metadata
+    test "legacy non-2xx stream metadata #{@metadata} retains immediate status-only contract" do
+      server =
+        start_supervised!(
+          {Mojentic.TestSupport.ScriptedCompletionServer,
+           {self(),
+            [
+              {:stream_hold,
+               "HTTP/1.1 401 Unauthorized\r\nContent-Length: 999\r\nX-Request-ID: frozen-17\r\n\r\npartial"}
+            ]}}
+        )
+
+      assert_receive {:server_port, port}
+
+      assert {:ok, stream} =
+               ReqClient.post_stream("http://127.0.0.1:#{port}/x", "{}", [],
+                 stream_metadata: @metadata
+               )
+
+      if @metadata do
+        assert [{:error, {:http_response, 401, headers}}] = Enum.to_list(stream)
+        assert {"x-request-id", "frozen-17"} in headers
+      else
+        assert [{:error, {:http_error, 401}}] = Enum.to_list(stream)
+      end
+
+      assert length(GenServer.call(server, :requests)) == 1
+    end
+  end
+
+  test "unrelated post with retries disabled retains transport-only interrupted response" do
+    start_supervised!(
+      {Mojentic.TestSupport.ScriptedCompletionServer,
+       {self(), ["HTTP/1.1 401 Unauthorized\r\nContent-Length: 999\r\n\r\npartial"]}}
+    )
+
+    assert_receive {:server_port, port}
+
+    assert {:error, %Req.TransportError{reason: :closed}} =
+             ReqClient.post("http://127.0.0.1:#{port}/x", "{}", [], retry: false)
+  end
+
   defp serve_json(json) do
     {:ok, listener} =
       :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true, ip: {127, 0, 0, 1}])

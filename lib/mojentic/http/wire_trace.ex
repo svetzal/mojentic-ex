@@ -26,7 +26,8 @@ defmodule Mojentic.HTTP.WireTrace do
     Stream.resource(
       fn ->
         continuation = &Enumerable.reduce(stream, &1, fn item, _ -> {:suspend, item} end)
-        %{continuation: continuation, started: false, observed: false, done: false}
+        capture = notify(trace, request)
+        %{continuation: continuation, capture: capture, observed: false, done: false}
       end,
       &next(&1, trace, request),
       fn state ->
@@ -48,18 +49,17 @@ defmodule Mojentic.HTTP.WireTrace do
 
   defp next(%{done: true} = state, _trace, _request), do: {:halt, state}
 
-  defp next(state, trace, request) do
+  defp next(state, trace, _request) do
     case state.continuation.({:cont, nil}) do
       {:suspended, item, continuation} ->
         state = %{state | continuation: continuation}
 
-        with :ok <- start(trace, request, state.started),
+        with :ok <- state.capture,
              :ok <- notify(trace, event(item, state.observed)) do
           {[item],
            %{
              state
-             | started: true,
-               observed: state.observed or observed?(item),
+             | observed: state.observed or observed?(item),
                done: match?({:error, _}, item)
            }}
         else
@@ -78,8 +78,6 @@ defmodule Mojentic.HTTP.WireTrace do
     end
   end
 
-  defp start(_trace, _request, true), do: :ok
-  defp start(trace, request, false), do: notify(trace, request)
   defp observed?({:headers, _, _}), do: true
   defp observed?({:data, _}), do: true
   defp observed?({:http_data, _}), do: true

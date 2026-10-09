@@ -23,7 +23,14 @@ defmodule Mojentic.LLM.StreamRecovery do
     ref = make_ref()
     cancel = Keyword.get(recovery, :cancel_ref, make_ref())
     recovery = Keyword.put(recovery, :cancel_ref, cancel)
-    opts = Keyword.merge(opts, stream_timeout: :idle, stream_metadata: true, cancel_ref: cancel)
+
+    opts =
+      Keyword.merge(opts,
+        stream_timeout: :idle,
+        stream_metadata: true,
+        recovery_metadata: true,
+        cancel_ref: cancel
+      )
 
     {pid, monitor} =
       spawn_monitor(fn ->
@@ -539,6 +546,9 @@ defmodule Mojentic.LLM.StreamRecovery do
   defp failure(reason, state) do
     response =
       case reason do
+        {:http_response, status, headers, body, _cause} ->
+          {:ok, %{status_code: status, headers: headers, body: body}}
+
         {:http_response, status, headers, body} ->
           {:ok, %{status_code: status, headers: headers, body: body}}
 
@@ -556,7 +566,13 @@ defmodule Mojentic.LLM.StreamRecovery do
       end
 
     error =
-      CompletionRequest.build(response, reason, state.provider, operation(state.mode), state.ids)
+      CompletionRequest.build(
+        response,
+        failure_cause(reason),
+        state.provider,
+        operation(state.mode),
+        state.ids
+      )
 
     error = response_metadata(error, reason, state)
 
@@ -595,8 +611,12 @@ defmodule Mojentic.LLM.StreamRecovery do
     {:error, %{error | history: [Map.delete(CompletionError.safe_metadata(error), :history)]}}
   end
 
+  defp failure_cause({:http_response, _status, _headers, _body, cause}), do: cause
+  defp failure_cause(reason), do: reason
+
   defp http_response?({:http_response, _, _}), do: true
   defp http_response?({:http_response, _, _, _}), do: true
+  defp http_response?({:http_response, _, _, _, _}), do: true
   defp http_response?(_), do: false
 
   defp capture_reason(:capture_failed, _interrupted, _reason), do: :capture_failed
@@ -614,6 +634,7 @@ defmodule Mojentic.LLM.StreamRecovery do
   defp response_metadata(error, reason, %{status: status} = state) when not is_nil(status) do
     body =
       case reason do
+        {:http_response, _, _, body, _} -> body
         {:http_response, _, _, body} -> body
         {:provider_error, provider_error} -> Jason.encode!(%{"error" => provider_error})
         _ -> ""

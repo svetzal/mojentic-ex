@@ -251,10 +251,15 @@ terminal markers can stop capture before HTTP EOF (`outcome: :consumer_halted`).
 `:complete` means HTTP EOF, not successful provider decoding; `:failed` means the
 observed HTTP/transport failure. A headers-only response with no data is available
 empty-body evidence; failure before headers is `evidence: :unavailable`. Request
-notification happens after Req's first response observation or transport failure;
-cancellation before that can leave request evidence unavailable. Killed capture
+notification happens at authorized dispatch before waiting for response headers;
+cancellation after the server receives the request retains that independent request
+evidence even when no response is available. Undispatched cancellation has zero
+attempts and no trace. Killed capture
 workers do not promise a final end callback. Missing bytes are never reconstructed
 or obtained by issuing another request. There is no trace truncation or byte-size
 limit; caller storage must handle the observed stream. Non-2xx bodies are buffered
-for error metadata. Custom HTTP clients must implement `wire_trace` themselves;
+for error metadata. Interrupted non-2xx reads retain the received status, headers
+and raw-byte progress with tracing enabled or disabled. Retry policy uses that
+HTTP status: a truncated 401 cannot become a retryable transport failure.
+Custom HTTP clients must implement `wire_trace` themselves;
 these tests establish the default Req boundary contract.

@@ -51,7 +51,12 @@ defmodule Mojentic.LLM.CompletionRequest do
              url,
              body,
              headers,
-             Keyword.merge(opts, retry: false, redirect: false, wire_trace: trace(recovery, ids))
+             Keyword.merge(opts,
+               retry: false,
+               redirect: false,
+               recovery_metadata: true,
+               wire_trace: trace(recovery, ids)
+             )
            )
          end}
       )
@@ -106,6 +111,18 @@ defmodule Mojentic.LLM.CompletionRequest do
     end
   end
 
+  defp finish(
+         {:error, {:http_response, status, headers, body, cause}},
+         _parse,
+         _opts,
+         provider,
+         operation,
+         ids
+       ) do
+    response = {:ok, %{status_code: status, headers: headers, body: body, phase: :streaming}}
+    {:error, build(response, cause, provider, operation, ids)}
+  end
+
   defp finish({:error, cause} = response, _parse, _opts, provider, operation, ids) do
     {:error, build(response, cause, provider, operation, ids)}
   end
@@ -132,6 +149,12 @@ defmodule Mojentic.LLM.CompletionRequest do
     {category, status, phase, acceptance, reason, eligible} = classify(response, cause)
     {headers, body} = evidence(response)
 
+    status =
+      case response do
+        {:ok, %{status_code: received}} -> received
+        _ -> status
+      end
+
     error =
       struct!(
         CompletionError,
@@ -155,7 +178,10 @@ defmodule Mojentic.LLM.CompletionRequest do
     %{error | history: [CompletionError.safe_metadata(error) |> Map.delete(:history)]}
   end
 
-  defp classify({:error, :capture_failed}, _original),
+  defp classify(_response, :cancelled),
+    do: {:cancellation, nil, :unknown, :unknown, :cancelled, false}
+
+  defp classify(_response, :capture_failed),
     do: {:protocol, nil, :unknown, :unknown, :capture_failed, false}
 
   defp classify(_response, :unsupported_options),
@@ -171,9 +197,9 @@ defmodule Mojentic.LLM.CompletionRequest do
     end
   end
 
-  defp classify({:ok, %{status_code: status}}, _cause),
+  defp classify({:ok, %{status_code: status} = response}, _cause),
     do:
-      {:http, status, :awaiting_headers, :unknown, :http_status,
+      {:http, status, Map.get(response, :phase, :awaiting_headers), :unknown, :http_status,
        status in [429, 500, 502, 503, 504]}
 
   defp classify({:error, cause}, _original) when cause in [:timeout, :etimedout],
