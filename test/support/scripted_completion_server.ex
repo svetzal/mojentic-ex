@@ -11,7 +11,7 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
 
     {:ok, {_, port}} = :inet.sockname(listener)
     send(owner, {:server_port, port})
-    {:ok, %{owner: owner, listener: listener, responses: responses, requests: []}, 0}
+    {:ok, %{owner: owner, listener: listener, responses: responses, requests: [], sockets: []}, 0}
   end
 
   @impl true
@@ -20,10 +20,26 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
       {:ok, socket} ->
         request = read_request(socket, "")
         send(state.owner, {:wire_request, request})
-        [response | rest] = state.responses
-        :ok = :gen_tcp.send(socket, response)
-        :gen_tcp.close(socket)
-        {:noreply, %{state | requests: state.requests ++ [request], responses: rest}, 0}
+
+        {response, rest} =
+          case state.responses do
+            [response | rest] -> {response, rest}
+            [] -> {"", []}
+          end
+
+        sockets =
+          case response do
+            :hold ->
+              [socket | state.sockets]
+
+            response ->
+              :ok = :gen_tcp.send(socket, response)
+              :gen_tcp.close(socket)
+              state.sockets
+          end
+
+        {:noreply,
+         %{state | requests: state.requests ++ [request], responses: rest, sockets: sockets}, 0}
 
       {:error, :timeout} ->
         {:noreply, state, 0}
@@ -34,7 +50,10 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
   def handle_call(:requests, _from, state), do: {:reply, state.requests, state, 0}
 
   @impl true
-  def terminate(_reason, state), do: :gen_tcp.close(state.listener)
+  def terminate(_reason, state) do
+    Enum.each(state.sockets, &:gen_tcp.close/1)
+    :gen_tcp.close(state.listener)
+  end
 
   defp read_request(socket, partial) do
     {:ok, chunk} = :gen_tcp.recv(socket, 0, 2000)

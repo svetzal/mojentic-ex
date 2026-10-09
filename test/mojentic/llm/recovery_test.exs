@@ -48,7 +48,7 @@ defmodule Mojentic.LLM.RecoveryTest do
     @operation operation
 
     test "#{gateway} #{operation} HTTP status matrix preserves exact metadata and safe lifecycle" do
-      for status <- [429, 503, 504, 400, 401] do
+      for status <- [429, 500, 502, 503, 504, 400, 401] do
         body =
           ~s({"error":{"code":"capacity_exceeded","message":"response-secret tool-secret credential-secret"}})
 
@@ -77,7 +77,7 @@ defmodule Mojentic.LLM.RecoveryTest do
             assert error.retry_after == {:delay_seconds, 9}
             assert error.phase == :awaiting_headers
             assert error.acceptance == :unknown
-            assert error.retry_eligible == status in [429, 503, 504]
+            assert error.retry_eligible == status in [429, 500, 502, 503, 504]
             assert error.reason == :http_status
             assert error.resend_permission == :not_granted
             assert error.wire_attempt == 1
@@ -136,10 +136,14 @@ defmodule Mojentic.LLM.RecoveryTest do
       end
     end
 
-    test "#{gateway} #{operation} preserves original transport causes with evidence based phases" do
+    test "#{gateway} #{operation} HTTP boundary preserves transport causes including synthetic unreachable and reset reasons" do
       for {cause, category, phase, acceptance, eligible} <- [
             {%Mint.TransportError{reason: :econnrefused}, :transport, :connecting, :no, true},
             {%Mint.TransportError{reason: :timeout}, :client_timeout, :unknown, :unknown, false},
+            {%Req.TransportError{reason: :econnreset}, :transport, :unknown, :unknown, true},
+            {%Req.TransportError{reason: :enetunreach}, :transport, :unknown, :unknown, true},
+            {%Req.TransportError{reason: :ehostunreach}, :transport, :unknown, :unknown, true},
+            {%Req.TransportError{reason: :other}, :transport, :unknown, :unknown, false},
             {{:closed, "credential-secret payload-secret"}, :transport, :unknown, :unknown, true}
           ] do
         expect_request(@gateway, @operation, {:error, cause})
@@ -148,6 +152,17 @@ defmodule Mojentic.LLM.RecoveryTest do
         assert error.phase == phase
         assert error.acceptance == acceptance
         assert error.retry_eligible == eligible
+
+        expected_reason =
+          case cause do
+            %{reason: :econnrefused} -> :connection_refused
+            %{reason: :timeout} -> :timeout
+            %{reason: :other} -> :unclassified_transport
+            _ -> :transport_failure
+          end
+
+        assert error.reason == expected_reason
+        assert error.history == [Map.delete(CompletionError.safe_metadata(error), :history)]
         assert error.http_status == nil
         assert error.retry_after == :absent
         assert error.progress.raw_bytes == 0
@@ -157,6 +172,16 @@ defmodule Mojentic.LLM.RecoveryTest do
         assert_private(Mojentic.Error.format_error(error))
         assert_private(Jason.encode!(error))
       end
+    end
+
+    test "#{gateway} #{operation} Req transport boundary preserves exact legacy wrapper" do
+      cause = %Req.TransportError{reason: :econnrefused}
+      expect_request(@gateway, @operation, {:error, cause}, false)
+
+      capture_log(fn ->
+        assert {:error, {:request_failed, ^cause}} =
+                 invoke(@gateway, @operation, CompletionConfig.new())
+      end)
     end
 
     test "#{gateway} #{operation} validates absent invalid and date metadata" do
@@ -428,7 +453,35 @@ defmodule Mojentic.LLM.RecoveryTest do
       expect(Mojentic.HTTPMock, :post, fn _url, request, _headers, opts ->
         messages = Jason.decode!(request)["messages"]
         assert Enum.map(messages, & &1["role"]) == ["user", "assistant", "tool"]
-        assert List.last(messages)["content"] =~ "tool-result-secret"
+        assert Jason.decode!(List.last(messages)["content"]) == "tool-result-secret"
+        assert hd(messages) == %{"role" => "user", "content" => "payload-secret"}
+        [_, assistant, result] = messages
+
+        expected_call =
+          if @gateway == Ollama do
+            %{
+              "type" => "function",
+              "function" => %{"name" => "count", "arguments" => %{"value" => "tool-secret"}}
+            }
+          else
+            %{
+              "id" => "call-17",
+              "type" => "function",
+              "function" => %{"name" => "count", "arguments" => ~s({"value":"tool-secret"})}
+            }
+          end
+
+        expected_assistant = %{"role" => "assistant", "tool_calls" => [expected_call]}
+        expected_result = %{"role" => "tool", "content" => Jason.encode!("tool-result-secret")}
+
+        if @gateway == Ollama do
+          assert assistant == Map.put(expected_assistant, "content", "")
+          assert result == Map.put(expected_result, "tool_calls", [expected_call])
+        else
+          assert assistant == expected_assistant
+          assert result == Map.put(expected_result, "tool_call_id", "call-17")
+        end
+
         assert opts[:retry] == false
         {:ok, %{status_code: 503, body: "response-secret", headers: []}}
       end)

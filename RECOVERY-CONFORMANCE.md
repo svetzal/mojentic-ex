@@ -47,7 +47,7 @@ progress, eligibility/reason, resend permission, logical/attempt UUIDs, one-base
 wire count, and one-entry failure history. Retry eligibility describes the error;
 `resend_permission: :not_granted` means no resend is authorized or performed.
 Unrecognized transport causes are ineligible. Connection refusal evidenced by
-Mint identifies `connecting` and acceptance `no`; ambiguous failures retain
+Req identifies `connecting` and acceptance `no`; ambiguous failures retain
 `unknown`. A received HTTP failure does not establish termination of inference.
 A malformed 200 response is decoding failure, with no delivered semantic output.
 
@@ -97,9 +97,9 @@ values, not masked aliases.
 
 | Case | Assertion-bearing test suffix | Public entrypoints |
 | --- | --- | --- |
-| 429/503/504, permanent 400/401 | `HTTP status matrix preserves exact metadata and safe lifecycle` | All adapters' `complete/4`, `complete_object/4` |
+| 429/500/502/503/504, permanent 400/401 | `HTTP status matrix preserves exact metadata and safe lifecycle` | All adapters' `complete/4`, `complete_object/4` |
 | Invalid JSON, structured invalid content, observed versus delivered reasoning/content | `rejects malformed responses and retains parser causes` | All six gateway paths |
-| Connection refusal, ambiguous closed connection, timeout | `preserves original transport causes with evidence based phases` | All six gateway paths |
+| Connection refusal, ambiguous closed connection, timeout | `HTTP boundary preserves transport causes including synthetic unreachable and reset reasons` | All six gateway paths |
 | Seconds/date/invalid/absent/duplicate Retry-After; valid/invalid request ID and code | `validates absent invalid and date metadata` | All six gateway paths |
 | Unsupported options, no dispatch | `unsupported recovery options dispatch no HTTP request` | All six gateway paths |
 | Equal successful responses and exact unchanged payloads | `opt in success matches legacy successful response and payload` | All six gateway paths |
@@ -121,12 +121,12 @@ an accidental hidden resend:
 
 | Test suffix | Evidence |
 | --- | --- |
-| `Req sees one exact request and never retries a 503` (all six paths) | 503 stays a failure; exact HTTP route, credential header, message/model JSON, raw response bytes, request ID, Retry-After and received requests |
+| `Req sees one exact request and never retries HTTP STATUS` (all six paths, seven statuses) | 503 stays a failure; exact HTTP route, credential header, message/model JSON, raw response bytes, request ID, Retry-After and received requests |
 | `broker and session tracing omit payload and response secrets on completion failures` | Actual broker/session Req requests with a real tracer; sentinel payload/body absent from recorded events |
 
-The initial public OpenAI probe failed on missing `retry: false` and subsequently
-passed after the implementation. `.foundry/proof.json` records actual exit codes
-and capture logs; those logs also point to Foundry's full stdout/stderr artifacts.
+The preserved increment's initial probe established disabled Req retries. This
+correction replaces the proof artifact with a real production closure probe,
+described below; its failure tests classification rather than a marker toggle.
 
 ## Capability and remaining contract cases
 
@@ -144,44 +144,94 @@ immutable multi-attempt payload checks, retry identities and histories beyond
 one attempt, explicit wire trace observer APIs, and cross-port parity. Embeddings
 and realtime voice are separate APIs. No unverified parity is claimed.
 
-## Validation
+## Production boundary correction (2026-10-09)
 
-Final focused suite: **80 tests, zero failures**. Full suite: **22 doctests,
-918 tests, zero failures**, with 19 existing integration exclusions. Coverage is
-**88.36%**, above the unchanged **80%** threshold. No exclusions or thresholds
-were added or lowered. The focused and full results are in
-`.foundry/logs/recovery-tests.log`, `test.log`, and `coverage.log`.
+`CompletionRequest` now recognizes the `Req.TransportError` returned unchanged
+by production `ReqClient`. The original Mint, atom, and tuple boundary forms
+remain compatible. Only opt-in classification changed; legacy Req defaults and
+adapter parsers are preserved.
 
-| Command | Result | Evidence under `.foundry/logs/` |
+The proof-first closure probe read the entire HTTP request before closing the
+socket. The original classifier rejected the expected stable reason and
+eligibility (exit 2); the corrected classifier passed (exit 0).
+`.foundry/proof.json` records those commands and logs. Closure and receive timeout
+prove neither termination nor nonacceptance: phase and acceptance remain unknown,
+and resend permission stays `not_granted`. Timeout is ineligible. Refusal alone
+establishes connecting/nonacceptance. No transport error exposes payload or
+credentials through normal error serialization or observer/history metadata.
+
+Fresh deterministic tests in `test/mojentic/llm/recovery_wire_test.exs`:
+
+| Exact test suffix (prefixed by adapter and operation) | Public paths and evidence |
+| --- | --- |
+| `Req closure retains ambiguous acceptance and exact cause` | All six `complete/4` and `complete_object/4` paths; real Req `:closed`, full semantic JSON, recorded request, exact progress/history, correlated event/error UUIDs |
+| `Req receive timeout preserves uncertainty without resend` | All six paths; server retains an accepted socket without responding; real Req `:timeout`, complete recorded payload and unchanged uncertainty |
+| `Req connection refusal proves nonacceptance` | All six paths; bound non-listening local port, real Req `:econnrefused`, exact cause and metadata |
+| `Req sees one exact request and never retries HTTP STATUS` | All six paths for STATUS 429, 500, 502, 503, 504, 400, 401; queued success exposes hidden resends; actual route, request JSON and raw response |
+| `real Req closure propagates through broker APIs and session with caller history intact` (adapter prefix only) | All three adapters through `Broker.generate/4`, `generate_response/4`, `generate_object/4`, `ChatSession.send/3`; exact request list and semantic payloads, original cause and correlated history/events, unchanged caller history |
+
+`RecoveryTest`'s `HTTP boundary preserves transport causes including synthetic
+unreachable and reset reasons` explicitly supplements the real fixtures with
+Mox HTTP-behaviour tests for Req `econnreset`, `enetunreach`, `ehostunreach`, and
+an unknown reason. These are synthetic boundary evidence, not production wire
+proof. Existing Mint causes are compatibility evidence only. All six
+`Req transport boundary preserves exact legacy wrapper` tests verify the exact
+retained Req cause under the legacy `request_failed` wrapper. The HTTP metadata
+matrix now includes 500 and 502. Existing malformed/provider/unsupported-options,
+legacy success and adapter parsing tests remain in place. Tool safety tests assert
+exact assistant call IDs/arguments and serialized existing tool results; execution
+occurs once, and the existing bounded-depth test stays unchanged.
+
+CI already consistently pins Elixir **1.18.5** and OTP **28.5.0.7** across all
+setup steps. The installed toolchain matches those versions; supported version
+lines, package/dependency versions, thresholds, and exclusions were not changed.
+Dialyxir is absent; adding it or changing CI for a nonexistent PLT would exceed
+this correction's dependency freeze. No precommit alias is configured.
+
+The clean initial HEAD was `380dc6e`, exactly the preserved c1 ref. Git fetch was
+attempted before coding and rejected by the read-only shared Git directory.
+Read-only `git ls-remote origin refs/heads/main` returned `59dc123`, matching local
+origin/main and the merge base with HEAD. No divergent remote changes were found.
+No refs were changed; Foundry owns finalization. The coordinator's release
+instructions and all other existing edits remain preserved; no release was made.
+
+## Fresh validation
+
+Focused suite: **159 tests, zero failures**. Full suite: **22 doctests,
+981 tests, zero failures**, with the existing 19 integration exclusions.
+Coverage: **88.37%**, above the unchanged **80%** threshold. No exclusions or
+thresholds were added or lowered.
+
+| Command | Result | Log in `.foundry/logs/` |
 | --- | --- | --- |
 | `mix format --check-formatted` | Exit 0 | `format.log` |
 | `mix compile --warnings-as-errors` | Exit 0 | `compile.log` |
 | `MIX_ENV=test mix compile --warnings-as-errors` | Exit 0 | `compile-test.log` |
-| `mix credo --strict` | Exit 0, no issues | `credo.log` |
+| `mix credo --strict` | Exit 0, zero issues | `credo.log` |
 | `mix test` | Exit 0 | `test.log` |
-| `mix test --cover` | Exit 0, 88.36% | `coverage.log` |
-| `mix deps.audit` | Exit 0, no vulnerabilities | `deps-audit.log` |
+| `mix test --cover` | Exit 0, 88.37% | `coverage.log` |
+| Focused recovery/config tests | Exit 0 | `recovery-tests.log` |
+| `mix deps.audit` | Exit 0, no vulnerabilities in checked database | `deps-audit.log` |
 | `mix hex.audit` | Exit 0, no retired/security advisory packages | `hex-audit.log` |
-| `mix sobelow --config` | Exit 0, no findings with the existing configuration | `sobelow.log` |
+| `mix sobelow --config` | Exit 0, no findings under existing configuration | `sobelow.log` |
 | `mix docs` | Exit 0 | `docs.log` |
-| `mix hex.outdated --all` | Exit 1, outdated packages; visibility only | `hex-outdated.log` |
-| `mix dialyzer` | Unavailable: task not found, exit 1 | `dialyzer.log` |
+| `mix hex.outdated --all` | Exit 1, outdated packages, informational | `hex-outdated.log` |
+| `mix dialyzer` | Exit 1, task unavailable | `dialyzer.log` |
 
-Commands ran through `foundry capture` with `/tmp/mojentic-mix`, a wrapper
-selecting the installed Elixir 1.18.5 / OTP 28.5.0.7 toolchain and writable
-`HEX_HOME=/tmp/mojentic-recovery-hex`. `toolchain.log` records the actual runtime.
-Each local log contains captured output and the full Foundry artifact paths.
+All Mix commands ran through `foundry capture` with `/tmp/mojentic-mix`, selecting
+the installed pinned toolchain and writable `HEX_HOME=/tmp/mojentic-recovery-hex`.
+`toolchain.log` records the actual Elixir/OTP runtime. Logs retain the actual
+capture exit code and full stdout/stderr artifacts. Dependencies were restored
+from the existing lockfile; no package versions changed.
 
-MixAudit's attempted advisory database refresh encountered a read-only filesystem.
-Its database revision `935abf7410a2bbb18e12579dee6e31267c3ed244` was independently
-compared with upstream main using read-only commands and matched exactly; see
-`advisory-local.log` and `advisory-remote.log`. No repository refs were changed.
-Sobelow emitted lockfile keyword parsing warnings, without security findings.
-The outdated package report is not a vulnerability finding; dependencies were
-not updated. Dialyxir is absent from this project, so Dialyzer and its PLT cache
-are unverified. Adding a dependency would violate this increment's scope.
-There is no configured `mix precommit` alias.
+MixAudit's advisory refresh attempted a write in its read-only shared database.
+The local database commit was independently compared to upstream main through
+read-only commands; see `advisory-local.log` and `advisory-remote.log`. Sobelow
+emitted existing lockfile keyword parsing warnings without security findings;
+this is not a Phoenix project. Dependency compilation emitted upstream warnings;
+project compilation and strict Credo passed. No advisory suppressions were added.
+Dialyzer/PLT analysis remains unavailable and is not claimed as passing.
 
-No dependency updates, Elixir/OTP version-line bumps, generation finish changes,
-or releases are part of this increment. CI is pinned to exact Elixir 1.18.5 and OTP 28.5.0.7
-within the existing 1.18/28 lines.
+Changes remain uncommitted for Foundry review and finalization. No main landing
+or release is claimed. The broader recovery mission gaps listed above remain
+explicitly unimplemented.

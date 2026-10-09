@@ -145,6 +145,18 @@ defmodule Mojentic.LLM.CompletionRequest do
   defp classify({:error, cause}, _original) when cause in [:timeout, :etimedout],
     do: {:client_timeout, nil, :unknown, :unknown, :timeout, false}
 
+  # Req preserves the reason but wraps Mint failures in its own exception.
+  # Receive failures do not establish whether inference was accepted or stopped.
+  defp classify({:error, %Req.TransportError{reason: :timeout}}, _original),
+    do: {:client_timeout, nil, :unknown, :unknown, :timeout, false}
+
+  defp classify({:error, %Req.TransportError{reason: :econnrefused}}, _original),
+    do: {:transport, nil, :connecting, :no, :connection_refused, true}
+
+  defp classify({:error, %Req.TransportError{reason: reason}}, _original)
+       when reason in [:closed, :econnreset, :enetunreach, :ehostunreach],
+       do: {:transport, nil, :unknown, :unknown, :transport_failure, true}
+
   defp classify({:error, %Mint.TransportError{reason: :timeout}}, _original),
     do: {:client_timeout, nil, :unknown, :unknown, :timeout, false}
 
