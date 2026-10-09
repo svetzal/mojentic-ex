@@ -7,6 +7,37 @@ defmodule Mojentic.LLM.Recovery do
   pending decisions with `{:recovery_admission, ref, :allow | :reject}`.
   Send `{:cancel, cancel_ref}` to the completion caller to cancel locally.
   Local HTTP cancellation never proves remote inference termination.
+
+  ## Exact wire evidence
+
+  `trace_observer: callback` explicitly opts into sensitive evidence at ReqClient.
+  The callback must return `:ok`; any other return or raised/thrown/exited failure
+  produces a terminal, payload-free `:capture_failed` completion error. Persistence
+  is caller-owned. No library storage, masking or automatic trace logging occurs.
+  Broker and ChatSession forward this option through their completion config.
+
+  Each event has `ids: %{logical_request_id: id, attempt_id: id, wire_attempt: n}`
+  with the exact identities used by lifecycle metadata and error history:
+
+  * `:request`: `method`, `url`, supplied `headers`, exact encoded `body`.
+  * `:response_headers`: observed HTTP `status` and flattened `headers`.
+  * `:response_data`: exact binary `body` chunk exposed by the HTTP client,
+    including non-2xx and partially received bodies, before provider decoding.
+  * `:response_end`: `outcome` (`:complete`, `:failed`, `:consumer_halted`) and
+    `evidence` (`:available` after headers/data, otherwise `:unavailable`). An
+    empty observed body has headers but no data; it is not unavailable evidence.
+
+  This is application HTTP evidence, not TLS packets, transfer framing, or every
+  generated transport header. Chunks can be coalesced by the HTTP client. A
+  parser can stop before EOF; `:consumer_halted` reports that capture limit rather
+  than claiming a complete response. Callback failure itself can prevent terminal
+  notification. Request notification occurs when Req yields its first response
+  observation (or transport failure), after the dispatch; cancellation before
+  that point can leave request evidence unavailable. Authoritative cancellation
+  kills a blocked capture worker, so terminal capture delivery is not guaranteed
+  on cancellation. No extra read, resend or model request fills missing evidence.
+  Custom HTTP behaviours must implement `:wire_trace` to provide exact evidence;
+  these guarantees apply to the default ReqClient boundary.
   """
   alias Mojentic.LLM.{CompletionError, CompletionRequest}
 
@@ -58,8 +89,9 @@ defmodule Mojentic.LLM.Recovery do
 
   defp valid_option?({:deadline, n}), do: is_integer(n)
 
-  defp valid_option?({key, callback}) when key in [:observer, :admission, :jitter, :sleeper],
-    do: is_function(callback, 1)
+  defp valid_option?({key, callback})
+       when key in [:observer, :trace_observer, :admission, :jitter, :sleeper],
+       do: is_function(callback, 1)
 
   defp valid_option?({key, callback}) when key in [:clock, :wall_clock],
     do: is_function(callback, 0)
