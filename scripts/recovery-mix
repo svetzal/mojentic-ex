@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Select the existing CI runtime for recovery validation, independent of mise defaults.
+set -euo pipefail
+
+runtime_root="${RECOVERY_RUNTIME_ROOT:-/home/svetzal/.local/share/mise/installs}"
+elixir_root="$runtime_root/elixir/1.18.5-otp-27"
+otp_root="$runtime_root/erlang/28.5.0.7"
+export PATH="$elixir_root/bin:$otp_root/bin:$PATH"
+# Keep downloaded registries and NIFs inside the isolated worktree.
+export HEX_HOME="${HEX_HOME:-$PWD/.foundry/runtime/hex}"
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$PWD/.foundry/runtime/cache}"
+
+test "$(command -v elixir)" = "$elixir_root/bin/elixir"
+test "$(command -v mix)" = "$elixir_root/bin/mix"
+test "$(command -v erl)" = "$otp_root/bin/erl"
+test "$(elixir -e 'IO.write(System.version())')" = "1.18.5"
+test "$(erl -noshell -eval 'io:put_chars(erlang:system_info(otp_release)), halt().')" = "28"
+test "$(cat "$otp_root/releases/28/OTP_VERSION")" = "28.5.0.7"
+
+exec "$elixir_root/bin/mix" "$@"
