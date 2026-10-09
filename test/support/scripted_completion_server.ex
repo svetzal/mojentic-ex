@@ -11,7 +11,16 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
 
     {:ok, {_, port}} = :inet.sockname(listener)
     send(owner, {:server_port, port})
-    {:ok, %{owner: owner, listener: listener, responses: responses, requests: [], sockets: []}, 0}
+
+    {:ok,
+     %{
+       owner: owner,
+       listener: listener,
+       responses: responses,
+       requests: [],
+       sockets: [],
+       held_requests: []
+     }, 0}
   end
 
   @impl true
@@ -31,6 +40,7 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
           case response do
             {:stream_hold, response} ->
               :ok = :gen_tcp.send(socket, response)
+              send(state.owner, {:held_response_sent, request, response})
               [socket | state.sockets]
 
             :hold ->
@@ -43,7 +53,17 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
           end
 
         {:noreply,
-         %{state | requests: state.requests ++ [request], responses: rest, sockets: sockets}, 0}
+         %{
+           state
+           | requests: state.requests ++ [request],
+             responses: rest,
+             sockets: sockets,
+             held_requests:
+               if(socket in sockets,
+                 do: [{request, socket} | state.held_requests],
+                 else: state.held_requests
+               )
+         }, 0}
 
       {:error, :timeout} ->
         {:noreply, state, 0}
@@ -52,6 +72,13 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
 
   @impl true
   def handle_call(:requests, _from, state), do: {:reply, state.requests, state, 0}
+
+  # Read the client FIN on the socket that received these exact request bytes.
+  # This call neither releases the response nor closes the server's socket.
+  def handle_call({:peer_state, request}, _from, state) do
+    {^request, socket} = List.keyfind(state.held_requests, request, 0)
+    {:reply, :gen_tcp.recv(socket, 0, 500), state, 0}
+  end
 
   def handle_call(:closed_sockets, _from, state) do
     results =
@@ -71,7 +98,7 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
       :gen_tcp.close(socket)
     end)
 
-    {:reply, :ok, %{state | sockets: []}, 0}
+    {:reply, :ok, %{state | sockets: [], held_requests: []}, 0}
   end
 
   @impl true

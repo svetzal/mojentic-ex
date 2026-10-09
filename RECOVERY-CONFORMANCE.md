@@ -838,3 +838,147 @@ gate outcomes, historical hashes, unchanged protected files and HEAD, preserved
 trunk runtime/gate content, whitespace and the required nonempty focused working
 tree. Changes are ready for controller-owned synchronization and landing; separate
 conformance assertion work remains outstanding as described above.
+
+
+## c15: connection-correlated cancellation closure on d16b0f0
+
+This correction adds `CancellationSocketWireTest` through the real public provider
+APIs and Req/TCP boundary. No production cancellation defect was demonstrated,
+so production code, tracing, timeouts and recovery behavior remain unchanged.
+
+The proof-first minimal public OpenAI ordinary request deliberately checked its
+peer before signalling cancellation: the held-open server returned `:timeout`,
+and the closure assertion failed (actual Mix exit **2**). After moving the actual
+`{:cancel, cancel_ref}` message before that same peer check, the server returned
+`:closed` and the probe passed (exit **0**). Both probes used the same incomplete
+exchange before response headers; the rejecting probe then cancelled for cleanup.
+This changes the real cancellation input, not a marker or an attempt counter.
+The minimal case was subsequently expanded into the matrix below.
+[proof.json](.foundry/proof.json) records the actual commands and exit codes;
+[rejecting.log](.foundry/logs/rejecting.log) and
+[corrected.log](.foundry/logs/corrected.log) contain complete stdout and stderr.
+
+### Named public boundary cases
+
+All **48** cases pass. Their exact generated names and individual results are in
+[c15-socket-cases.json](.foundry/c15-socket-cases.json); the complete `--trace`
+capture is in [c15-final-socket-matrix](.foundry/logs/c15-final-socket-matrix/).
+The naming rule is:
+`Elixir.Mojentic.LLM.Gateways.{provider} {path} tracing {enabled} {stage} closes correlated peer before fixture release`.
+Every row below runs both `tracing false` and `tracing true`, each at
+`before_headers` and `incomplete_response` (four named cases per row).
+
+| Provider | Public path | Result |
+| --- | --- | --- |
+| OpenAI | `complete` | 4 passed |
+| OpenAI | `complete_object` | 4 passed |
+| OpenAI | `events` / `complete_stream_events` | 4 passed |
+| OpenAI | `legacy` / `complete_stream` | 4 passed |
+| Ollama | `complete` | 4 passed |
+| Ollama | `complete_object` | 4 passed |
+| Ollama | `events` / `complete_stream_events` | 4 passed |
+| Ollama | `legacy` / `complete_stream` | 4 passed |
+| OMLX | `complete` | 4 passed |
+| OMLX | `complete_object` | 4 passed |
+| OMLX | `events` / `complete_stream_events` | 4 passed |
+| OMLX | `legacy` / `complete_stream` | 4 passed |
+
+The fixture pairs each held socket with the exact request bytes read from that
+connection. `{:peer_state, wire}` receives directly on that paired socket, with
+no response release and no server close. Released sockets are removed from this
+lookup; a terminated fixture cannot service it. Each case first rejects closure
+on the live, uncancelled connection (`:timeout`), then signals the public caller
+and requires `:closed` on the same connection while the fixture still runs.
+Completion plus server-observed closure must occur within **2 seconds** of
+cancellation. The response timeout is **10 seconds**, so timeout cannot supply
+that evidence. Processes start under ExUnit supervision, and teardown occurs
+only after these assertions and the no-subsequent-request observation.
+
+Before headers, the fixture sends no response. During an incomplete response,
+it sends a 200 header advertising 9,999 bytes and a shorter body, records the
+exact bytes sent, and keeps the connection open. Stream cases additionally wait
+for public delivery of `partial` before cancelling, including tracing disabled.
+Tracing-enabled cases wait for response headers and exact data, comparing their
+concrete attempt IDs. Buffered tracing-disabled cases synchronize on the
+server's incomplete send and still-open peer; they make no claim about internal
+buffered header/progress visibility.
+
+All cases validate the received POST path, content length, model, exact message,
+stream flag and structured schema where applicable. Exact tracing compares the
+encoded request body and every supplied header value against received bytes.
+UUID v4 logical/attempt IDs must be concrete and distinct, with agreement across
+attempt start, terminal error, history, failure and cancellation lifecycle.
+Tracing disabled must emit no exact trace. Existing `:not_granted` resend
+permission and `:stream_interrupted` after delivered stream content are asserted.
+Each fixture keeps accepting during a bounded subsequent-request observation;
+its complete request bytes must still equal the original single request, with
+no admission callback or additional lifecycle event. Closure proof comes from
+the correlated peer read, independently of that final request assertion.
+
+### Controller synchronization and scope
+
+[Read-only synchronization capture](.foundry/logs/c15-controller-sync/)
+confirms provisioned HEAD and advertised `origin/main` both equal
+`d16b0f0b8e0545cf37d0e0ae1ffb03e3beace9f1`. No fetch, rebase, commit, push,
+merge, tag or other ref mutation was performed. Foundry retains responsibility
+for synchronization and landing these working-tree changes directly on main.
+The coordinator's authorized AGENTS.md content is preserved. No release,
+dependency/runtime upgrade, sibling or harness edit, live model, benchmark
+restart, tool replay or total generation timeout is part of this correction.
+Elixir **1.18.5-otp-27**, OTP **28.5.0.7**, the **80%** coverage threshold and all
+existing gate settings remain unchanged. Cached PLTs were copied read-only from
+the existing validation cache for that exact runtime. The separate remaining
+conformance gaps documented above are not claimed resolved by this cancellation
+socket-closure correction.
+
+
+### Fresh project gates and audits
+
+Every command below ran through `foundry capture --offline --`, with complete
+stdout/stderr retained and actual exit codes indexed with SHA-256 log hashes in
+[c15-gates.json](.foundry/c15-gates.json). Each linked complete log concatenates
+the unchanged stdout and stderr captures. The final socket-matrix capture also
+passes **48 tests** after the assertion-helper refactor. An initial Credo run
+rejected the oversized helper; the final refactor passes without any suppression
+or threshold change.
+
+| Command | Actual exit | Complete log |
+| --- | --- | --- |
+| `scripts/recovery-mix format --check-formatted` | 0 | [format](.foundry/logs/c15-format.log) |
+| `scripts/recovery-mix compile --warnings-as-errors` | 0 | [compile](.foundry/logs/c15-compile.log) |
+| `env MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | [compile-test](.foundry/logs/c15-compile-test.log) |
+| `scripts/recovery-mix credo --strict` | 0 | [credo](.foundry/logs/c15-credo.log) |
+| `scripts/recovery-mix test` | 0 | [test](.foundry/logs/c15-test.log) |
+| `scripts/recovery-mix test --cover` | 0 | [coverage](.foundry/logs/c15-coverage.log) |
+| `scripts/recovery-mix deps.audit` | 0 | [deps-audit](.foundry/logs/c15-deps-audit.log) |
+| `scripts/recovery-mix hex.audit` | 0 | [hex-audit](.foundry/logs/c15-hex-audit.log) |
+| `scripts/recovery-mix sobelow --config` | 0 | [sobelow](.foundry/logs/c15-sobelow.log) |
+| `scripts/recovery-mix hex.outdated --all` | 1 | [outdated](.foundry/logs/c15-outdated.log) |
+| `scripts/recovery-mix docs` | 0 | [docs](.foundry/logs/c15-docs.log) |
+| `scripts/recovery-mix dialyzer` | 0 | [dialyzer](.foundry/logs/c15-dialyzer.log) |
+| `env MIX_ENV=test scripts/recovery-mix dialyzer` | 0 | [dialyzer-test](.foundry/logs/c15-dialyzer-test.log) |
+
+Both full suite runs pass **22 doctests and 1,708 tests**, with the unchanged
+**19 integration exclusions**. Coverage is **89.25%**, above the unchanged
+**80%** threshold. Both compilation environments pass with warnings as errors,
+and Credo reports zero issues. Both Dialyzer environments report zero errors,
+skips and unnecessary skips. No guides or API behavior changed; the complete
+existing guides remain covered by the successful docs build.
+
+MixAudit finds no vulnerabilities, and Hex audit finds no retired or security
+advisory packages. Its attempted automatic shared-database refresh is denied by
+read-only filesystem protection; [freshness verification](.foundry/logs/c15-advisory-freshness/)
+independently confirms the clean local advisory HEAD equals upstream main.
+Sobelow completes with the existing non-Phoenix missing-router and lockfile
+keyword warnings; docs retain the existing missing LICENSE and igniter-rule
+link warnings. `hex.outdated --all` exits **1** for available upgrades; this is
+informational and is not a vulnerability finding. No advisory suppressions,
+dependencies, runtime pins, project thresholds or gate configuration changed.
+
+[Final evidence validation](.foundry/logs/c15-evidence-validation/) checks proof
+JSON shape and field types, the actual nonzero/zero probe statuses and original
+capture bytes, complete final gate logs and hashes, all 48 traced names/results,
+unchanged protected files and HEAD, whitespace, and the required nonempty focused
+working tree. [c15-evidence-manifest.json](.foundry/c15-evidence-manifest.json)
+indexes the proof, synchronization, final matrix and source hashes for review.
+All changes remain uncommitted for Foundry's controller-owned landing on main.
