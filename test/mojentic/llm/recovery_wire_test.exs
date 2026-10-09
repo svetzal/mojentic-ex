@@ -44,7 +44,11 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     assert_receive {:server_port, port}
     configure(OpenAI, port)
     owner = self()
-    config = CompletionConfig.new(recovery: [observer: &send(owner, {:decoding_event, &1})])
+
+    config =
+      CompletionConfig.new(
+        recovery: [max_attempts: 3, observer: &send(owner, {:decoding_event, &1})]
+      )
 
     logs =
       capture_log(fn ->
@@ -101,7 +105,11 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       assert_receive {:server_port, port}
       configure(@gateway, port)
       owner = self()
-      config = CompletionConfig.new(recovery: [observer: &send(owner, {:decoding_event, &1})])
+
+      config =
+        CompletionConfig.new(
+          recovery: [max_attempts: 3, observer: &send(owner, {:decoding_event, &1})]
+        )
 
       logs =
         capture_log(fn ->
@@ -437,6 +445,1013 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       end
 
     assert payload == expected
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX], operation <- [:complete, :complete_object] do
+    @gateway gateway
+    @operation operation
+    test "#{gateway} #{operation} real Req 503 recovers with identical full payload and correlated lifecycle" do
+      body = successful_body(@gateway, @operation)
+
+      server =
+        start_supervised!(
+          {ScriptedCompletionServer,
+           {self(), [response(503, "response-secret"), response(200, body)]}}
+        )
+
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+      owner = self()
+
+      config =
+        CompletionConfig.new(
+          recovery: [
+            max_attempts: 2,
+            base_delay: 0,
+            sleeper: fn delay ->
+              send(owner, {:delay, delay})
+              :ok
+            end,
+            admission: fn context ->
+              send(owner, {:admitted, context})
+              :allow
+            end,
+            observer: &send(owner, {:lifecycle, &1})
+          ]
+        )
+
+      assert {:ok, _} = invoke(@gateway, @operation, config)
+      assert_receive {:wire_request, first}
+      assert_receive {:wire_request, second}
+      assert_payload(first, @gateway, @operation)
+      assert second == first
+      assert GenServer.call(server, :requests) == [first, second]
+      assert_receive {:delay, 11_000}
+      assert_receive {:admitted, context}
+      assert context.failure.http_status == 503
+      assert context.failure.provider_request_id == "wire-request-73"
+      assert context.failure.retry_after == %{kind: :delay_seconds, value: 11}
+
+      events =
+        for _ <- 1..8 do
+          assert_receive {:lifecycle, event}
+          event
+        end
+
+      assert Enum.map(events, & &1.type) == [
+               :attempt_started,
+               :attempt_failed,
+               :admission_pending,
+               :admission_allowed,
+               :backoff_started,
+               :retry_started,
+               :attempt_started,
+               :attempt_succeeded
+             ]
+
+      [started, failed, _, _, _, retrying, resent, succeeded] = events
+      assert retrying.metadata.wire_attempt == 1
+      assert retrying.metadata.next_attempt == 2
+      assert started.metadata.attempt_id == failed.metadata.attempt_id
+      assert resent.metadata.attempt_id == succeeded.metadata.attempt_id
+      refute started.metadata.attempt_id == resent.metadata.attempt_id
+
+      assert Enum.uniq(Enum.map(events, & &1.metadata.logical_request_id)) == [
+               context.logical_request_id
+             ]
+
+      assert succeeded.metadata.wire_attempt == 2
+      refute inspect(events) =~ "response-secret"
+      refute inspect(events) =~ "payload-secret"
+    end
+
+    test "#{gateway} #{operation} real Req persistent 504 exhausts with ordered exact evidence" do
+      failures =
+        for n <- 1..3,
+            do:
+              response(504, "response-secret")
+              |> String.replace("wire-request-73", "request-#{n}")
+
+      server = start_supervised!({ScriptedCompletionServer, {self(), failures}})
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+
+      config =
+        CompletionConfig.new(
+          recovery: [
+            max_attempts: 3,
+            base_delay: 0,
+            admission: fn _ -> :allow end,
+            sleeper: fn _ -> :ok end
+          ]
+        )
+
+      assert {:error, error} = invoke(@gateway, @operation, config)
+      assert error.wire_attempt == 3
+      assert error.http_status == 504
+      assert error.provider_request_id == "request-3"
+
+      assert Enum.map(error.history, & &1.provider_request_id) == [
+               "request-1",
+               "request-2",
+               "request-3"
+             ]
+
+      assert Enum.map(error.history, & &1.wire_attempt) == [1, 2, 3]
+
+      assert Enum.map(error.history, & &1.retry_after) ==
+               List.duplicate(%{kind: :delay_seconds, value: 11}, 3)
+
+      assert Enum.uniq(Enum.map(error.history, & &1.attempt_id)) |> length() == 3
+      requests = GenServer.call(server, :requests)
+      assert length(requests) == 3
+      Enum.each(requests, &assert_payload(&1, @gateway, @operation))
+      assert Enum.uniq(requests) |> length() == 1
+      refute inspect(error) =~ "response-secret"
+    end
+  end
+
+  for {header, minimum} <- [
+        {"2", 2000},
+        {"Thu, 01 Jan 2026 00:00:03 GMT", 3000},
+        {"Wed, 31 Dec 2025 23:59:00 GMT", 0},
+        {"garbage", 0}
+      ],
+      gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object] do
+    @gateway gateway
+    @operation operation
+    @header header
+    @minimum minimum
+    test "#{gateway} #{operation} real Req Retry-After #{@header} respects observed wall clock and policy minimum" do
+      owner = self()
+
+      server =
+        start_supervised!(
+          {ScriptedCompletionServer,
+           {self(),
+            [
+              response(429, "response-secret")
+              |> String.replace("Retry-After: 11", "Retry-After: #{@header}"),
+              response(200, successful_body(@gateway, @operation))
+            ]}}
+        )
+
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+
+      config =
+        CompletionConfig.new(
+          recovery: [
+            max_attempts: 2,
+            observer: &send(owner, {:retry_after_event, &1}),
+            admission: fn _ -> :allow end,
+            base_delay: 10,
+            jitter: fn ceiling ->
+              assert ceiling == 10
+              7
+            end,
+            wall_clock: fn -> ~U[2026-01-01 00:00:00Z] end,
+            sleeper: fn delay ->
+              send(owner, {:delay, delay})
+              :ok
+            end
+          ]
+        )
+
+      assert {:ok, _} = invoke(@gateway, @operation, config)
+      assert_receive {:retry_after_event, %{type: :attempt_failed, metadata: failure}}
+      assert failure.http_status == 429
+      assert failure.provider_request_id == "wire-request-73"
+      assert failure.retry_after == expected_retry_after(@header)
+      assert failure.phase == :awaiting_headers
+      assert failure.acceptance == :unknown
+      assert failure.progress.raw_bytes == byte_size("response-secret")
+      assert failure.wire_attempt == 1
+      assert_receive {:delay, delay}
+      assert delay == max(7, @minimum)
+      [first, second] = GenServer.call(server, :requests)
+      assert first == second
+      assert_payload(first, @gateway, @operation)
+    end
+  end
+
+  for {policy, reason} <- [
+        {[delay_ceiling: 100], :retry_after_ceiling},
+        {[budget: 11_000, clock: :zero], :deadline},
+        {[deadline: 0, clock: :zero], :deadline},
+        {[], :admission_required},
+        {[admission: :reject], :rejected}
+      ],
+      gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object],
+      gateway != OpenAI or reason != :admission_required do
+    @gateway gateway
+    @operation operation
+    @policy policy
+    @reason reason
+    test "#{gateway} #{operation} real Req local recovery refuses #{@reason} with #{inspect(Keyword.keys(policy))}" do
+      server =
+        start_supervised!(
+          {ScriptedCompletionServer,
+           {self(),
+            [
+              response(504, "response-secret"),
+              response(200, successful_body(@gateway, @operation))
+            ]}}
+        )
+
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+
+      policy =
+        Enum.map(@policy, fn
+          {:clock, :zero} -> {:clock, fn -> 0 end}
+          {:admission, :reject} -> {:admission, fn _ -> :reject end}
+          option -> option
+        end)
+
+      policy = refusal_policy(policy, @reason)
+
+      config = CompletionConfig.new(recovery: Keyword.put(policy, :max_attempts, 2))
+      assert {:error, error} = invoke(@gateway, @operation, config)
+      assert error.resend_permission == @reason
+      requests = GenServer.call(server, :requests)
+
+      if error.wire_attempt == 0 do
+        assert requests == []
+      else
+        [request] = requests
+        assert_payload(request, @gateway, @operation)
+        assert error.http_status == 504
+        assert error.provider_request_id == "wire-request-73"
+      end
+    end
+  end
+
+  for phase <- [:request, :admission, :backoff],
+      gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object] do
+    @phase phase
+    @gateway gateway
+    @operation operation
+    test "#{gateway} #{operation} real Req cancellation during #{phase} is authoritative and sends no retry" do
+      response = if @phase == :request, do: :hold, else: response(503, "response-secret")
+
+      server =
+        start_supervised!({ScriptedCompletionServer, {self(), [response, response(200, "{}")]}})
+
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+      owner = self()
+      cancel = make_ref()
+      supervisor = start_supervised!(Task.Supervisor)
+
+      policy = [
+        max_attempts: 2,
+        cancel_ref: cancel,
+        admission: fn context ->
+          send(owner, {:waiting, context})
+          if @phase == :admission, do: :pending, else: :allow
+        end,
+        observer: &send(owner, {:cancel_event, &1})
+      ]
+
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn ->
+          invoke(@gateway, @operation, CompletionConfig.new(recovery: policy))
+        end)
+
+      assert_receive {:wire_request, request}, 2000
+      assert_payload(request, @gateway, @operation)
+      if @phase == :admission, do: assert_receive({:waiting, _}, 2000)
+
+      if @phase == :backoff,
+        do: assert_receive({:cancel_event, %{type: :backoff_started}}, 2000)
+
+      send(task.pid, {:cancel, cancel})
+      assert {:error, error} = Task.await(task, 2000)
+      assert error.category == :cancellation or error.resend_permission == :cancelled
+      assert error.wire_attempt == 1
+      assert GenServer.call(server, :requests) == [request]
+      assert_receive {:cancel_event, %{type: :cancelled}}
+    end
+  end
+
+  defp successful_body(Ollama, operation) do
+    content = if operation == :complete, do: "done", else: ~s({"value":"done"})
+    Jason.encode!(%{message: %{content: content}, done: true})
+  end
+
+  defp successful_body(_gateway, operation) do
+    content = if operation == :complete, do: "done", else: ~s({"value":"done"})
+    Jason.encode!(%{choices: [%{message: %{content: content}}]})
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX], caller <- [:broker, :session] do
+    @gateway gateway
+    @caller caller
+    test "#{gateway} #{@caller} real Req recovers after exact tool result without tool replay" do
+      tool = %Mojentic.TestSupport.CountingTool{owner: self()}
+
+      arguments =
+        if @gateway == Ollama, do: %{"value" => "tool-secret"}, else: ~s({"value":"tool-secret"})
+
+      call = %{id: "call-17", type: "function", function: %{name: "count", arguments: arguments}}
+      message = %{content: nil, tool_calls: [call]}
+
+      body =
+        if @gateway == Ollama,
+          do: Jason.encode!(%{message: message}),
+          else: Jason.encode!(%{choices: [%{message: message}]})
+
+      responses = [
+        response(200, body),
+        response(503, "response-secret"),
+        response(200, successful_body(@gateway, :complete))
+      ]
+
+      responses =
+        if @caller == :session,
+          do: [response(200, successful_body(@gateway, :complete)) | responses],
+          else: responses
+
+      server = start_supervised!({ScriptedCompletionServer, {self(), responses}})
+
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+      broker = Broker.new("gpt-4o", @gateway)
+
+      policy = [
+        max_attempts: 2,
+        base_delay: 0,
+        admission: fn _ -> :allow end,
+        sleeper: fn _ -> :ok end
+      ]
+
+      if @caller == :broker do
+        assert {:ok, "done"} =
+                 Broker.generate(
+                   broker,
+                   [Message.user("payload-secret")],
+                   [tool],
+                   CompletionConfig.new(recovery: policy, max_tool_iterations: 1)
+                 )
+      else
+        session = ChatSession.new(broker, tools: [tool])
+        assert {:ok, "done", session} = ChatSession.send(session, "earlier-secret", recovery: [])
+
+        assert {:ok, "done", updated} =
+                 ChatSession.send(session, "payload-secret", recovery: policy)
+
+        assert updated.messages |> Enum.map(& &1.message) ==
+                 Enum.map(session.messages, & &1.message) ++
+                   [Message.user("payload-secret"), Message.assistant("done")]
+
+        assert Enum.map(session.messages, & &1.message.role) == [:system, :user, :assistant]
+      end
+
+      assert_receive {:tool_executed, %{"value" => "tool-secret"}}
+      refute_received {:tool_executed, _}
+      requests = GenServer.call(server, :requests)
+      [initial, failed, recovered] = tool_requests(requests, @caller)
+      assert failed == recovered
+      first = wire_payload(initial)
+      retry = wire_payload(recovered)
+      [assistant, result] = Enum.take(retry["messages"], -2)
+      assert Enum.drop(retry["messages"], -2) == first["messages"]
+      assert Map.delete(retry, "messages") == Map.delete(first, "messages")
+      expected_call = if @gateway == Ollama, do: Map.delete(call, :id), else: call
+      expected_call = Jason.decode!(Jason.encode!(expected_call))
+
+      assert assistant ==
+               Map.merge(
+                 %{"role" => "assistant", "tool_calls" => [expected_call]},
+                 if(@gateway == Ollama, do: %{"content" => ""}, else: %{})
+               )
+
+      expected = %{"role" => "tool", "content" => Jason.encode!("tool-result-secret")}
+
+      assert result ==
+               if(@gateway == Ollama,
+                 do: Map.put(expected, "tool_calls", [expected_call]),
+                 else: Map.put(expected, "tool_call_id", "call-17")
+               )
+
+      assert first["tools"] == [Jason.decode!(Jason.encode!(tool.__struct__.descriptor()))]
+    end
+  end
+
+  test "real Req recovery does not replenish broker tool depth" do
+    tool = %Mojentic.TestSupport.CountingTool{owner: self()}
+
+    message = %{
+      content: nil,
+      tool_calls: [
+        %{
+          id: "call-17",
+          type: "function",
+          function: %{name: "count", arguments: ~s({"value":"tool-secret"})}
+        }
+      ]
+    }
+
+    body = Jason.encode!(%{choices: [%{message: message}]})
+
+    server =
+      start_supervised!(
+        {ScriptedCompletionServer,
+         {self(), [response(200, body), response(503, "response-secret"), response(200, body)]}}
+      )
+
+    assert_receive {:server_port, port}
+    configure(OpenAI, port)
+
+    config =
+      CompletionConfig.new(
+        max_tool_iterations: 1,
+        recovery: [max_attempts: 2, base_delay: 0, sleeper: fn _ -> :ok end]
+      )
+
+    assert {:error, :max_tool_iterations_exceeded} =
+             Broker.generate(
+               Broker.new("gpt-4o", OpenAI),
+               [Message.user("payload-secret")],
+               [tool],
+               config
+             )
+
+    assert_receive {:tool_executed, %{"value" => "tool-secret"}}
+    refute_received {:tool_executed, _}
+    [_, failed, retried] = GenServer.call(server, :requests)
+    assert failed == retried
+
+    assert List.last(wire_payload(retried)["messages"]) == %{
+             "role" => "tool",
+             "content" => Jason.encode!("tool-result-secret"),
+             "tool_call_id" => "call-17"
+           }
+  end
+
+  defp tool_requests([setup, initial, failed, recovered], :session) do
+    prior_messages = wire_payload(setup)["messages"]
+    assert List.last(prior_messages) == %{"role" => "user", "content" => "earlier-secret"}
+
+    assert wire_payload(initial)["messages"] ==
+             prior_messages ++
+               [
+                 %{"role" => "assistant", "content" => "done"},
+                 %{"role" => "user", "content" => "payload-secret"}
+               ]
+
+    [initial, failed, recovered]
+  end
+
+  defp tool_requests([initial, failed, recovered], :broker), do: [initial, failed, recovered]
+
+  defp expected_retry_after("2"), do: %{kind: :delay_seconds, value: 2}
+
+  defp expected_retry_after("Thu, 01 Jan 2026 00:00:03 GMT"),
+    do: %{kind: :http_date, value: "2026-01-01T00:00:03Z"}
+
+  defp expected_retry_after("Wed, 31 Dec 2025 23:59:00 GMT"),
+    do: %{kind: :http_date, value: "2025-12-31T23:59:00Z"}
+
+  defp expected_retry_after("garbage"), do: :invalid
+
+  defp refusal_policy(policy, reason) when reason in [:retry_after_ceiling, :deadline],
+    do: Keyword.put_new(policy, :admission, fn _ -> :allow end)
+
+  defp refusal_policy(policy, _reason), do: policy
+
+  defp wire_payload(request),
+    do: request |> String.split("\r\n\r\n", parts: 2) |> List.last() |> Jason.decode!()
+
+  for gateway <- [OpenAI, Ollama, OMLX], operation <- [:complete, :complete_object] do
+    @gateway gateway
+    @operation operation
+    test "#{gateway} #{operation} real Req permanent failure does not retry under bounded recovery" do
+      for status <- [400, 401, 403, 404, 422] do
+        server =
+          start_supervised!(
+            {ScriptedCompletionServer, {self(), [response(status, "response-secret")]}},
+            id: status
+          )
+
+        assert_receive {:server_port, port}
+        configure(@gateway, port)
+
+        config =
+          CompletionConfig.new(
+            recovery: [max_attempts: 3, admission: fn _ -> flunk("ineligible admission") end]
+          )
+
+        assert {:error, error} = invoke(@gateway, @operation, config)
+        assert error.http_status == status
+        assert error.provider_request_id == "wire-request-73"
+        assert error.wire_attempt == 1
+        [request] = GenServer.call(server, :requests)
+        assert_payload(request, @gateway, @operation)
+      end
+    end
+
+    test "#{gateway} #{operation} recovery deadline allows active generation to finish" do
+      server = start_supervised!({ScriptedCompletionServer, {self(), [:hold]}})
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+      clock = start_supervised!({Agent, fn -> 0 end})
+      supervisor = start_supervised!(Task.Supervisor)
+
+      config =
+        CompletionConfig.new(recovery: [deadline: 100, clock: fn -> Agent.get(clock, & &1) end])
+
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn -> invoke(@gateway, @operation, config) end)
+
+      assert_receive {:wire_request, request}, 2000
+      assert_payload(request, @gateway, @operation)
+      Agent.update(clock, fn _ -> 1000 end)
+      GenServer.call(server, {:release, response(200, successful_body(@gateway, @operation))})
+      assert {:ok, _} = Task.await(task, 2000)
+      assert GenServer.call(server, :requests) == [request]
+    end
+
+    for phase <- [:admission, :backoff] do
+      @phase phase
+      test "#{gateway} #{operation} no resend at exact deadline after #{phase}" do
+        server =
+          start_supervised!(
+            {ScriptedCompletionServer, {self(), [response(503, "response-secret")]}}
+          )
+
+        assert_receive {:server_port, port}
+        configure(@gateway, port)
+        clock = start_supervised!({Agent, fn -> 0 end})
+
+        config =
+          CompletionConfig.new(
+            recovery: [
+              max_attempts: 2,
+              deadline: 20_000,
+              clock: fn -> Agent.get(clock, & &1) end,
+              admission: fn _ ->
+                if @phase == :admission, do: Agent.update(clock, fn _ -> 20_000 end)
+                :allow
+              end,
+              sleeper: fn _ -> Agent.update(clock, fn _ -> 20_000 end) end
+            ]
+          )
+
+        assert {:error, error} = invoke(@gateway, @operation, config)
+        assert error.resend_permission == :deadline
+        assert error.wire_attempt == 1
+        assert error.http_status == 503
+        [request] = GenServer.call(server, :requests)
+        assert_payload(request, @gateway, @operation)
+      end
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :complete_object],
+      decision <- [:allow, :reject] do
+    @gateway gateway
+    @operation operation
+    @decision decision
+    test "#{gateway} #{operation} real Req pending admission requires explicit #{decision}" do
+      server =
+        start_supervised!(
+          {ScriptedCompletionServer,
+           {self(),
+            [
+              response(503, "response-secret"),
+              response(200, successful_body(@gateway, @operation))
+            ]}}
+        )
+
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+      owner = self()
+      supervisor = start_supervised!(Task.Supervisor)
+
+      config =
+        CompletionConfig.new(
+          recovery: [
+            max_attempts: 2,
+            sleeper: fn _ -> :ok end,
+            admission: fn context ->
+              send(owner, {:pending, context})
+              :pending
+            end
+          ]
+        )
+
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn -> invoke(@gateway, @operation, config) end)
+
+      assert_receive {:wire_request, first}, 2000
+      assert_payload(first, @gateway, @operation)
+      assert_receive {:pending, context}, 2000
+      assert context.failure.http_status == 503
+      assert context.failure.provider_request_id == "wire-request-73"
+      assert context.failure.retry_after == %{kind: :delay_seconds, value: 11}
+      assert context.previous_attempt_id == context.failure.attempt_id
+      assert context.logical_request_id == context.failure.logical_request_id
+      assert context.next_attempt == 2
+      assert GenServer.call(server, :requests) == [first]
+      send(context.reply_to, {:recovery_admission, context.ref, @decision})
+      result = Task.await(task, 2000)
+
+      if @decision == :allow do
+        assert {:ok, _} = result
+        assert GenServer.call(server, :requests) == [first, first]
+      else
+        assert {:error, error} = result
+        assert error.resend_permission == :rejected
+        assert error.http_status == 503
+        assert error.history == [Map.delete(context.failure, :history)]
+        assert error.wire_attempt == 1
+        assert GenServer.call(server, :requests) == [first]
+      end
+    end
+  end
+
+  for phase <- [:admission, :backoff] do
+    @phase phase
+    test "real Req cancellation kills blocked #{phase} callback worker" do
+      server =
+        start_supervised!(
+          {ScriptedCompletionServer, {self(), [response(503, "response-secret")]}}
+        )
+
+      assert_receive {:server_port, port}
+      configure(Ollama, port)
+      owner = self()
+      cancel = make_ref()
+
+      blocked = fn _ ->
+        send(owner, {:worker, self()})
+
+        receive do
+          :unused -> :ok
+        end
+      end
+
+      policy = [
+        max_attempts: 2,
+        cancel_ref: cancel,
+        admission: if(@phase == :admission, do: blocked, else: fn _ -> :allow end),
+        sleeper: blocked
+      ]
+
+      supervisor = start_supervised!(Task.Supervisor)
+
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn ->
+          invoke(Ollama, :complete, CompletionConfig.new(recovery: policy))
+        end)
+
+      assert_receive {:wire_request, request}, 2000
+      assert_receive {:worker, worker}, 2000
+      monitor = Process.monitor(worker)
+      send(task.pid, {:cancel, cancel})
+      assert {:error, error} = Task.await(task, 2000)
+      assert error.resend_permission == :cancelled
+      assert_receive {:DOWN, ^monitor, :process, ^worker, :killed}
+      assert GenServer.call(server, :requests) == [request]
+      assert_payload(request, Ollama, :complete)
+    end
+  end
+
+  test "real Req jitter ceilings saturate without exponent overflow" do
+    server =
+      start_supervised!(
+        {ScriptedCompletionServer,
+         {self(),
+          [
+            response(503, "response-secret")
+            |> String.replace("Retry-After: 11", "Retry-After: invalid"),
+            response(200, successful_body(OpenAI, :complete))
+          ]}}
+      )
+
+    assert_receive {:server_port, port}
+    configure(OpenAI, port)
+    owner = self()
+
+    config =
+      CompletionConfig.new(
+        recovery: [
+          max_attempts: 2,
+          base_delay: Integer.pow(2, 1024),
+          delay_ceiling: 17,
+          jitter: fn ceiling ->
+            assert ceiling == 17
+            ceiling
+          end,
+          sleeper: fn delay ->
+            send(owner, {:delay, delay})
+            :ok
+          end
+        ]
+      )
+
+    assert {:ok, _} = invoke(OpenAI, :complete, config)
+    assert_receive {:delay, 17}
+    [first, second] = GenServer.call(server, :requests)
+    assert first == second
+    assert_payload(first, OpenAI, :complete)
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX], operation <- [:complete, :complete_object] do
+    @gateway gateway
+    @operation operation
+    test "#{gateway} #{operation} recovery freezes legacy adaptation of history schema tools and controls" do
+      body = successful_body(@gateway, @operation)
+
+      server =
+        start_supervised!(
+          {ScriptedCompletionServer,
+           {self(), [response(200, body), response(503, "response-secret"), response(200, body)]}}
+        )
+
+      assert_receive {:server_port, port}
+      configure(@gateway, port)
+
+      messages = [
+        Message.system("system-secret"),
+        Message.user("earlier-secret"),
+        Message.assistant("reasoning-history-secret"),
+        Message.user("payload-secret")
+      ]
+
+      config =
+        CompletionConfig.new(
+          temperature: 0.3,
+          max_tokens: 27,
+          num_ctx: 4192,
+          top_p: 0.4,
+          top_k: 8,
+          reasoning_effort: :high
+        )
+
+      call = fn config ->
+        if @operation == :complete do
+          @gateway.complete(
+            "gpt-4o",
+            messages,
+            [%Mojentic.TestSupport.CountingTool{owner: self()}],
+            config
+          )
+        else
+          @gateway.complete_object(
+            "gpt-4o",
+            messages,
+            %{
+              "type" => "object",
+              "properties" => %{"value" => %{"type" => "string"}},
+              "required" => ["value"]
+            },
+            config
+          )
+        end
+      end
+
+      assert {:ok, legacy} = call.(config)
+      policy = [max_attempts: 2, admission: fn _ -> :allow end, sleeper: fn _ -> :ok end]
+      assert {:ok, ^legacy} = call.(%{config | recovery: policy})
+      [baseline, failed, recovered] = GenServer.call(server, :requests)
+      assert failed == baseline
+      assert recovered == baseline
+      payload = wire_payload(baseline)
+      assert payload["model"] == "gpt-4o"
+
+      assert payload["messages"] ==
+               Enum.map(messages, fn message ->
+                 %{"role" => Atom.to_string(message.role), "content" => message.content}
+               end)
+
+      if @operation == :complete do
+        assert payload["tools"] == [
+                 Jason.decode!(Jason.encode!(Mojentic.TestSupport.CountingTool.descriptor()))
+               ]
+      else
+        schema =
+          if @gateway == Ollama,
+            do: payload["format"],
+            else: payload["response_format"]["json_schema"]["schema"]
+
+        assert schema == %{
+                 "type" => "object",
+                 "properties" => %{"value" => %{"type" => "string"}},
+                 "required" => ["value"]
+               }
+      end
+
+      controls = if @gateway == Ollama, do: payload["options"], else: payload
+      assert controls["temperature"] == 0.3
+      assert controls[if(@gateway == Ollama, do: "num_predict", else: "max_tokens")] == 27
+      assert controls["top_p"] == 0.4
+      assert messages |> List.last() == Message.user("payload-secret")
+    end
+  end
+
+  test "real Req monotonic budget begins at first failure and never resets on later failures" do
+    transient =
+      response(503, "response-secret") |> String.replace("Retry-After: 11", "Retry-After: 0")
+
+    server =
+      start_supervised!({ScriptedCompletionServer, {self(), [:hold, transient, transient]}})
+
+    assert_receive {:server_port, port}
+    configure(Ollama, port)
+    clock = start_supervised!({Agent, fn -> 0 end})
+    supervisor = start_supervised!(Task.Supervisor)
+
+    config =
+      CompletionConfig.new(
+        recovery: [
+          max_attempts: 3,
+          budget: 50,
+          base_delay: 0,
+          clock: fn -> Agent.get(clock, & &1) end,
+          admission: fn context ->
+            if context.next_attempt == 3, do: Agent.update(clock, fn _ -> 1050 end)
+            :allow
+          end,
+          sleeper: fn _ -> Agent.update(clock, fn _ -> 1025 end) end
+        ]
+      )
+
+    task = Task.Supervisor.async_nolink(supervisor, fn -> invoke(Ollama, :complete, config) end)
+    assert_receive {:wire_request, first}, 2000
+    Agent.update(clock, fn _ -> 1000 end)
+    GenServer.call(server, {:release, transient})
+    assert {:error, error} = Task.await(task, 2000)
+    assert error.resend_permission == :deadline
+    assert error.wire_attempt == 2
+    assert Enum.map(error.history, & &1.http_status) == [503, 503]
+    assert GenServer.call(server, :requests) == [first, first]
+    assert_payload(first, Ollama, :complete)
+  end
+
+  test "real Req exponential full jitter doubles and saturates at the configured ceiling" do
+    failure =
+      response(503, "response-secret")
+      |> String.replace("Retry-After: 11", "Retry-After: invalid")
+
+    server =
+      start_supervised!(
+        {ScriptedCompletionServer,
+         {self(),
+          List.duplicate(failure, 4) ++
+            [response(200, successful_body(OpenAI, :complete))]}}
+      )
+
+    assert_receive {:server_port, port}
+    configure(OpenAI, port)
+    owner = self()
+
+    config =
+      CompletionConfig.new(
+        recovery: [
+          max_attempts: 5,
+          base_delay: 10,
+          delay_ceiling: 25,
+          jitter: fn ceiling ->
+            send(owner, {:ceiling, ceiling})
+            div(ceiling, 2)
+          end,
+          sleeper: fn delay ->
+            send(owner, {:delay, delay})
+            :ok
+          end
+        ]
+      )
+
+    assert {:ok, _} = invoke(OpenAI, :complete, config)
+
+    for {ceiling, delay} <- [{10, 5}, {20, 10}, {25, 12}, {25, 12}] do
+      assert_receive {:ceiling, ^ceiling}
+      assert_receive {:delay, ^delay}
+    end
+
+    [first | rest] = GenServer.call(server, :requests)
+    assert rest == List.duplicate(first, 4)
+    assert_payload(first, OpenAI, :complete)
+  end
+
+  for failure <- [:raise, :return] do
+    @failure failure
+    test "real Req sleeper #{failure} failure never enters safe errors history events or logs" do
+      server =
+        start_supervised!(
+          {ScriptedCompletionServer, {self(), [response(503, "response-secret")]}}
+        )
+
+      assert_receive {:server_port, port}
+      configure(Ollama, port)
+      owner = self()
+
+      config =
+        CompletionConfig.new(
+          recovery: [
+            max_attempts: 2,
+            admission: fn _ -> :allow end,
+            sleeper: failing_sleeper(@failure),
+            observer: &send(owner, {:sleeper_event, &1})
+          ]
+        )
+
+      logs =
+        capture_log(fn ->
+          assert {:error, error} = invoke(Ollama, :complete, config)
+          assert error.resend_permission == :backoff_failed
+          assert error.http_status == 503
+          assert error.provider_request_id == "wire-request-73"
+          assert error.wire_attempt == 1
+
+          for rendered <- [inspect(error), Jason.encode!(error), inspect(error.history)],
+              do: refute(rendered =~ "callback-secret")
+        end)
+
+      refute logs =~ "callback-secret"
+
+      events =
+        for _ <- 1..6 do
+          assert_receive {:sleeper_event, event}
+          event
+        end
+
+      assert Enum.map(events, & &1.type) == [
+               :attempt_started,
+               :attempt_failed,
+               :admission_pending,
+               :admission_allowed,
+               :backoff_started,
+               :exhausted
+             ]
+
+      for secret <- ["callback-secret", "response-secret", "payload-secret", "credential-secret"],
+          do: refute(inspect(events) =~ secret)
+
+      [request] = GenServer.call(server, :requests)
+      assert_payload(request, Ollama, :complete)
+    end
+  end
+
+  defp failing_sleeper(:raise), do: fn _ -> raise "callback-secret" end
+  defp failing_sleeper(:return), do: fn _ -> "callback-secret" end
+
+  @tag :admission_proof
+  test "ambiguous local 504 waits for explicit admission and preserves complete wire payload" do
+    server =
+      start_supervised!(
+        {ScriptedCompletionServer,
+         {self(), [response(504, "response-secret"), response(504, "response-secret")]}}
+      )
+
+    assert_receive {:server_port, port}
+    configure(Ollama, port)
+    owner = self()
+    supervisor = start_supervised!(Task.Supervisor)
+
+    config =
+      CompletionConfig.new(
+        recovery: [
+          max_attempts: 2,
+          base_delay: 0,
+          sleeper: fn _ -> :ok end,
+          admission: fn context ->
+            send(owner, {:admission, context})
+            :pending
+          end,
+          observer: &send(owner, {:recovery_event, &1})
+        ]
+      )
+
+    task = Task.Supervisor.async_nolink(supervisor, fn -> invoke(Ollama, :complete, config) end)
+    assert_receive {:wire_request, first}, 2000
+    assert_payload(first, Ollama, :complete)
+    assert_receive {:admission, context}, 2000
+    assert context.failure.http_status == 504
+    assert context.failure.provider_request_id == "wire-request-73"
+    assert context.failure.retry_after == %{kind: :delay_seconds, value: 11}
+    assert context.next_attempt == 2
+    assert GenServer.call(server, :requests) == [first]
+    send(context.reply_to, {:recovery_admission, context.ref, :allow})
+    assert {:error, error} = Task.await(task, 2000)
+    assert_receive {:wire_request, second}
+    assert second == first
+    assert error.wire_attempt == 2
+    assert Enum.map(error.history, & &1.http_status) == [504, 504]
+    assert Enum.uniq(Enum.map(error.history, & &1.attempt_id)) |> length() == 2
+
+    assert Enum.uniq(Enum.map(error.history, & &1.logical_request_id)) == [
+             error.logical_request_id
+           ]
+
+    assert GenServer.call(server, :requests) == [first, second]
   end
 
   defp response(status, body) do

@@ -480,3 +480,20 @@ messages = [
 ]
 Broker.generate(broker, messages)
 ```
+
+## Opt-in completion recovery
+
+Set `CompletionConfig.new(recovery: [max_attempts: 3, budget: 60_000])` to
+recover eligible non-streaming completions. The default remains disabled.
+For Ollama and oMLX, ambiguous failures require explicit admission; for example,
+`admission: fn context -> admission_service.check(context) end`. The service must
+return `:allow`, `:reject`, or `:pending`. Resolve pending decisions by sending
+`{:recovery_admission, context.ref, :allow}` (or `:reject`) to `context.reply_to`.
+Admission is an application decision, not automatic proof of termination.
+
+Recovery resends only the current immutable completion. It retains tool results
+and does not rerun tools or replenish the broker's tool-depth budget. Recovery
+limits do not time out active generation. To cancel locally, configure
+`cancel_ref: ref` and send `{:cancel, ref}` to the process running the completion.
+See `Mojentic.LLM.Recovery` and RECOVERY-CONFORMANCE.md for policy and capability
+limits. Streaming recovery remains unimplemented.

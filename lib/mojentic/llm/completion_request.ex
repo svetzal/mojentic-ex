@@ -4,39 +4,57 @@ defmodule Mojentic.LLM.CompletionRequest do
 
   def run(client, url, body, headers, opts, config, {provider, operation}, parse) do
     case config.recovery do
-      nil -> parse.(client.post(url, body, headers, opts))
-      recovery -> single(client, {url, body, headers, opts}, recovery, provider, operation, parse)
+      nil ->
+        parse.(client.post(url, body, headers, opts))
+
+      recovery ->
+        Mojentic.LLM.Recovery.run(recovery, provider, operation, fn ids, deadline ->
+          attempt(
+            client,
+            {url, body, headers, opts},
+            recovery,
+            provider,
+            operation,
+            parse,
+            ids,
+            deadline
+          )
+        end)
     end
   end
 
-  defp single(client, {url, body, headers, opts}, recovery, provider, operation, parse) do
-    identity = %{logical_request_id: UUID.uuid4(), attempt_id: UUID.uuid4()}
+  defp attempt(
+         client,
+         {url, body, headers, opts},
+         recovery,
+         provider,
+         operation,
+         parse,
+         ids,
+         deadline
+       ) do
+    emit(
+      recovery,
+      :attempt_started,
+      Map.merge(ids, %{phase: :unknown, progress: progress(nil, "")})
+    )
 
-    if valid_options?(recovery) do
-      emit(
-        recovery,
-        :attempt_started,
-        Map.merge(identity, %{wire_attempt: 1, phase: :unknown, progress: progress(nil, "")})
-      )
-
-      result = client.post(url, body, headers, Keyword.merge(opts, retry: false, redirect: false))
-      finish(result, parse, recovery, provider, operation, identity)
-    else
-      error = build(nil, :unsupported_options, provider, operation, identity)
-      {:error, %{error | wire_attempt: 0, history: []}}
-    end
-  end
-
-  defp valid_options?(opts) when is_list(opts) do
-    Keyword.keyword?(opts) and
-      Enum.all?(opts, fn
-        {:max_attempts, 1} -> true
-        {:observer, callback} -> is_function(callback, 1)
-        _ -> false
+    result =
+      Mojentic.LLM.Recovery.request(recovery, deadline, fn ->
+        client.post(url, body, headers, Keyword.merge(opts, retry: false, redirect: false))
       end)
+
+    case result do
+      {:not_sent, reason} -> {:not_sent, reason}
+      response -> finish(response, parse, recovery, provider, operation, ids)
+    end
   end
 
-  defp valid_options?(_opts), do: false
+  @doc false
+  def unsupported(provider, operation, ids) do
+    error = build(nil, :unsupported_options, provider, operation, ids)
+    {:error, %{error | wire_attempt: 0, history: []}}
+  end
 
   defp finish({:ok, %{status_code: 200}} = response, parse, opts, provider, operation, ids) do
     case decode(parse, response) do
@@ -55,7 +73,7 @@ defmodule Mojentic.LLM.CompletionRequest do
           opts,
           :attempt_succeeded,
           Map.merge(ids, %{
-            wire_attempt: 1,
+            wire_attempt: ids.wire_attempt,
             phase: :decoding,
             progress: %{progress | delivered: delivered}
           })
@@ -64,30 +82,22 @@ defmodule Mojentic.LLM.CompletionRequest do
         success
 
       {:error, cause} ->
-        failed(build(response, cause, provider, operation, ids), opts)
+        {:error, build(response, cause, provider, operation, ids)}
     end
   end
 
-  defp finish({:error, cause} = response, _parse, opts, provider, operation, ids) do
-    failed(build(response, cause, provider, operation, ids), opts)
+  defp finish({:error, cause} = response, _parse, _opts, provider, operation, ids) do
+    {:error, build(response, cause, provider, operation, ids)}
   end
 
-  defp finish(response, _parse, opts, provider, operation, ids) do
-    failed(build(response, response, provider, operation, ids), opts)
+  defp finish(response, _parse, _opts, provider, operation, ids) do
+    {:error, build(response, response, provider, operation, ids)}
   end
 
   defp decode(parse, response) do
     parse.(response)
   rescue
     exception -> {:error, exception}
-  end
-
-  defp failed(error, opts) do
-    metadata = CompletionError.safe_metadata(error)
-    emit(opts, :attempt_failed, metadata)
-    terminal = if error.category == :cancellation, do: :cancelled, else: :exhausted
-    emit(opts, terminal, metadata)
-    {:error, error}
   end
 
   defp emit(opts, type, metadata) do

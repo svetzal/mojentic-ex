@@ -6,10 +6,12 @@ defmodule Mojentic.LLM.CompletionConfig do
   returns a final response, the gateway fails, or its caller cancels execution.
   This removes only the iteration cutoff; provider request limits still apply.
 
-  `recovery: []` opts ordinary and structured completions into safe structured
-  errors with exactly one wire attempt. Supported options are `max_attempts: 1`
-  and `observer: fn event -> ... end`. Other options fail before HTTP dispatch.
-  Streaming recovery, admission, and resends are not implemented.
+  `recovery: []` opts ordinary and structured completions into safe errors with
+  one wire attempt. Set `max_attempts` to opt into bounded resends. Local providers
+  with ambiguous acceptance require explicit admission. See `Mojentic.LLM.Recovery`
+  and RECOVERY-CONFORMANCE.md for admission, cancellation and policy options.
+  Recovery limits govern resends; they never time out active generation.
+  Streaming recovery and exact wire trace hooks remain unimplemented.
 
   Provides settings for temperature, context window size, and token limits.
 

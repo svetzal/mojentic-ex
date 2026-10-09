@@ -155,8 +155,8 @@ defmodule Mojentic.LLM.ChatSession do
       # Continue conversation
       {:ok, response, session} = ChatSession.send(session, "And what about 3+3?")
 
-  Pass `recovery: []` as the third argument to opt into single-attempt safe
-  completion errors. On failure, keep the original session returned by `new/2`
+  Pass `recovery: []` as the third argument to opt into safe completion errors; include `max_attempts`
+  and an admission policy to enable bounded recovery. On failure, keep the original session returned by `new/2`
   or a prior successful send; the error does not return an updated history.
 
   """

@@ -1,361 +1,237 @@
-# Completion recovery conformance: Elixir single-attempt increment
+# Completion recovery conformance: Elixir bounded non-streaming recovery
 
-This implementation covers opt-in ordinary and structured completion failures.
-It does not implement resends or claim full transient recovery parity. No live
-models, sibling ports, harness experiments, or benchmarks were used.
+This increment implements the Policy semantics and Admission sections of
+TRANSIENT-RECOVERY-2026-10.md for ordinary and structured completion only.
+Streaming recovery and exact wire trace hooks remain work for a later increment.
+No live models, releases, sibling ports, harness edits, agent restarts, model
+unloads, benchmarks, or tool replay were used.
 
-## Migration
+## Synchronization correction
 
-Legacy calls retain their success values and legacy error forms. Their existing
-Req retry defaults remain unchanged. Opt in with `CompletionConfig.recovery`:
+The earlier implementation missed the requested pre-coding pull/rebase attempt.
+The previous conformance account incorrectly treated rebasing as inherently
+prohibited. The correction plan supplies these actual formation outcomes:
+fetch exited **0**; pull exited **1** because `FETCH_HEAD` was read-only. That
+failed pull is not successful synchronization, nor evidence of a merge conflict.
+
+For this Foundry worktree, the initial tree was clean at
+`bff29cf28c9899ea5c1cafc6041bae5157d7c9cc`. Before source edits, `git fetch origin`
+exited **0**. HEAD and fetched `origin/main` both resolved to that commit;
+`git log HEAD..origin/main` was empty. There were no subsequent arrivals to
+reconcile and no conflicts. This run's final user requirements expressly prohibit
+rebase and ref modification and give Foundry finalization ownership, so this run
+did not execute pull/rebase, commit, push, tag, release, merge or create a PR.
+The supplied prior failed pull is distinguished from this run's executed fetch.
+The coordinator's AGENTS.md guidance is preserved.
+
+## Boundary characterization and licensed changes
+
+All six adapter paths use `CompletionRequest.run/8`: OpenAI, Ollama and OMLX
+`complete/4` and `complete_object/4`. The semantic body and HTTP headers are
+constructed once, before recovery. Only opt-in recovery scheduling and error
+history change under the contract's Policy semantics and Admission sections and
+request sections 2–3. `recovery: nil` still calls the original parser and HTTP
+client directly. Existing successful parsing, provider payload adaptation,
+legacy errors and one-attempt failure evidence are preserved.
+
+Broker tool recursion calls a new completion after executing tools; the recovery
+loop encloses only that completion, never the broker loop. Its tool-depth counter
+is outside recovery. ChatSession prepares history before calling Broker and
+appends an assistant response only on success. Its token/interaction accounting
+remains outside recovery. Existing Message has no native reasoning-history field;
+recovery preserves the entire adapted wire payload without inventing one.
+Tests retain existing parser-specific reasoning behavior.
+
+## Migration and options
 
 ```elixir
 alias Mojentic.LLM.{Broker, CompletionConfig, CompletionError, Message}
 alias Mojentic.LLM.Gateways.Ollama
 
-config = CompletionConfig.new(recovery: [max_attempts: 1, observer: &IO.inspect/1])
-broker = Broker.new("local-model", Ollama)
+config = CompletionConfig.new(recovery: [
+  max_attempts: 3,
+  base_delay: 100,
+  delay_ceiling: 30_000,
+  budget: 60_000,
+  admission: fn context ->
+    # Ask the application admission service. This message alone is not approval.
+    send(admission_service, {:check_completion, context})
+    :pending
+  end,
+  observer: &IO.inspect/1
+])
 
-case Broker.generate(broker, [Message.user("Hello")], nil, config) do
+case Broker.generate(Broker.new("local-model", Ollama), [Message.user("Hello")], nil, config) do
   {:ok, text} -> text
-  {:error, %CompletionError{} = failure} ->
-    # Safe for normal inspection and JSON encoding.
-    CompletionError.safe_metadata(failure)
+  {:error, %CompletionError{} = failure} -> CompletionError.safe_metadata(failure)
 end
 ```
 
-The same configuration works with `gateway.complete/4`,
-`gateway.complete_object/4`, `Broker.generate_response/4`, and
-`Broker.generate_object/4` for OpenAI, Ollama, and OMLX. Sessions opt in with
-`ChatSession.send(session, query, recovery: [])`. On failure the original session
-remains available to its caller; failure does not append an assistant response.
-The existing `ChatSession.send/2` remains available.
+The admission service resolves a pending context with
+`send(context.reply_to, {:recovery_admission, context.ref, :allow})` or `:reject`.
+The callback may also return `:allow` or `:reject` immediately. It runs in a
+monitored worker; callback failure rejects admission. No pending decision times
+out into approval. No-hook local recovery requires acceptance `:no` (currently
+connection refusal evidence); a received 503/504 or connection closure remains
+ambiguous and returns `resend_permission: :admission_required`. Explicit admission
+can authorize a resend after application checks. OpenAI can retry eligible
+failures without a hook; this is not a claim of inference idempotency.
 
-Supported recovery options are `max_attempts: 1` and an `observer` function of
-one argument. `recovery: []` enables the default one-attempt contract. `nil`
-disables it. Unsupported options, including attempts greater than one, are
-ineligible protocol errors with zero wire attempts and empty history. They fail
-before HTTP dispatch. Ordinary and structured generation preserve provider
-payloads and return values. Existing provider controls and adaptation remain
-unchanged; recovery options are client metadata and never enter the payload.
+The same configuration works with all six adapter APIs, Broker.generate_response,
+Broker.generate_object, and `ChatSession.send(session, query, recovery: policy)`.
+`recovery: []` keeps the default one-attempt error contract. `nil` keeps legacy
+behavior, including its transport defaults.
 
-## Safe errors and lifecycle
-
-`CompletionError` exposes category, provider, operation, HTTP status, validated
-provider code/request ID, Retry-After, phase, acceptance, observed and delivered
-progress, eligibility/reason, resend permission, logical/attempt UUIDs, one-based
-wire count, and one-entry failure history. Retry eligibility describes the error;
-`resend_permission: :not_granted` means no resend is authorized or performed.
-Unrecognized transport causes are ineligible. Connection refusal evidenced by
-Req identifies `connecting` and acceptance `no`; ambiguous failures retain
-`unknown`. A received HTTP failure does not establish termination of inference.
-A malformed 200 response is decoding failure, with no delivered semantic output.
-
-Progress separates headers and raw body bytes from observed and delivered
-reasoning/content/tool calls. Failed decoding can observe semantic text without
-delivering it. Non-streaming requests have no delivered tool fragments. The
-transport preserves raw response bytes for opt-in calls instead of allowing Req
-to decode and re-encode JSON, so byte counts and retained HTTP causes are exact.
-
-Provider metadata accepts one `x-request-id` header and an error object's string
-`code`. Both must be 1–128 ASCII token characters (letters, digits, `_`, `.`, `:`,
-`-`); invalid/ambiguous IDs are absent. Retry-After is `:absent`, `:invalid`,
-`{:delay_seconds, integer}`, or `{:http_date, UTC_ISO8601_string}`. Dates are
-validated; no clock-based delay calculation or sleeping occurs in this increment.
-JSON and `safe_metadata/1` represent the tuple as a map with `kind` and `value`.
-
-Default `Inspect`, Jason encoding, safe metadata, and lifecycle events omit
-payloads, response text, tool arguments, and raw causes. The original cause is
-retained behind an opaque function and available explicitly with
-`CompletionError.cause(failure)`. That API is unsafe to log without caller review.
-Generic VM term dumps are not a supported safe serialization API; use Jason or
-`safe_metadata/1`. Opt-in broker traces redact message, content, metadata, tool
-argument and result fields, plus model and unvalidated provider evidence, while
-preserving the actual tool loop and payload. OpenAI adaptation logs contain only
-a stable warning for opt-in calls, excluding the requested model.
-Legacy traces retain their previous behavior. oMLX's existing structured-output
-warning remains in successful response metadata; opt-in calls suppress its raw
-warning log. Applications remain responsible for logs produced by their tools
-and explicit callbacks.
-
-Successful requests emit `attempt_started`, `attempt_succeeded`. Failed wire
-requests emit `attempt_started`, `attempt_failed`, `exhausted` (or `cancelled`
-for a transport-reported cancellation), with matching
-identities, wire count, phase and progress. No admission, delay, or retry events
-are fabricated. Req retry and redirect are disabled only for opt-in completion
-POSTs; model listing, embeddings, model actions, streaming, and realtime remain
-outside this increment.
-
-## Assertion-bearing evidence
-
-`test/mojentic/llm/recovery_test.exs` instantiates every adapter × operation below.
-Names are prefixed with the gateway module and `complete` / `complete_object`.
-The scripted Mox boundary implements the actual `Mojentic.HTTP` behaviour.
-Every request asserts endpoint, full decoded JSON payload, headers and retry/
-redirect options. Provider identifiers are compared to their exact received
-values, not masked aliases.
-
-| Case | Assertion-bearing test suffix | Public entrypoints |
-| --- | --- | --- |
-| 429/500/502/503/504, permanent 400/401 | `HTTP status matrix preserves exact metadata and safe lifecycle` | All adapters' `complete/4`, `complete_object/4` |
-| Exact decoding cases and observed versus delivered reasoning/content | Exact names and results in the decoding section below | All six gateway paths |
-| Connection refusal, ambiguous closed connection, timeout | `HTTP boundary preserves transport causes including synthetic unreachable and reset reasons` | All six gateway paths |
-| Seconds/date/invalid/absent/duplicate Retry-After; valid/invalid request ID and code | `validates absent invalid and date metadata` | All six gateway paths |
-| Unsupported options, no dispatch | `unsupported recovery options dispatch no HTTP request` | All six gateway paths |
-| Equal successful responses and exact unchanged payloads | `opt in success matches legacy successful response and payload` | All six gateway paths |
-| Legacy HTTP/body and transport tuples | `retains legacy HTTP and transport errors` | All six gateway paths |
-| No tools on failed completion; unchanged caller/session history | `broker response generate object and session failures never execute tools or alter caller history` | All adapters via `Broker.generate_response`, `generate`, `generate_object`, `ChatSession.send` |
-| Failure after one real tool execution; tool-result messages retained; no replay | `a failure after one tool executes preserves tool result and does not replay it` | All adapters via recursive `Broker.generate/4` |
-| Safe JSON/inspection/logs/lifecycle, explicit original cause | Status matrix and transport tests above | All six gateway paths |
-| Provider errors inside a 200; exact retained parser exceptions | Exact names and results in the decoding section below | All six gateway paths |
-| Transport-reported cancellation and unknown transport causes | `cancellation and unknown transport causes are ineligible` | All six gateway paths; cancellation scheduling is unimplemented |
-| Success lifecycle and semantic progress | `success events distinguish observed and delivered semantic progress` | All six gateway paths |
-| Observed tool calls on malformed structured content are not delivered | `structured failure records observed completed tools without delivering them` | All three adapters' `complete_object/4` |
-| Tool iteration budget stays at one across recursive requests | `tool depth remains bounded when recovery errors are enabled` | OpenAI via shared broker loop |
-| Raw warning header on invalid structured object | `oMLX structured parsing does not log warning headers on malformed object content` | OMLX `complete_object/4` |
-| Requested model omitted from adaptation logs | `OpenAI parameter adaptation logs exclude the requested model and payload` | OpenAI `complete/4` |
-
-`test/mojentic/llm/recovery_wire_test.exs` uses a supervised local TCP server
-through the production Req client, with a queued 200 response that would expose
-an accidental hidden resend:
-
-| Test suffix | Evidence |
+| Option | Default / semantics |
 | --- | --- |
-| `Req sees one exact request and never retries HTTP STATUS` (all six paths, seven statuses) | 503 stays a failure; exact HTTP route, credential header, message/model JSON, raw response bytes, request ID, Retry-After and received requests |
-| `broker and session tracing omit payload and response secrets on completion failures` | Actual broker/session Req requests with a real tracer; sentinel payload/body absent from recorded events |
+| `max_attempts` | 1; positive integer, includes initial request |
+| `base_delay`, `delay_ceiling` | 100 and 30,000 milliseconds, nonnegative integers |
+| `retryable_categories` | `[:transport, :http]`; explicit `:client_timeout` selection allowed |
+| `retryable_statuses` | `[429, 500, 502, 503, 504]`; explicit HTTP status selection allowed |
+| `budget` | Optional monotonic milliseconds measured from first failure |
+| `deadline` | Optional absolute monotonic millisecond deadline in the clock's domain |
+| `admission` | Optional function of one safe context; allow/reject/pending |
+| `cancel_ref` | Optional reference; send `{:cancel, ref}` to the completion caller |
+| `observer` | Function of one lifecycle event |
+| `clock`, `wall_clock` | Zero-arity monotonic millisecond / UTC DateTime sources |
+| `jitter` | Function of exponential ceiling, returns integer in `0..ceiling` |
+| `sleeper` | Optional deterministic one-arity delay function returning `:ok` |
 
-The previous increment proved transport closure classification. This increment
-replaces the proof artifact with a production Req structured-decoding probe,
-described below; the rejecting assertion distinguishes actual retained causes.
+Unknown or invalid options fail before dispatch. Protocol/malformed failures and
+cancellation cannot be made retryable by category selection. Custom HTTP selection
+is explicit policy; it does not waive local admission. Unclassified transports
+remain ineligible. Default timeout classification remains unchanged.
 
-## Capability and remaining contract cases
+The saturating exponential delay doubles only until the configured ceiling.
+Elixir integers have arbitrary precision; saturation avoids unbounded exponentiation.
+Default jitter is uniform over the inclusive integer interval. Retry-After seconds
+and validated HTTP dates provide a minimum against the wall clock observed at
+failure. Past dates yield zero; invalid/absent values retain policy delay. A minimum
+above the ceiling or a delay reaching the remaining deadline refuses recovery.
+Budget and absolute deadline are combined by taking the earlier. Cancellation and
+deadline are rechecked after admission/backoff and immediately before dispatch.
+An active generation can finish after the recovery deadline. Cancelling active
+HTTP stops the local request worker; it does not confirm remote inference stopped.
 
-| Completion adapter | Single-attempt safe errors | Provider termination evidence | Idempotency | Resends / streaming recovery |
-| --- | --- | --- | --- | --- |
-| OpenAI | Ordinary and structured, tested | Unknown | Not implemented | Not implemented |
-| Ollama | Ordinary and structured, tested | Unknown; model presence does not prove termination | Unsupported in this increment | Not implemented |
-| oMLX | Ordinary and structured, tested through its own parser | Unknown; load/unload is not admission evidence | Unsupported in this increment | Not implemented |
+## Evidence, identities and capabilities
 
-Unimplemented: 503-then-success recovery, persistent-504 multi-attempt exhaustion,
-backoff/jitter/delay ceilings, Retry-After clock calculations, recovery deadlines,
-status/category policy selection, asynchronous admission, cancellation during
-request/admission/backoff, interrupted streams, keepalive-only progress,
-immutable multi-attempt payload checks, retry identities and histories beyond
-one attempt, explicit wire trace observer APIs, and cross-port parity. Embeddings
-and realtime voice are separate APIs. No unverified parity is claimed.
+Opt-in Req retries and redirects are disabled. The body, messages, tools, schema,
+model, sampling controls and limits remain identical on each resend. No invented
+idempotency headers or attempt IDs enter provider payloads. A logical UUID stays
+constant per completion; each dispatched attempt has a distinct UUID. Admission
+and backoff do not consume wire attempts. Final errors retain ordered safe failure
+history bounded by max_attempts, final status and provider ID, Retry-After, observed
+and delivered progress, and the original private cause.
 
-## Production boundary correction (2026-10-09)
+`CompletionError.safe_metadata/1`, Inspect, Jason and lifecycle events exclude
+request/response text, raw causes, credentials, tool arguments and results.
+Provider IDs/codes accept only 1–128 ASCII token characters. Retry-After metadata
+is represented explicitly as absent, invalid, delay seconds or a validated date.
+`CompletionError.cause/1` deliberately reveals unsafe retained evidence and must
+not be logged without application review. Existing opt-in broker trace redaction
+is preserved. Applications remain responsible for their own hooks and tool logs.
 
-`CompletionRequest` now recognizes the `Req.TransportError` returned unchanged
-by production `ReqClient`. The original Mint, atom, and tuple boundary forms
-remain compatible. Only opt-in classification changed; legacy Req defaults and
-adapter parsers are preserved.
+Events include attempt_started/succeeded/failed, admission_pending/allowed/rejected/required,
+backoff_started, retry_started, exhausted and cancelled. Final events carry actual wire counts
+and ordered history. A dispatch cancelled or refused after its start notification
+has no additional wire attempt in the final outcome. Local UUIDs correlate events;
+they provide no provider-side idempotency.
 
-The proof-first closure probe read the entire HTTP request before closing the
-socket. The original classifier rejected the expected stable reason and
-eligibility (exit 2); the corrected classifier passed (exit 0).
-That earlier transport proof is superseded by the decoding proof below.
-Closure and receive timeout
-prove neither termination nor nonacceptance: phase and acceptance remain unknown,
-and resend permission stays `not_granted`. Timeout is ineligible. Refusal alone
-establishes connecting/nonacceptance. No transport error exposes payload or
-credentials through normal error serialization or observer/history metadata.
+`Recovery.capabilities/1` reports implemented boundary support for all three
+providers: local request cancellation supported; remote per-request cancellation,
+request-status queries and idempotency unsupported; exact remote termination
+unknown. This describes this client's integration, not every server version.
+The inspected [Ollama chat API](https://docs.ollama.com/api/chat),
+[OpenAI chat API](https://developers.openai.com/api/reference/resources/chat), and
+[oMLX project](https://github.com/jundot/omlx) do not provide a termination facility
+implemented by these adapters. No unsupported facility is advertised as usable.
+Model unload/list/activity observations are not exact-attempt termination evidence.
+There is no automatic remote termination checker; an application needing one must
+perform its checks before explicitly allowing admission.
 
-Fresh deterministic tests in `test/mojentic/llm/recovery_wire_test.exs`:
+| Provider | Local HTTP cancellation | Remote request cancellation | Request status | Idempotency | Exact remote termination |
+| --- | --- | --- | --- | --- | --- |
+| OpenAI | Supported with cancel_ref | Unsupported in this client | Unsupported in this client | Unsupported in this client | Unknown |
+| Ollama | Supported with cancel_ref | Unsupported in this client | Unsupported in this client | Unsupported in this client | Unknown |
+| oMLX | Supported with cancel_ref | Unsupported in this client | Unsupported in this client | Unsupported in this client | Unknown |
 
-| Exact test suffix (prefixed by adapter and operation) | Public paths and evidence |
+## Acceptance cases
+
+The tests use public entrypoints and an actual loopback HTTP server through
+production Req. They compare complete received requests and exact safe metadata.
+Existing Mox tests mock only the HTTP gateway boundary, not Req internals.
+
+| Test name suffix / cases | Scope and assertion |
 | --- | --- |
-| `Req closure retains ambiguous acceptance and exact cause` | All six `complete/4` and `complete_object/4` paths; real Req `:closed`, full semantic JSON, recorded request, exact progress/history, correlated event/error UUIDs |
-| `Req receive timeout preserves uncertainty without resend` | All six paths; server retains an accepted socket without responding; real Req `:timeout`, complete recorded payload and unchanged uncertainty |
-| `Req connection refusal proves nonacceptance` | All six paths; bound non-listening local port, real Req `:econnrefused`, exact cause and metadata |
-| `Req sees one exact request and never retries HTTP STATUS` | All six paths for STATUS 429, 500, 502, 503, 504, 400, 401; queued success exposes hidden resends; actual route, request JSON and raw response |
-| `real Req closure propagates through broker APIs and session with caller history intact` (adapter prefix only) | All three adapters through `Broker.generate/4`, `generate_response/4`, `generate_object/4`, `ChatSession.send/3`; exact request list and semantic payloads, original cause and correlated history/events, unchanged caller history |
+| `ambiguous local 504 waits for explicit admission and preserves complete wire payload` | Proof-first Ollama ordinary request: pending does not resend; explicit allow resends identical bytes, distinct IDs, exact ordered 504 evidence |
+| `real Req 503 recovers with identical full payload and correlated lifecycle` | All six paths; admissible recovery, exact Retry-After and request ID, full event sequence and attempt/logical identity correlation |
+| `real Req persistent 504 exhausts with ordered exact evidence` | All six; 3 actual requests, distinct provider/attempt IDs, ordered failure details |
+| `real Req Retry-After HEADER respects observed wall clock and policy minimum` | All six, HTTP 429: seconds, future date, past date, invalid value; exact received metadata, deterministic jitter and delay |
+| `real Req local recovery refuses REASON with KEYS` | Ceiling, budget, initial absolute deadline, no admission, explicit reject; exact retained failure and request payload |
+| `real Req cancellation during PHASE is authoritative and sends no retry` | All six at active request, pending admission and backoff |
+| `recovery deadline allows active generation to finish` | All six; held real request finishes after injected clock crosses deadline |
+| `no resend at exact deadline after PHASE` | All six, admission and backoff clock advancement; original status retained and no second request |
+| `real Req permanent failure does not retry under bounded recovery` | All six; 400, 401, 403, 404 and 422 |
+| `real Req decoding KIND retains exact evidence without resends` | Existing malformed outer JSON, invalid structured JSON, provider-error envelope and parser exception probes now use max_attempts 3 |
+| `real Req recovers after exact tool result without tool replay` | All providers, Broker and ChatSession; exact assistant/tool call IDs and serialized results, one execution, complete resends, retained session history |
+| `recovery freezes legacy adaptation of history schema tools and controls` | All six; full wire equality against a legacy request with custom controls, history, schema and tools |
+| `real Req monotonic budget begins at first failure and never resets on later failures` | Initial generation time excluded; second failure reaches the original budget and cannot resend |
+| `real Req exponential full jitter doubles and saturates at the configured ceiling` | Exact ceilings 10, 20, 25, 25 and deterministic jitter delays |
+| `real Req jitter ceilings saturate without exponent overflow` | A 1024-bit base is capped at 17 before jitter |
+| `real Req cancellation kills blocked PHASE callback worker` | Both admission and sleeper workers emit DOWN before completion cleanup finishes |
+| `real Req pending admission requires explicit DECISION` | All six, allow and reject, exact received evidence and unchanged complete requests |
+| `real Req sleeper FAILURE failure never enters safe errors history events or logs` | Secret-bearing return and raised exception become backoff_failed; exactly one request, no secret in errors/history/events/logs |
+| `real Req recovery does not replenish broker tool depth` | A recovered second tool request still exhausts depth one; one execution |
 
-`RecoveryTest`'s `HTTP boundary preserves transport causes including synthetic
-unreachable and reset reasons` explicitly supplements the real fixtures with
-Mox HTTP-behaviour tests for Req `econnreset`, `enetunreach`, `ehostunreach`, and
-an unknown reason. These are synthetic boundary evidence, not production wire
-proof. Existing Mint causes are compatibility evidence only. All six
-`Req transport boundary preserves exact legacy wrapper` tests verify the exact
-retained Req cause under the legacy `request_failed` wrapper. The HTTP metadata
-matrix includes 500 and 502. The former permissive malformed/provider/parser
-assertions are replaced by the exact decoding cases below. Unsupported-options,
-legacy success and adapter parsing tests remain in place. Tool safety tests assert
-exact assistant call IDs/arguments and serialized existing tool results; execution
-occurs once, and the existing bounded-depth test stays unchanged.
+The proof was run before fixture/documentation expansion and the full quality
+suite. The original implementation rejected with actual exit **2** because it
+rejected bounded recovery before dispatch. The corrected source passed with
+exit **0**, including pending admission, identical wire bytes and ordered exact
+metadata. `.foundry/proof.json` and its existing logs record these commands and
+actual outcomes. The source change implements behavior, not a marker toggle.
 
-CI already consistently pins Elixir **1.18.5** and OTP **28.5.0.7** across all
-setup steps. The installed toolchain matches those versions; supported version
-lines, package/dependency versions, thresholds, and exclusions were not changed.
-Dialyxir is absent; adding it or changing CI for a nonexistent PLT would exceed
-this correction's dependency freeze. No precommit alias is configured.
+## Final validation
 
-The clean initial HEAD for this increment was
-`efc9ff08ec397eee044ce82b3cde8626287792e3`, matching local `origin/main`
-and read-only `git ls-remote origin refs/heads/main`. Fetch was attempted
-before coding and rejected because the shared Git directory is read-only.
-Pull with rebase was not invoked: this task explicitly prohibits rebasing or
-modifying refs. There was no dirty state to stash and no conflict was encountered.
-All existing coordinator guidance is preserved. Foundry owns finalization;
-no commit, push, merge, tag, release or main landing is claimed.
-
-## Exact decoding characterization on delivered main
-
-Only tests, test support, this document and local proof evidence change.
-`CompletionRequest.run/8` and the six gateway parsers remain unchanged.
-The public paths are `OpenAI.complete/4`, `Ollama.complete/4`,
-`OMLX.complete/4` and each adapter's `complete_object/4`.
-The tests invoke those APIs, rather than calling an isolated decoder.
-
-| Input | Operations/adapters | Exact retained cause or result | Category / stable reason | Observed content / reasoning |
-| --- | --- | --- | --- | --- |
-| Invalid outer JSON | All six | `:invalid_response` | `:protocol` / `:malformed_response` | false / false |
-| JSON envelope, content `"response-secret"` | All three structured | `:invalid_json_object` | `:protocol` / `:malformed_response` | true / true |
-| Same non-JSON content | All three ordinary | Exact same `GatewayResponse` as legacy, including parser-specific reasoning | Success | true / true; OpenAI delivers no reasoning |
-| HTTP 200 error object | All six | `:invalid_response` (the parser does not return the provider error object) | `:provider_response` / `:provider_error` | false / false |
-| String instead of message map | OpenAI/Ollama ordinary | `%BadMapError{term: "response-secret"}` | `:protocol` / `:malformed_response` | false / false |
-| Integer `tool_calls` in message | OMLX ordinary | `%Protocol.UndefinedError{protocol: Enumerable, value: 17, description: ""}` | `:protocol` / `:malformed_response` | true / true |
-| Integer structured content | All three structured | Exact `%ArgumentError{}` with message `"errors were found at the given arguments:\n\n  * 1st argument: not an iodata term\n"` | `:protocol` / `:malformed_response` | false / false |
-
-All failures assert HTTP status 200, phase `:decoding`, acceptance `:yes`,
-eligibility false, wire number 1, resend permission `:not_granted`, exact
-provider/operation and provider code, request ID and Retry-After. Delivered
-semantic progress is exactly empty. Header receipt, raw byte size and every
-observed progress field are compared as complete maps. Causes use strict term
-equality, including exception fields. The same Mox inputs independently check
-legacy error tuples or raised exceptions; ordinary text success compares the
-entire legacy and recovery response.
-
-`test/support/decoding_evidence.ex` centralizes these fixtures and assertions.
-History equals the complete safe attempt metadata, using the actual returned
-logical request UUID and attempt UUID. Events are consumed in arrival order
-and compared as complete maps: `attempt_started`, `attempt_failed`,
-`exhausted`. No masked IDs or count-only lifecycle checks are used.
-Sentinels for payload, response, reasoning, credentials and tools are checked
-in inspection, JSON, formatted errors, safe metadata, each event and captured
-logs. Explicit `cause/1` remains private evidence, not a safe logging API.
-
-The following exact test names are in `test/mojentic/llm/recovery_test.exs`.
-Each gateway module prefix identifies its public operation above:
-
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete decoding invalid_outer_json preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete decoding provider_error preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete decoding parser_exception preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete_object decoding invalid_outer_json preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete_object decoding invalid_structured_content preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete_object decoding provider_error preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete_object decoding parser_exception preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete accepts invalid structured content as unchanged ordinary text`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete decoding invalid_outer_json preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete decoding provider_error preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete decoding parser_exception preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete_object decoding invalid_outer_json preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete_object decoding invalid_structured_content preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete_object decoding provider_error preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete_object decoding parser_exception preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete accepts invalid structured content as unchanged ordinary text`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete decoding invalid_outer_json preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete decoding provider_error preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete decoding parser_exception preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete_object decoding invalid_outer_json preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete_object decoding invalid_structured_content preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete_object decoding provider_error preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete_object decoding parser_exception preserves exact cause metadata and ordered identities`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete accepts invalid structured content as unchanged ordinary text`
-
-The following exact test names are in `test/mojentic/llm/recovery_wire_test.exs`.
-They traverse production `Mojentic.HTTP.ReqClient.post/4` with deterministic
-supervised TCP responses. Every case queues a second 200 response, asserts
-the exact decoded request JSON and route, content type/length and applicable
-authorization header, and compares the server's entire received request list
-with the one actual request. Extra request/event messages are rejected.
-These are local HTTP observations, not live-model requests:
-
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete real Req decoding invalid_outer_json retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete real Req decoding provider_error retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete real Req decoding parser_exception retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete_object real Req decoding invalid_outer_json retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete_object real Req decoding invalid_structured_content retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete_object real Req decoding provider_error retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.OpenAI complete_object real Req decoding parser_exception retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete real Req decoding invalid_outer_json retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete real Req decoding provider_error retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete real Req decoding parser_exception retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete_object real Req decoding invalid_outer_json retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete_object real Req decoding invalid_structured_content retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete_object real Req decoding provider_error retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.Ollama complete_object real Req decoding parser_exception retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete real Req decoding invalid_outer_json retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete real Req decoding provider_error retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete real Req decoding parser_exception retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete_object real Req decoding invalid_outer_json retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete_object real Req decoding invalid_structured_content retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete_object real Req decoding provider_error retains exact evidence without resends`
-- `Elixir.Mojentic.LLM.Gateways.OMLX complete_object real Req decoding parser_exception retains exact evidence without resends`
-- `OpenAI complete_object real Req retains invalid structured content and exact lifecycle`
-
-The last test is the proof-first acceptance probe (`--only decoding_proof`).
-Its initial `:invalid_response` expectation rejected with actual Mix exit 2
-and showed the retained `:invalid_json_object`. Correcting the expectation to
-that existing behavior passed with exit 0 before fixtures or documentation were
-expanded. `.foundry/proof.json` records the commands, actual exit codes and
-logs; the final suite retains this acceptance test. No runtime correction was
-necessary or made.
-
-Remaining limitations: these deterministic envelopes characterize representative
-decoder failures, not every malformed field or every provider error shape.
-Ordinary text is not validated as structured JSON. Provider errors are classified
-from the envelope while the legacy parser cause remains `:invalid_response`.
-HTTP 200 establishes acceptance evidence, not provider termination. Resends,
-admission, scheduled cancellation and streaming recovery remain unimplemented.
-The existing broker tool-execution, tool-depth and session-history assertions
-are preserved and run with the full suite.
-## Fresh validation for decoding increment
-
-Focused recovery suite: **177 tests, zero failures**. Full suite: **22 doctests,
-1,015 tests, zero failures**, with the existing 19 integration exclusions.
-Coverage: **88.67%**, above the unchanged **80%** threshold. No thresholds or
-exclusions were changed.
+Every acceptance row above passed. `.foundry/logs/cases.log` retains all individual
+case names and results: **316 focused tests, zero failures**. The full suite
+passed **22 doctests and 1,154 tests**, with the existing **19 integration
+exclusions**. Coverage is **88.57%**, above the unchanged **80%** threshold.
+Final compile, test and focused-test stderr are empty. Strict Credo reports zero
+issues. The test support module was moved out of a test file to remove a full-suite
+load-order failure. Generated refusal tests use a helper to eliminate compiler
+warnings about constant comparisons. No warnings or checks were suppressed.
 
 | Command | Actual result | Log in `.foundry/logs/` |
 | --- | --- | --- |
-| `mix format --check-formatted` | Exit 0 | `format.log` |
-| `mix compile --warnings-as-errors` | Exit 0 | `compile.log` |
-| `MIX_ENV=test mix compile --warnings-as-errors` | Exit 0 | `compile-test.log` |
-| `mix credo --strict` | Exit 0, zero issues | `credo.log` |
-| `mix test` | Exit 0, no compilation warnings | `test.log` |
-| `mix test --cover` | Exit 0, 88.67%, no compilation warnings | `coverage.log` |
-| Focused recovery tests | Exit 0 | `decoding-focused.log` |
-| Final proof acceptance probe | Exit 0 | `proof-final.log` |
-| `mix deps.audit` | Exit 0, no vulnerabilities in checked database | `deps-audit.log` |
-| `mix hex.audit` | Exit 0, no retired/security advisory packages | `hex-audit.log` |
-| `mix sobelow --config` | Exit 0, no findings under existing configuration | `sobelow.log` |
-| `mix docs` | Exit 0, existing unresolved tracer type-reference warnings | `docs.log` |
-| `mix hex.outdated --all` | Exit 1, outdated packages, informational | `hex-outdated.log` |
-| `mix dialyzer` | Exit 1, task unavailable | `dialyzer.log` |
+| `mix format --check-formatted` | Exit 0 | format.log |
+| `mix compile --warnings-as-errors` | Exit 0 | compile.log |
+| `MIX_ENV=test mix compile --warnings-as-errors` | Exit 0 | compile-test.log |
+| `mix credo --strict` | Exit 0, zero issues | credo.log |
+| `mix test --cover` | Exit 0, 88.57% | coverage.log |
+| `mix test` | Exit 0, zero failures | test.log |
+| Focused recovery tests with `--trace` | Exit 0, 316 tests | cases.log |
+| Final admission proof | Exit 0 | corrected.log |
+| `mix deps.audit` | Exit 0, no vulnerabilities in checked database | deps-audit.log |
+| `mix hex.audit` | Exit 0, no retired/security advisory packages | hex-audit.log |
+| `mix sobelow --config` | Exit 0, no findings under existing configuration | sobelow.log |
+| `mix docs` | Exit 0, existing unresolved tracer type-reference warnings | docs.log |
+| `mix hex.outdated --all` | Exit 1, updates available, informational | hex-outdated.log |
+| `mix dialyzer` | Exit 1, unavailable task | dialyzer.log |
 
-Mix commands ran through `foundry capture` with `/tmp/mojentic-mix`, selecting
-the installed pinned toolchain and writable `HEX_HOME=/tmp/mojentic-recovery-hex`.
-`toolchain.log` records the Elixir/OTP runtime. Capture logs retain the full
-stdout/stderr artifacts and actual exit codes. Dependencies were restored
-from the existing lockfile; no dependency or package versions changed.
+Commands ran through `foundry capture` with `/tmp/mojentic-mix`, selecting the
+installed pinned Elixir **1.18.5** and OTP **28.5.0.7**, with writable
+`HEX_HOME=/tmp/mojentic-recovery-hex`. The toolchain log records the runtime.
+Dependencies were restored from the existing lockfile. No dependency, package,
+supported-version or CI pin changed, and no precommit alias is configured.
 
-Strict Credo initially rejected the test helper's arity; the metadata arguments
-were grouped and all required checks rerun. Elixir initially warned about
-unreachable branches in generated tests; ordinary success and decoding failure
-cases were separated and the final full suites have empty stderr. No warnings
-were suppressed.
-
-MixAudit could not refresh its read-only shared database, but its local HEAD
-`935abf7410a2bbb18e12579dee6e31267c3ed244` matched upstream main via read-only
-commands (`advisory-local.log`, `advisory-remote.log`). Sobelow emitted existing
-lockfile keyword parsing warnings without findings; this is not a Phoenix project.
-Documentation generation retains existing undefined/private
-`TracerEvent.t/0` warnings. Dialyzer/PLT analysis is unavailable because Dialyxir
-is absent and is not claimed as passing. Adding that dependency exceeds this
-increment's dependency freeze. No precommit alias is configured, and no advisory
-suppressions were added.
-
-Changes remain uncommitted for Foundry review and finalization. Runtime behavior,
-parser behavior, broker tool execution, session history, dependencies, supported
-versions and CI pins remain unchanged. No release or main landing is claimed.
+MixAudit's shared advisory database could not refresh because its FETCH_HEAD is
+read-only. Read-only comparison confirmed local HEAD and upstream main both equal
+`935abf7410a2bbb18e12579dee6e31267c3ed244`; advisory-local.log and
+advisory-remote.log retain the evidence. No advisory suppression changed.
+Sobelow emits existing lockfile quoted-keyword warnings without findings; this
+is not a Phoenix project. Docs generation retains existing undefined/private
+`TracerEvent.t/0` references. Dialyxir is absent, so Dialyzer/PLT verification
+remains unavailable and is not claimed as passing. Adding a dependency or
+changing its CI cache conflicts with the dependency freeze. Sleeper failures are normalized to `:backoff_failed`; arbitrary callback return
+values and exceptions never enter safe metadata. These limitations
+are recorded, not waived. Changes remain uncommitted for Foundry finalization.

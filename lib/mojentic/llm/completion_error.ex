@@ -1,6 +1,6 @@
 defmodule Mojentic.LLM.CompletionError do
   @moduledoc """
-  Safe, single-attempt completion failure. `safe_metadata/1` is the serialization
+  Safe completion failure with bounded attempt history. `safe_metadata/1` is the serialization
   boundary; `cause/1` explicitly reveals the original provider or parser cause.
   Retry eligibility never grants permission to resend.
   """
@@ -60,7 +60,7 @@ defmodule Mojentic.LLM.CompletionError do
           logical_request_id: String.t(),
           attempt_id: String.t(),
           wire_attempt: non_neg_integer(),
-          resend_permission: :not_granted,
+          resend_permission: atom(),
           history: [map()],
           private_cause: (-> term())
         }

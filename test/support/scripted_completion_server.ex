@@ -49,6 +49,15 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
   @impl true
   def handle_call(:requests, _from, state), do: {:reply, state.requests, state, 0}
 
+  def handle_call({:release, response}, _from, state) do
+    Enum.each(state.sockets, fn socket ->
+      :ok = :gen_tcp.send(socket, response)
+      :gen_tcp.close(socket)
+    end)
+
+    {:reply, :ok, %{state | sockets: []}, 0}
+  end
+
   @impl true
   def terminate(_reason, state) do
     Enum.each(state.sockets, &:gen_tcp.close/1)

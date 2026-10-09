@@ -5,7 +5,7 @@ defmodule Mojentic.LLM.RecoveryTest do
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, CompletionError, Message}
   alias Mojentic.LLM.Gateways.{OpenAI, Ollama, OMLX}
 
-  alias Mojentic.TestSupport.DecodingEvidence
+  alias Mojentic.TestSupport.{CountingTool, DecodingEvidence}
 
   setup :verify_on_exit!
 
@@ -293,7 +293,7 @@ defmodule Mojentic.LLM.RecoveryTest do
 
     test "#{gateway} #{operation} unsupported recovery options dispatch no HTTP request" do
       for options <- [
-            [max_attempts: 2],
+            [max_attempts: 0],
             [admission: fn -> :allow end],
             [unknown: "payload-secret"],
             false,
@@ -384,24 +384,6 @@ defmodule Mojentic.LLM.RecoveryTest do
 
       assert {:error, {:request_failed, :closed}} =
                invoke(@gateway, @operation, CompletionConfig.new())
-    end
-  end
-
-  defmodule CountingTool do
-    @behaviour Mojentic.LLM.Tools.Tool
-    defstruct [:owner]
-    @impl true
-    def run(tool, args) do
-      send(tool.owner, {:tool_executed, args})
-      {:ok, "tool-result-secret"}
-    end
-
-    @impl true
-    def descriptor do
-      %{
-        type: "function",
-        function: %{name: "count", description: "count", parameters: %{type: "object"}}
-      }
     end
   end
 
