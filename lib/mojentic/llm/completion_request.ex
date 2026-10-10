@@ -2,6 +2,10 @@ defmodule Mojentic.LLM.CompletionRequest do
   @moduledoc false
   alias Mojentic.LLM.CompletionError
 
+  @provider_codes ~w(overloaded capacity_exceeded busy bad_request rate_limit_exceeded
+                     insufficient_quota invalid_api_key authentication_error invalid_request_error
+                     model_not_found server_error context_length_exceeded)
+
   def run(client, url, body, headers, opts, config, {provider, operation}, parse) do
     case config.recovery do
       nil ->
@@ -72,15 +76,15 @@ defmodule Mojentic.LLM.CompletionRequest do
         {:not_sent, reason}
 
       {:error, {:request_cancelled, evidence, progress, original}} ->
-        cancelled(evidence, progress, original, provider, operation, ids)
+        cancelled(evidence, progress, original, provider, operation, ids, {body, headers})
 
       response ->
-        finish(response, parse, recovery, provider, operation, ids)
+        finish(response, parse, recovery, provider, operation, ids, {body, headers})
     end
   end
 
   @doc false
-  def cancelled(evidence, snapshot, original, provider, operation, ids) do
+  def cancelled(evidence, snapshot, original, provider, operation, ids, outbound \\ nil) do
     evidence = evidence || Mojentic.HTTP.ReceivedEvidence.new(:ordinary)
 
     response =
@@ -95,7 +99,7 @@ defmodule Mojentic.LLM.CompletionRequest do
            }},
         else: {:error, :cancelled}
 
-    error = build(response, :cancelled, provider, operation, ids)
+    error = build(response, :cancelled, provider, operation, ids, outbound)
     progress = Mojentic.HTTP.ReceivedEvidence.progress(evidence)
 
     progress = merge_received_progress(progress, snapshot)
@@ -170,7 +174,8 @@ defmodule Mojentic.LLM.CompletionRequest do
          opts,
          provider,
          operation,
-         ids
+         ids,
+         outbound
        ) do
     decoded = decode(parse, received)
 
@@ -182,9 +187,9 @@ defmodule Mojentic.LLM.CompletionRequest do
           body: response.body
       }
 
-      cancelled(evidence, nil, decoded, provider, operation, ids)
+      cancelled(evidence, nil, decoded, provider, operation, ids, outbound)
     else
-      finish_decoded(decoded, received, opts, provider, operation, ids)
+      finish_decoded(decoded, received, opts, provider, operation, ids, outbound)
     end
   end
 
@@ -194,18 +199,19 @@ defmodule Mojentic.LLM.CompletionRequest do
          _opts,
          provider,
          operation,
-         ids
+         ids,
+         outbound
        ) do
     response = {:ok, %{status_code: status, headers: headers, body: body, phase: :streaming}}
-    {:error, build(response, cause, provider, operation, ids)}
+    {:error, build(response, cause, provider, operation, ids, outbound)}
   end
 
-  defp finish({:error, cause} = response, _parse, _opts, provider, operation, ids) do
-    {:error, build(response, cause, provider, operation, ids)}
+  defp finish({:error, cause} = response, _parse, _opts, provider, operation, ids, outbound) do
+    {:error, build(response, cause, provider, operation, ids, outbound)}
   end
 
-  defp finish(response, _parse, _opts, provider, operation, ids) do
-    {:error, build(response, response, provider, operation, ids)}
+  defp finish(response, _parse, _opts, provider, operation, ids, outbound) do
+    {:error, build(response, response, provider, operation, ids, outbound)}
   end
 
   defp finish_decoded(
@@ -214,7 +220,8 @@ defmodule Mojentic.LLM.CompletionRequest do
          opts,
          _provider,
          _operation,
-         ids
+         ids,
+         _outbound
        ) do
     progress = progress(received, response.body)
 
@@ -238,8 +245,8 @@ defmodule Mojentic.LLM.CompletionRequest do
     success
   end
 
-  defp finish_decoded({:error, cause}, response, _opts, provider, operation, ids),
-    do: {:error, build(response, cause, provider, operation, ids)}
+  defp finish_decoded({:error, cause}, response, _opts, provider, operation, ids, outbound),
+    do: {:error, build(response, cause, provider, operation, ids, outbound)}
 
   defp decode(parse, response) do
     parse.(response)
@@ -255,7 +262,7 @@ defmodule Mojentic.LLM.CompletionRequest do
   end
 
   @doc false
-  def build(response, cause, provider, operation, ids) do
+  def build(response, cause, provider, operation, ids, outbound \\ nil) do
     {category, status, phase, acceptance, reason, eligible} = classify(response, cause)
     {headers, body} = evidence(response)
 
@@ -277,11 +284,12 @@ defmodule Mojentic.LLM.CompletionRequest do
           acceptance: acceptance,
           reason: reason,
           retry_eligible: eligible,
-          provider_code: provider_code(body),
-          provider_request_id: validated(header(headers, "x-request-id")),
+          provider_code: safe_code(body, outbound),
+          provider_request_id: safe_request_id(header(headers, "x-request-id"), outbound),
           retry_after: retry_after(header(headers, "retry-after")),
           progress: progress(response, body),
-          private_cause: fn -> cause end
+          private_cause: fn -> cause end,
+          private_evidence: fn -> %{status: status, headers: headers, body: body, ids: ids} end
         })
       )
 
@@ -418,10 +426,81 @@ defmodule Mojentic.LLM.CompletionRequest do
 
   defp validated(_value), do: nil
 
-  defp provider_code(body) do
+  # Provider text is untrusted even when its syntax resembles a code or UUID.
+  # Compare against the exact outbound representation and decoded payload strings.
+  # Local logical/attempt IDs never pass through this provider-only boundary.
+  defp safe_code(body, outbound) do
     case Jason.decode(body) do
-      {:ok, %{"error" => %{"code" => code}}} -> validated(code)
-      _ -> nil
+      {:ok, %{"error" => %{"code" => code}}}
+      when code in @provider_codes ->
+        without_echo(code, outbound)
+
+      _ ->
+        nil
+    end
+  end
+
+  defp safe_request_id(value, outbound) do
+    case validated(value) do
+      nil -> nil
+      value -> without_echo(value, outbound)
+    end
+  end
+
+  defp without_echo(value, nil), do: value
+
+  defp without_echo(value, {body, headers}) do
+    {payload, token_sources} = payload_strings(body)
+    supplied_headers = Enum.flat_map(headers, &header_strings/1)
+    strings = payload ++ supplied_headers
+    tokens = Enum.flat_map(token_sources ++ supplied_headers, &tokens/1)
+
+    if Enum.any?(strings, &echo?(value, &1)) or Enum.any?(tokens, &token_echo?(value, &1)),
+      do: nil,
+      else: value
+  end
+
+  defp echo?(value, text) do
+    text != "" and (String.contains?(text, value) or String.contains?(value, text))
+  end
+
+  defp header_strings({_key, text}) do
+    # Include the credential separately from its HTTP authorization scheme.
+    [text | String.split(text, " ", parts: 2)]
+  end
+
+  defp payload_strings(body) do
+    case Jason.decode(body) do
+      {:ok, decoded} ->
+        decoded_strings = strings(decoded)
+        {[body | decoded_strings], decoded_strings}
+
+      _ ->
+        {[body], [body]}
+    end
+  end
+
+  defp strings(value) when is_binary(value), do: [value]
+
+  defp strings(value) when is_list(value), do: Enum.flat_map(value, &strings/1)
+
+  defp strings(value) when is_map(value),
+    do: Enum.flat_map(value, fn {key, item} -> strings(key) ++ strings(item) end)
+
+  defp strings(_value), do: []
+
+  defp tokens(text), do: Regex.scan(~r/[A-Za-z0-9_-]+/, text) |> List.flatten()
+
+  defp token_echo?(value, token) do
+    # Short words in prose must occur as identifier components, not single
+    # letters inside an unrelated provider code (for example the article "a").
+    if byte_size(token) >= 8 or token in @provider_codes or Regex.match?(~r/[0-9_-]/, token) do
+      String.contains?(value, token)
+    else
+      Regex.match?(
+        Regex.compile!("(?:^|[^A-Za-z0-9])" <> Regex.escape(token) <> "(?:$|[^A-Za-z0-9])"),
+        value
+      )
     end
   end
 

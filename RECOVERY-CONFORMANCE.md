@@ -1292,3 +1292,109 @@ dependency, coverage or exclusion setting changed.
 Independent final review is recorded in [.foundry/handoff-review.md](.foundry/handoff-review.md).
 Foundry retains ownership of finalization; completed source changes remain in the
 working tree, with no commit, push, merge, rebase, tag or release.
+
+## Provider metadata echo correction (2026-10-10)
+
+This increment starts from `b09ddc960f8db90c54f6abcc9963d14311aab9e1` and closes
+provider metadata echo leakage under the safe-error contract and October 10
+privacy scope. It changes the shared `CompletionRequest.build` boundary and its
+ordinary, cancellation, and `StreamRecovery` callers. The immutable outbound body
+and headers are inspected without modifying request bytes. Provider codes use a
+bounded recognized vocabulary; provider IDs retain existing syntactic validation.
+Both omit values that overlap outbound payload strings or header values, including
+authorization credentials and decorated echoes. Decoded payload keys and strings
+provide punctuation-delimited tokens; token-shaped values and recognized codes
+match inside decorated identifiers. Short alphabetic prose words use identifier
+component boundaries to preserve unrelated legitimate controls. Local logical/attempt identities
+never pass through this provider-text filter.
+
+The early [behavioral proof](.foundry/proof.json) contains a real scripted OpenAI
+HTTP503 rejection: `overloaded`, sent as the credential, entered the safe provider
+code. The same request also echoed a UUID prompt into `x-request-id`. The corrected
+public-boundary probe verifies both fields are absent while status, progress,
+local identities, admission context, history, lifecycle, and actual wire evidence
+remain exact. Dependency setup failure and fixture assertion mistakes are kept
+separately from that production rejection in the complete capture logs.
+
+The new `ProviderMetadataWireTest` exercises OpenAI, Ollama, and oMLX ordinary,
+structured, legacy-stream, and event-stream calls, Broker ordinary/structured/
+legacy/events and ChatSession ordinary/legacy forwarding. Synthetic token, UUID,
+recognized-code, decorated credential/prompt, separate credential-only/prompt-only,
+and legitimate request-ID/code controls use actual loopback HTTP. Ollama has no
+outbound authorization credential, so its credential-only case is inapplicable.
+Each retry case asserts two byte-identical wire requests, distinct exact attempt
+identities, shared logical identity, numeric status, observed/delivered progress,
+bounded history, ordered lifecycle, admission metadata and default tracer/log
+privacy. Exact tracing and explicit received-evidence inspection retain sensitive
+headers/body and correlate to the original local identities.
+
+Additional cancellation cases cover all three gateways and four entrypoints,
+asserting received metadata filtering, exact partial body, one wire attempt,
+ordered failure/cancellation lifecycle, and server-observed socket closure.
+HTTP200 semantic provider-error cases cover both stream APIs on all providers;
+original decoded causes and available headers/status are retained privately while
+opt-in exact capture retains raw frames. Existing cancellation/socket closure,
+immutable-request, tool execution and retries-disabled tests remain intact.
+
+The [controller receipt](.foundry/controller-sync/receipt.json) records successful
+fetch and pull/rebase outside the agent sandbox, a clean tree, and matching HEAD,
+origin/main and remote main at the starting revision. The executor checked every
+receipt log hash and copied the receipt and logs unchanged into this worktree;
+[verification](.foundry/controller-sync-validation.json) records that result.
+No sandbox-denied Git operation was repeated. Foundry owns synchronization and
+landing directly on main; this executor leaves changes uncommitted and performs
+no release, branch, PR, ref mutation, dependency or runtime change.
+
+See the [migration privacy guidance](guides/streaming.md#provider-metadata-privacy)
+for optional metadata, explicit sensitive inspection, exact capture, and the
+remaining limits on transformed echoes and successful output.
+
+### Audit findings and scope
+
+MixAudit and Hex audit report no vulnerabilities or retired/advisory packages.
+MixAudit's automatic database refresh was denied at its read-only external Git
+path. The executor did not repeat that mutation: a read-only comparison confirms
+installed advisory HEAD and upstream main both equal
+`935abf7410a2bbb18e12579dee6e31267c3ed244`.
+
+Configured Sobelow passes. The additional unfiltered scan with `--exit low`
+returns **1** for **seven existing low-confidence** `Traversal.FileModule`
+findings: Ollama local images, OpenAI message local images, and FileManager
+matching, reading, writing, and directory creation. These general file-access
+paths are outside this metadata correction. Their source bytes match the starting
+HEAD exactly, recorded in [audit baseline](.foundry/audit-baseline.json); no new
+suppression or allowlist was added. This audit is retained as an acknowledged
+finding-bearing result, not described as a clean scan. `hex.outdated --all`
+returns **1** for available upgrades, an informational result; dependencies and
+runtime pins remain unchanged.
+
+### Final validation and review
+
+The final focused matrix passes **338 tests**, zero failures. The fresh full
+coverage run passes **22 doctests and 2,311 tests**, zero failures, with **89.29%**
+coverage above the unchanged **80%** floor and the same **19 integration
+exclusions**. Format, dev/test warnings-as-errors compilation, strict Credo,
+Dialyzer (zero errors), and documentation generation pass on the unchanged CI
+runtime through `scripts/recovery-mix`. No warning suppressions, dependency
+upgrades, gate reductions, runtime changes or coverage exclusions were added.
+
+[Independent review](.foundry/independent-review.md) records the separate reviewer's
+findings, corrections and final approval of this increment's source, fixtures,
+privacy guidance and proof. The early missing dependencies, mistaken lifecycle
+fixture expectation, inapplicable Ollama credential-only cancellation assumption,
+initial helper complexity, over-conservative token extraction controls and missing
+`bad_request` vocabulary control are retained as failed setup/fixture/gate evidence.
+They are not substituted for the original production privacy rejection.
+
+[Final quality receipts](.foundry/quality.json), [proof validation](.foundry/proof-validation.json),
+[source hashes](.foundry/source-hashes.json), [capture index](.foundry/capture-index.json),
+and [unchanged invariants](.foundry/invariants.json) bind the recorded results to
+the final source. Complete logs, source snapshots and receipts are also retained
+outside this temporary worktree under the task-specific tool-log archive recorded
+in [archive receipt](.foundry/archive-receipt.json). All edits remain in the working
+tree for Foundry's review and direct-main finalization.
+
+The separate fresh plain suite also passes **22 doctests and 2,311 tests**, zero
+failures, with the same 19 integration exclusions. The finding-bearing unfiltered
+Sobelow result and informational outdated result remain explicitly indexed with
+their actual nonzero exits alongside the passing required gates.

@@ -303,3 +303,41 @@ and raw-byte progress with tracing enabled or disabled. Retry policy uses that
 HTTP status: a truncated 401 cannot become a retryable transport failure.
 Custom HTTP clients must implement `wire_trace` themselves;
 these tests establish the default Req boundary contract.
+
+## Provider metadata privacy
+
+Recovery treats provider error codes and `x-request-id` headers as untrusted
+response text. A syntactically valid token or UUID can still echo a credential,
+prompt, tool argument, or other outbound payload. Safe errors now omit provider
+metadata that overlaps the immutable request body, decoded payload strings, or
+supplied header values, including the credential after its authorization scheme.
+Full-string direct and decorated echoes are omitted. Embedded UUIDs, recognized
+codes, and token-shaped values are also excluded, including tokens next to
+sentence punctuation. Short alphabetic prose words are matched as identifier
+components to avoid treating an article such as `a` as a credential inside every
+unrelated code. A short word embedded in a longer prompt and concatenated without
+an identifier boundary (for example `Bob` into `reqBob`) is outside that policy. Recognized provider codes are
+retained only when they are independent of those outbound values; unknown codes
+are omitted. Duplicate or malformed request-ID headers remain omitted.
+
+This filtering applies to ordinary and structured completions, legacy and event
+streams, cancellation, admission context, attempt history, formatting, JSON, and
+lifecycle observers. Broker and session forwarding use the same safe error.
+Local logical request IDs and attempt IDs remain exact, as do numeric status,
+progress, retry policy, and wire request bytes. A legitimate provider identifier
+can be omitted when it overlaps request data; consumers should treat provider
+metadata as optional and correlate requests using the local identities.
+
+`CompletionError.cause/1` explicitly exposes the original cause and may reveal
+secrets. `CompletionError.received_evidence/1` exposes available received status,
+headers, and body privately on completion failures, including cancellation. For
+an HTTP error body this is the received body; for a semantic provider-error frame
+it is the decoded error re-encoded as JSON. The opt-in `trace_observer` retains
+exact raw HTTP chunks and request bytes with the matching local identities.
+These inspection and capture APIs are sensitive and must not be sent to default
+logs or lifecycle observers. No additional HTTP request is made to retrieve them.
+
+This boundary detects echoed outbound strings, including JSON escaping, rather
+than arbitrary transformations such as a secret encoded by the provider in
+base64. It does not sanitize successful provider output or make opt-in exact
+capture safe for public logging. Recovery-disabled behavior is unchanged.

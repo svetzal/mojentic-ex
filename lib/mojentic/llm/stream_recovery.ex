@@ -43,6 +43,7 @@ defmodule Mojentic.LLM.StreamRecovery do
               owner: owner,
               ref: ref,
               ids: ids,
+              outbound: {body, headers},
               provider: provider,
               mode: mode,
               parser: parser(provider),
@@ -85,7 +86,8 @@ defmodule Mojentic.LLM.StreamRecovery do
                   original,
                   provider,
                   operation(mode),
-                  ids
+                  ids,
+                  {body, headers}
                 )
 
               {:error, {:stream_cancelled, progress}} ->
@@ -632,7 +634,8 @@ defmodule Mojentic.LLM.StreamRecovery do
         failure_cause(reason),
         state.provider,
         operation(state.mode),
-        state.ids
+        state.ids,
+        state.outbound
       )
 
     error = response_metadata(error, reason, state)
@@ -707,7 +710,8 @@ defmodule Mojentic.LLM.StreamRecovery do
         reason,
         state.provider,
         operation(state.mode),
-        state.ids
+        state.ids,
+        state.outbound
       )
 
     %{
@@ -715,7 +719,8 @@ defmodule Mojentic.LLM.StreamRecovery do
       | http_status: status,
         provider_request_id: metadata.provider_request_id,
         provider_code: metadata.provider_code,
-        retry_after: metadata.retry_after
+        retry_after: metadata.retry_after,
+        private_evidence: metadata.private_evidence
     }
   end
 

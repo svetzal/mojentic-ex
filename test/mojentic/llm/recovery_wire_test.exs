@@ -32,6 +32,60 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     :ok
   end
 
+  @tag :metadata_echo_proof
+  test "recognized provider code and UUID request ID echoes cannot enter public recovery metadata" do
+    secret = "a539ba99-c7f8-4fd0-b324-d8b082925980"
+    body = Jason.encode!(%{error: %{code: "overloaded"}})
+    reply = String.replace(response(503, body), "wire-request-73", secret)
+    server = start_supervised!({ScriptedCompletionServer, {self(), [reply]}})
+    assert_receive {:server_port, port}
+    configure(OpenAI, port)
+    System.put_env("OPENAI_API_KEY", "overloaded")
+    owner = self()
+
+    config =
+      CompletionConfig.new(
+        recovery: [
+          max_attempts: 2,
+          admission: fn context ->
+            send(owner, {:echo_admission, context})
+            :reject
+          end,
+          observer: &send(owner, {:echo_event, &1})
+        ]
+      )
+
+    assert {:error, error} = OpenAI.complete("gpt-4o", [Message.user(secret)], [], config)
+    assert error.provider_code == nil
+    assert error.provider_request_id == nil
+    assert error.http_status == 503
+    assert error.progress.headers_received
+    assert error.progress.raw_bytes == byte_size(body)
+    assert_receive {:wire_request, wire}
+    assert wire =~ "Bearer overloaded"
+    assert wire =~ secret
+    assert GenServer.call(server, :requests) == [wire]
+    assert_receive {:echo_admission, context}
+    assert context.failure.provider_code == nil
+    assert context.failure.provider_request_id == nil
+    assert context.failure.attempt_id == error.attempt_id
+    assert context.failure.logical_request_id == error.logical_request_id
+    assert_receive {:echo_event, %{type: :attempt_started, metadata: started}}
+    assert_receive {:echo_event, %{type: :attempt_failed, metadata: failed}}
+    assert started.attempt_id == error.attempt_id
+    assert failed.attempt_id == error.attempt_id
+    assert failed.logical_request_id == error.logical_request_id
+    assert [history] = error.history
+    assert history == Map.delete(failed, :history)
+
+    for safe <- [inspect(error), Jason.encode!(error), inspect(context), inspect(failed)] do
+      refute safe =~ secret
+      refute safe =~ "overloaded"
+    end
+
+    assert CompletionError.received_evidence(error).body == body
+  end
+
   for gateway <- [OpenAI, Ollama, OMLX],
       operation <- [:complete, :complete_object, :broker, :broker_object, :session],
       tracing <- [false, true],

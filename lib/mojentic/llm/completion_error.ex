@@ -80,7 +80,11 @@ defmodule Mojentic.LLM.CompletionError do
     end)
   end
 
-  @doc "Explicitly retrieves sensitive received status, headers and exact body on cancellation."
+  @doc """
+  Explicitly retrieves sensitive available status, headers and body on completion failure.
+  HTTP error bodies retain received bytes; semantic stream errors retain decoded error JSON.
+  Use the opt-in exact wire trace for raw stream frames.
+  """
   @spec received_evidence(t()) :: map() | nil
   def received_evidence(%__MODULE__{private_evidence: nil}), do: nil
   def received_evidence(%__MODULE__{private_evidence: evidence}), do: evidence.()
