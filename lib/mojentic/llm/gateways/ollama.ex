@@ -270,6 +270,11 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   @doc """
   Streams one non-executing turn as content and terminal events.
 
+  With recovery enabled, validated frames also yield `{:progress, metadata}` and
+  supplied counters/durations yield `{:metrics, metadata}`, correlated with the
+  exact local attempt and a one-based per-attempt frame index. Byte fields count
+  UTF-8 bytes. A rejected terminal retains telemetry but withholds its content.
+
   Yields `{:content, text}` events, then exactly one terminal event. Completion
   requires a final frame with `done: true` and a `done_reason` of `"stop"`,
   which yields

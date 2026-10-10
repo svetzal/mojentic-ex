@@ -93,6 +93,32 @@ defmodule Mojentic.LLM.Gateways.OllamaStream do
   defp done_events(frame, state),
     do: [{:error, {:incomplete_completion, evidence(frame, state)}}]
 
+  @doc false
+  def valid_recovery_frame?(%{"done" => done} = frame) when is_boolean(done) do
+    message = Map.get(frame, "message", %{})
+
+    valid_evidence?(frame) and is_nil(frame["error"]) and is_map(message) and
+      Enum.all?(["content", "thinking"], fn key ->
+        is_nil(message[key]) or is_binary(message[key])
+      end) and valid_calls?(message["tool_calls"])
+  end
+
+  def valid_recovery_frame?(_frame), do: false
+
+  defp valid_calls?(nil), do: true
+  defp valid_calls?(calls) when is_list(calls), do: Enum.all?(calls, &valid_call?/1)
+  defp valid_calls?(_calls), do: false
+
+  defp valid_call?(%{"function" => function} = call) when is_map(function) do
+    (is_nil(call["index"]) or (is_integer(call["index"]) and call["index"] >= 0)) and
+      (is_nil(call["id"]) or is_binary(call["id"])) and
+      (is_nil(function["name"]) or is_binary(function["name"])) and
+      (is_nil(function["arguments"]) or is_map(function["arguments"]) or
+         is_binary(function["arguments"]))
+  end
+
+  defp valid_call?(_call), do: false
+
   defp valid_evidence?(frame) do
     fields = Map.merge(Ollama.reported_usage(frame) || %{}, Ollama.reported_timings(frame) || %{})
 

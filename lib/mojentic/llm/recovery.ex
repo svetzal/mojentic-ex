@@ -432,7 +432,7 @@ defmodule Mojentic.LLM.Recovery do
 
       {^ref, result} ->
         case guard_send(opts, nil) do
-          :ok -> result
+          :ok -> retain_capture(result, evidence, progress)
           :cancelled -> {:error, {:request_cancelled, evidence, progress, result}}
         end
 
@@ -448,6 +448,17 @@ defmodule Mojentic.LLM.Recovery do
         end
     end
   end
+
+  defp retain_capture(
+         {:error, %CompletionError{reason: :capture_failed, operation: operation} = error},
+         evidence,
+         progress
+       )
+       when not is_nil(evidence) and operation in [:complete_stream, :complete_stream_events],
+       do:
+         {:error, Mojentic.LLM.CompletionRequest.retain_stream_capture(error, evidence, progress)}
+
+  defp retain_capture(result, _evidence, _progress), do: result
 
   defp work(opts, deadline, callback) do
     owner = self()

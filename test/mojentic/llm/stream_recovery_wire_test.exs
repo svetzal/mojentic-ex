@@ -23,6 +23,460 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     :ok
   end
 
+  for mode <- [:events, :legacy] do
+    @mode mode
+    @tag :telemetry_proof
+    test "Ollama #{@mode} length terminal preserves telemetry and rejects semantic output" do
+      owner = self()
+
+      frame = %{
+        model: "fixture-model",
+        done: true,
+        done_reason: "length",
+        message: %{content: "é🙂", thinking: "思"},
+        prompt_eval_count: 7,
+        eval_count: 3,
+        total_duration: 900,
+        load_duration: 100,
+        prompt_eval_duration: 200,
+        eval_duration: 600
+      }
+
+      server = server(Ollama, [http(200, Jason.encode!(frame) <> "\n")])
+
+      events =
+        invoke(Ollama, @mode, config(observer: &send(owner, {:event, &1}))) |> Enum.to_list()
+
+      assert [{:progress, progress}, {:metrics, metrics}, {:error, %CompletionError{} = error}] =
+               events
+
+      assert progress.frame_index == 1
+      assert progress.content_bytes == 6
+      assert progress.reasoning_bytes == 3
+      assert progress.done == true
+      assert metrics.prompt_eval_count == 7
+      assert metrics.eval_count == 3
+      assert metrics.total_duration == 900
+      assert metrics.load_duration == 100
+      assert metrics.prompt_eval_duration == 200
+      assert metrics.eval_duration == 600
+      [start | _] = collect_events()
+
+      assert Map.take(progress, [:logical_request_id, :attempt_id, :wire_attempt]) ==
+               trace_ids(start.metadata)
+
+      assert Map.take(metrics, [:logical_request_id, :attempt_id, :wire_attempt]) ==
+               trace_ids(start.metadata)
+
+      assert CompletionError.cause(error) ==
+               {:incomplete_completion,
+                %{
+                  finish_reason: "length",
+                  usage: %{"prompt_eval_count" => 7, "eval_count" => 3},
+                  provider_model: "fixture-model",
+                  metadata: %{
+                    "total_duration" => 900,
+                    "load_duration" => 100,
+                    "prompt_eval_duration" => 200,
+                    "eval_duration" => 600
+                  }
+                }}
+
+      refute error.retry_eligible
+      assert error.progress.delivered.content == false
+      assert GenServer.call(server, :requests) |> length() == 1
+    end
+  end
+
+  for mode <- [:events, :legacy] do
+    @mode mode
+    @tag :telemetry_contract
+    test "Ollama #{@mode} successful frames preserve exact ordered telemetry" do
+      first = %{message: %{content: "é", thinking: "思"}, done: false, eval_count: 2}
+      final = telemetry_terminal("stop")
+      server = server(Ollama, [http(200, ndjson(first) <> ndjson(final))])
+      events = invoke(Ollama, @mode, config()) |> Enum.to_list()
+      assert [{:progress, p1}, {:metrics, m1} | rest] = events
+      assert p1.content_bytes == 2
+      assert p1.reasoning_bytes == 3
+      assert p1.frame_index == 1
+      assert m1.eval_count == 2
+      refute Map.has_key?(m1, :prompt_eval_count)
+      semantics = if @mode == :legacy, do: [thinking: "思", content: "é"], else: [content: "é"]
+      assert Enum.take(rest, length(semantics)) == semantics
+      rest = Enum.drop(rest, length(semantics))
+      assert [{:progress, p2}, {:metrics, m2}, {:content, "🙂"} | terminal] = rest
+      assert p2.content_bytes == 4
+      assert p2.reasoning_bytes == 0
+      assert p2.frame_index == 2
+      assert p2.done
+      assert m2.eval_count == 3
+      assert m2.total_duration == 900
+
+      assert Map.take(p1, [:logical_request_id, :attempt_id, :wire_attempt]) ==
+               Map.take(p2, [:logical_request_id, :attempt_id, :wire_attempt])
+
+      if @mode == :events, do: assert([{:completed, _}] = terminal), else: assert(terminal == [])
+      assert length(GenServer.call(server, :requests)) == 1
+    end
+
+    for invalid <- [
+          :count,
+          :duration,
+          :content,
+          :thinking,
+          :message,
+          :done,
+          :model,
+          :reason,
+          :tools
+        ] do
+      @invalid invalid
+      @tag :telemetry_contract
+      test "Ollama #{@mode} malformed #{@invalid} frame cannot invent telemetry" do
+        frame = telemetry_terminal("length")
+
+        frame =
+          case @invalid do
+            :count -> Map.put(frame, :eval_count, "3")
+            :duration -> Map.put(frame, :total_duration, -1)
+            :content -> put_in(frame, [:message, :content], 7)
+            :thinking -> put_in(frame, [:message, :thinking], [])
+            :message -> Map.put(frame, :message, [])
+            :done -> Map.put(frame, :done, "true")
+            :model -> Map.put(frame, :model, [])
+            :reason -> Map.put(frame, :done_reason, [])
+            :tools -> put_in(frame, [:message, :tool_calls], 7)
+          end
+
+        server = server(Ollama, [http(200, ndjson(frame))])
+        assert [{:error, error}] = invoke(Ollama, @mode, config()) |> Enum.to_list()
+        assert error.category == :protocol
+        assert length(GenServer.call(server, :requests)) == 1
+      end
+    end
+
+    @tag :telemetry_contract
+    test "Ollama #{@mode} admitted retry resets frame index and changes attempt identity" do
+      first = ndjson(%{message: %{}, done: false, eval_count: 0})
+      server = server(Ollama, [truncated(first), http(200, ndjson(telemetry_terminal("stop")))])
+      events = invoke(Ollama, @mode, config()) |> Enum.to_list()
+
+      assert [
+               {:progress, p1},
+               {:metrics, m1},
+               {:progress, p2},
+               {:metrics, m2},
+               {:content, "🙂"} | _
+             ] = events
+
+      assert p1.frame_index == 1
+      assert p2.frame_index == 1
+      assert p1.wire_attempt == 1
+      assert p2.wire_attempt == 2
+      assert p1.logical_request_id == p2.logical_request_id
+      refute p1.attempt_id == p2.attempt_id
+      assert m1.attempt_id == p1.attempt_id
+      assert m2.attempt_id == p2.attempt_id
+      assert [request, request] = GenServer.call(server, :requests)
+    end
+
+    @tag :telemetry_contract
+    test "Ollama #{@mode} paused consumer cancellation discards buffered metrics and output" do
+      frame =
+        telemetry_terminal("length")
+        |> put_in([:message, :tool_calls], [
+          %{function: %{name: "count", arguments: %{value: "once"}}}
+        ])
+
+      body = ndjson(frame)
+      server = server(Ollama, [{:stream_hold, http(200, body)}])
+      cancel = make_ref()
+      stream = invoke(Ollama, @mode, config(cancel_ref: cancel))
+
+      assert {:suspended, {:progress, progress}, continuation} =
+               Enumerable.reduce(stream, {:cont, nil}, fn event, _ -> {:suspend, event} end)
+
+      assert progress.content_bytes == 4
+      assert progress.tool_fragments == 1
+      send(self(), {:cancel, cancel})
+      assert {:suspended, {:error, error}, rest} = continuation.({:cont, nil})
+      assert error.category == :cancellation
+      assert error.progress.observed.content
+      assert error.progress.observed.tool_fragments == 1
+      assert error.progress.observed.completed_tool_calls == 0
+      refute error.progress.delivered.content
+      assert error.progress.delivered.completed_tool_calls == 0
+      assert {done, _} = rest.({:cont, nil})
+      assert done in [:done, :halted]
+      assert GenServer.call(server, :closed_sockets) == [:closed]
+      assert length(GenServer.call(server, :requests)) == 1
+    end
+
+    @tag :telemetry_contract
+    test "Ollama #{@mode} capture failure retains exact rejected terminal evidence" do
+      frame =
+        telemetry_terminal("length")
+        |> put_in([:message, :tool_calls], [
+          %{function: %{name: "count", arguments: %{value: "once"}}}
+        ])
+
+      body = ndjson(frame)
+      server = server(Ollama, [http(200, body)])
+
+      config =
+        config(
+          trace_observer: fn event ->
+            if event.type == :response_data, do: raise("capture failed")
+            :ok
+          end
+        )
+
+      assert [{:error, error}] = invoke(Ollama, @mode, config) |> Enum.to_list()
+      assert error.reason == :capture_failed
+      assert error.progress.observed.content
+      assert error.progress.observed.completed_tool_calls == 0
+      refute error.progress.delivered.content
+      assert CompletionError.received_evidence(error).body == body
+      assert length(GenServer.call(server, :requests)) == 1
+    end
+
+    @tag :telemetry_contract
+    test "Ollama #{@mode} provider errors preserve original cause without telemetry" do
+      server = server(Ollama, [http(200, ndjson(%{error: "provider fixture"}))])
+      assert [{:error, error}] = invoke(Ollama, @mode, config()) |> Enum.to_list()
+      assert error.category == :provider_response
+      assert CompletionError.cause(error) == {:provider_error, "provider fixture"}
+      assert length(GenServer.call(server, :requests)) == 1
+    end
+  end
+
+  for caller <- [:broker_events, :broker_legacy, :session], reason <- ["stop", "length"] do
+    @caller caller
+    @reason reason
+    @tag :telemetry_contract
+    test "Ollama #{@caller} #{@reason} forwards metadata without accumulating it" do
+      server = server(Ollama, [http(200, ndjson(telemetry_terminal(@reason)))])
+      broker = Broker.new("fixture-model", Ollama)
+      config = config()
+
+      {stream, handle} =
+        case @caller do
+          :broker_events ->
+            {Broker.generate_stream_events(broker, [Message.user("input")], config), nil}
+
+          :broker_legacy ->
+            {Broker.generate_stream(broker, [Message.user("input")], nil, config), nil}
+
+          :session ->
+            {:ok, stream, handle} =
+              ChatSession.send_stream(ChatSession.new(broker), "input", recovery: config.recovery)
+
+            {stream, handle}
+        end
+
+      assert [{:progress, p}, {:metrics, m} | rest] = Enum.to_list(stream)
+      assert p.content_bytes == 4
+      assert m.total_duration == 900
+
+      if @reason == "length" do
+        assert [{:error, %CompletionError{}}] = rest
+        if handle, do: assert({:error, %CompletionError{}} = ChatSession.finalize_stream(handle))
+      else
+        case @caller do
+          :broker_events ->
+            assert [{:content, "🙂"}, {:completed, _}] = rest
+
+          :broker_legacy ->
+            assert rest == ["🙂"]
+
+          :session ->
+            assert rest == ["🙂"]
+            session = ChatSession.finalize_stream(handle)
+            assert List.last(ChatSession.messages(session)).message.content == "🙂"
+        end
+      end
+
+      assert length(GenServer.call(server, :requests)) == 1
+    end
+  end
+
+  for caller <- [:broker, :session] do
+    @caller caller
+    @tag :telemetry_contract
+    test "Ollama #{@caller} completed tool executes once before rejected follow-up" do
+      server =
+        server(Ollama, [tool_response(Ollama), http(200, ndjson(telemetry_terminal("length")))])
+
+      tool = %Mojentic.TestSupport.CountingTool{owner: self()}
+      broker = Broker.new("fixture-model", Ollama)
+
+      stream =
+        case @caller do
+          :broker ->
+            Broker.generate_stream(broker, [Message.user("input")], [tool], config())
+
+          :session ->
+            {:ok, stream, _handle} =
+              ChatSession.send_stream(ChatSession.new(broker, tools: [tool]), "input",
+                recovery: config().recovery
+              )
+
+            stream
+        end
+
+      assert [{:progress, first}, {:progress, second}, {:metrics, _}, {:error, error}] =
+               Enum.to_list(stream)
+
+      refute first.logical_request_id == second.logical_request_id
+      assert error.progress.delivered.completed_tool_calls == 0
+      assert_receive {:tool_executed, %{"value" => "sentinel-tool"}}
+      refute_receive {:tool_executed, _}
+      assert length(GenServer.call(server, :requests)) == 2
+    end
+  end
+
+  for mode <- [:events, :legacy] do
+    @mode mode
+    @tag :telemetry_contract
+    test "Ollama #{@mode} rejected terminal retains preceding accepted semantics" do
+      body =
+        ndjson(%{message: %{content: "é"}, done: false}) <> ndjson(telemetry_terminal("length"))
+
+      server = server(Ollama, [http(200, body)])
+
+      assert [
+               {:progress, first},
+               {:content, "é"},
+               {:progress, last},
+               {:metrics, _},
+               {:error, error}
+             ] = invoke(Ollama, @mode, config()) |> Enum.to_list()
+
+      assert first.frame_index == 1
+      assert last.frame_index == 2
+      assert error.progress.delivered.content
+      assert error.progress.raw_bytes == byte_size(body)
+      assert length(GenServer.call(server, :requests)) == 1
+    end
+
+    @tag :telemetry_contract
+    test "Ollama #{@mode} recovery disabled keeps its length terminal behavior without telemetry" do
+      server = server(Ollama, [http(200, ndjson(telemetry_terminal("length")))])
+      events = invoke(Ollama, @mode, CompletionConfig.new()) |> Enum.to_list()
+
+      if @mode == :legacy do
+        assert events == []
+      else
+        assert [{:content, "🙂"}, {:error, {:incomplete_completion, evidence}}] = events
+        assert evidence.finish_reason == "length"
+      end
+
+      if @mode == :legacy do
+        # The disabled legacy adapter re-enumerates its cold HTTP stream.
+        # Characterize this existing behavior without changing it in this increment.
+        assert [request, request] = GenServer.call(server, :requests)
+      else
+        assert length(GenServer.call(server, :requests)) == 1
+      end
+    end
+  end
+
+  for gateway <- [OpenAI, OMLX], mode <- [:events, :legacy] do
+    @gateway gateway
+    @mode mode
+    @tag :telemetry_contract
+    test "#{gateway} #{@mode} cannot fabricate Ollama telemetry" do
+      server = server(@gateway, [success(@gateway)])
+      events = invoke(@gateway, @mode, config()) |> Enum.to_list()
+
+      if @mode == :events,
+        do: assert([{:content, "answer"}, {:completed, _}] = events),
+        else: assert(events == [{:content, "answer"}])
+
+      assert length(GenServer.call(server, :requests)) == 1
+    end
+  end
+
+  for mode <- [:events, :legacy] do
+    @mode mode
+    @tag :telemetry_contract
+    test "Ollama #{@mode} rejected terminal cannot complete its tool" do
+      frame =
+        telemetry_terminal("length")
+        |> put_in([:message, :tool_calls], [
+          %{function: %{name: "count", arguments: %{value: "once"}}}
+        ])
+
+      server = server(Ollama, [http(200, ndjson(frame))])
+
+      assert [{:progress, p}, {:metrics, _}, {:error, error}] =
+               invoke(Ollama, @mode, config()) |> Enum.to_list()
+
+      assert p.tool_fragments == 1
+      assert error.progress.observed.tool_fragments == 1
+      assert error.progress.observed.completed_tool_calls == 0
+      assert error.progress.delivered.completed_tool_calls == 0
+      refute error.retry_eligible
+      assert length(GenServer.call(server, :requests)) == 1
+    end
+  end
+
+  for mode <- [:events, :legacy], reason <- ["stop", "length"], invalid <- [:name, :arguments] do
+    @mode mode
+    @reason reason
+    @invalid invalid
+    @tag :telemetry_contract
+    test "Ollama #{@mode} #{@reason} malformed terminal tool #{@invalid} has no telemetry" do
+      function =
+        if @invalid == :name, do: %{arguments: %{}}, else: %{name: "count", arguments: "["}
+
+      frame =
+        telemetry_terminal(@reason) |> put_in([:message, :tool_calls], [%{function: function}])
+
+      server = server(Ollama, [http(200, ndjson(frame))])
+      assert [{:error, error}] = invoke(Ollama, @mode, config()) |> Enum.to_list()
+      assert CompletionError.cause(error) == :invalid_stream_event
+      assert error.progress.observed.completed_tool_calls == 0
+      assert error.progress.delivered.completed_tool_calls == 0
+      assert length(GenServer.call(server, :requests)) == 1
+    end
+  end
+
+  @tag :telemetry_contract
+  test "Ollama legacy validates complete fragmented tools before successful telemetry" do
+    server =
+      server(Ollama, [
+        http(200, fragmented_tools(Ollama, :start) <> fragmented_tools(Ollama, :finish))
+      ])
+
+    assert [{:progress, start}, {:progress, finish}, {:tool_calls, calls}] =
+             invoke(Ollama, :legacy, config()) |> Enum.to_list()
+
+    assert start.frame_index == 1
+    assert finish.frame_index == 2
+    assert finish.done
+
+    assert Enum.map(calls, & &1.arguments) == [
+             %{"value" => "sentinel-tool-0"},
+             %{"value" => "sentinel-tool-1"}
+           ]
+
+    assert length(GenServer.call(server, :requests)) == 1
+  end
+
+  defp telemetry_terminal(reason),
+    do: %{
+      model: "fixture-model",
+      done: true,
+      done_reason: reason,
+      message: %{content: "🙂"},
+      eval_count: 3,
+      total_duration: 900
+    }
+
+  defp ndjson(frame), do: Jason.encode!(frame) <> "\n"
+
   @tag :exact_trace_proof
   test "exact trace retains streaming HTTP failure bytes and capture failure prevents resend" do
     owner = self()
@@ -52,6 +506,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
                config
              )
              |> Enum.to_list()
+             |> semantic_events()
 
     assert error.reason == :capture_failed
     assert error.wire_attempt == 1
@@ -103,7 +558,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
           observer: &send(owner, {:exact_lifecycle, &1})
         )
 
-      result = invoke(@gateway, @mode, config) |> Enum.to_list()
+      result = semantic_invoke(@gateway, @mode, config) |> Enum.to_list() |> semantic_events()
 
       if @outcome == :retry_success do
         refute Enum.any?(result, &match?({:error, _}, &1))
@@ -221,7 +676,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       task =
         Task.Supervisor.async_nolink(supervisor, fn ->
           if @stage == :before_dispatch, do: send(self(), {:cancel, cancel})
-          invoke(@gateway, @mode, config) |> Enum.to_list()
+          semantic_invoke(@gateway, @mode, config) |> Enum.to_list() |> semantic_events()
         end)
 
       if @stage == :during_capture do
@@ -231,7 +686,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
         assert_receive {:DOWN, ^monitor, :process, ^worker, _}, 2000
       end
 
-      assert [{:error, error}] = Task.await(task, 2000)
+      assert [{:error, error}] = semantic_events(Task.await(task, 2000))
       assert error.category == :cancellation
       count = if @stage == :before_dispatch, do: 0, else: 1
       assert error.wire_attempt == count
@@ -275,7 +730,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
             stream
         end
 
-      assert [{:error, error}] = Enum.to_list(stream)
+      assert [{:error, error}] = semantic_events(Enum.to_list(stream))
       assert error.reason == :capture_failed
       assert_receive {:forwarded_trace, %{type: :request, body: encoded}}
       [request] = GenServer.call(server, :requests)
@@ -316,6 +771,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     assert [{:content, "sentinel-output"}, {:error, %CompletionError{} = error}] =
              OpenAI.complete_stream_events("gpt-4o", [Message.user("sentinel-input")], config)
              |> Enum.to_list()
+             |> semantic_events()
 
     assert error.reason == :stream_interrupted
     assert error.progress.observed.content
@@ -349,6 +805,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     assert [{:error, error}] =
              invoke(OpenAI, :legacy, config(observer: &send(owner, {:event, &1})))
              |> Enum.to_list()
+             |> semantic_events()
 
     assert error.progress.raw_bytes == byte_size(chunk)
 
@@ -414,7 +871,10 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
               )
             end
 
-          stream |> Stream.each(&send(owner, {:delivered, &1})) |> Enum.to_list()
+          stream
+          |> Stream.each(&send(owner, {:delivered, &1}))
+          |> Enum.to_list()
+          |> semantic_events()
         end)
 
       delivered =
@@ -422,7 +882,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
 
       assert_receive {:delivered, ^delivered}, 2000
       assert :ok = GenServer.call(server, {:release, chunk})
-      assert [^delivered, {:error, error}] = Task.await(task, 2000)
+      assert [^delivered, {:error, error}] = semantic_events(Task.await(task, 2000))
 
       assert_parser_progress(
         error,
@@ -451,7 +911,9 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       owner = self()
 
       events =
-        invoke(@gateway, @mode, config(observer: &send(owner, {:event, &1}))) |> Enum.to_list()
+        semantic_invoke(@gateway, @mode, config(observer: &send(owner, {:event, &1})))
+        |> Enum.to_list()
+        |> semantic_events()
 
       assert [{:error, error}] = events
 
@@ -484,14 +946,17 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
 
       task =
         Task.Supervisor.async_nolink(supervisor, fn ->
-          invoke(@gateway, @mode, config(observer: &send(owner, {:event, &1})))
+          semantic_invoke(@gateway, @mode, config(observer: &send(owner, {:event, &1})))
           |> Stream.each(&send(owner, {:delivered, &1}))
           |> Enum.to_list()
+          |> semantic_events()
         end)
 
       assert_receive {:delivered, {:content, "sentinel-output"}}, 2000
       assert :ok = GenServer.call(server, {:release, chunk})
-      assert [{:content, "sentinel-output"}, {:error, error}] = Task.await(task, 2000)
+
+      assert [{:content, "sentinel-output"}, {:error, error}] =
+               semantic_events(Task.await(task, 2000))
 
       assert_parser_progress(
         error,
@@ -529,6 +994,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
                  config(observer: &send(owner, {:event, &1}))
                )
                |> Enum.to_list()
+               |> semantic_events()
 
       assert_parser_progress(
         error,
@@ -561,7 +1027,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
           end
         )
 
-      events = invoke(@gateway, @mode, config) |> Enum.to_list()
+      events = semantic_invoke(@gateway, @mode, config) |> Enum.to_list() |> semantic_events()
       assert hd(events) == {:content, "answer"}
       if @mode == :events, do: assert(match?({:completed, _}, List.last(events)))
       assert_receive {:delay, 1000}
@@ -601,6 +1067,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
                  config(max_attempts: 3, observer: &send(owner, {:event, &1}))
                )
                |> Enum.to_list()
+               |> semantic_events()
 
       assert error.wire_attempt == 3
       assert Enum.map(error.history, & &1.http_status) == [504, 504, 504]
@@ -644,7 +1111,9 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
         owner = self()
 
         events =
-          invoke(@gateway, @mode, config(observer: &send(owner, {:event, &1}))) |> Enum.to_list()
+          semantic_invoke(@gateway, @mode, config(observer: &send(owner, {:event, &1})))
+          |> Enum.to_list()
+          |> semantic_events()
 
         lifecycle = collect_events()
         assert Enum.map(lifecycle, & &1.type) == [:attempt_started, :attempt_failed, :exhausted]
@@ -673,7 +1142,9 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       server = server(@gateway, [truncated(keepalive), success(@gateway)])
 
       events =
-        invoke(@gateway, @mode, config(observer: &send(owner, {:event, &1}))) |> Enum.to_list()
+        semantic_invoke(@gateway, @mode, config(observer: &send(owner, {:event, &1})))
+        |> Enum.to_list()
+        |> semantic_events()
 
       assert hd(events) == {:content, "answer"}
       lifecycle = collect_events()
@@ -729,6 +1200,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
               config([cancel_ref: cancel, observer: &send(owner, {:event, &1})] ++ opts)
             )
             |> Enum.to_list()
+            |> semantic_events()
           end)
 
         assert_receive {:wire_request, first}, 2000
@@ -740,7 +1212,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
         end
 
         send(task.pid, {:cancel, cancel})
-        assert [{:error, error}] = Task.await(task, 2000)
+        assert [{:error, error}] = semantic_events(Task.await(task, 2000))
         assert error.category == :cancellation or error.resend_permission == :cancelled
         assert error.wire_attempt == 1
         assert GenServer.call(server, :requests) == [first]
@@ -771,6 +1243,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
               )
             )
             |> Enum.to_list()
+            |> semantic_events()
           end)
 
         assert_receive {:wire_request, first}, 2000
@@ -779,7 +1252,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
         assert context.failure.wire_attempt == 1
         assert GenServer.call(server, :requests) == [first]
         send(context.reply_to, {:recovery_admission, context.ref, @decision})
-        events = Task.await(task, 2000)
+        events = semantic_events(Task.await(task, 2000))
         lifecycle = collect_events()
 
         expected =
@@ -855,7 +1328,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
               stream
           end
 
-        assert ["sentinel-output", {:error, error}] = Enum.to_list(stream)
+        assert ["sentinel-output", {:error, error}] = semantic_events(Enum.to_list(stream))
         assert error.reason == :stream_interrupted
         assert error.http_status == 200
         assert error.progress.headers_received
@@ -945,6 +1418,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
                  | max_tool_iterations: 1
                })
                |> Enum.to_list()
+               |> semantic_events()
 
       assert_receive {:tool_executed, %{"value" => "sentinel-tool"}}
       refute_receive {:tool_executed, _}
@@ -965,7 +1439,9 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
              |> String.replace("Content-Length: #{byte_size(frame)}", "Content-Length: 999999")}
           ])
 
-        assert [{:content, "sentinel-output"}] = invoke(@gateway, @mode, config()) |> Enum.take(1)
+        assert [{:content, "sentinel-output"}] =
+                 semantic_invoke(@gateway, @mode, config()) |> Enum.take(1)
+
         assert GenServer.call(server, :closed_sockets) == [:closed]
         assert length(GenServer.call(server, :requests)) == 1
       end
@@ -1014,7 +1490,9 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       server = server(@gateway, [http(429, "sentinel-error", "Retry-After: 11\r\n")])
 
       assert [{:error, error}] =
-               invoke(@gateway, @mode, config(delay_ceiling: 100)) |> Enum.to_list()
+               semantic_invoke(@gateway, @mode, config(delay_ceiling: 100))
+               |> Enum.to_list()
+               |> semantic_events()
 
       assert error.http_status == 429
       assert error.retry_after == {:delay_seconds, 11}
@@ -1040,14 +1518,18 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
 
       task =
         Task.Supervisor.async_nolink(supervisor, fn ->
-          invoke(@gateway, @mode, config(cancel_ref: cancel))
+          semantic_invoke(@gateway, @mode, config(cancel_ref: cancel))
           |> Stream.each(fn item -> send(owner, {:delivered, item}) end)
           |> Enum.to_list()
+          |> semantic_events()
         end)
 
       assert_receive {:delivered, {:content, "sentinel-output"}}, 2000
       send(task.pid, {:cancel, cancel})
-      assert [{:content, "sentinel-output"}, {:error, error}] = Task.await(task, 2000)
+
+      assert [{:content, "sentinel-output"}, {:error, error}] =
+               semantic_events(Task.await(task, 2000))
+
       assert error.category == :cancellation
       assert error.reason == :stream_interrupted
       assert error.progress.observed == semantic_progress(:content, true)
@@ -1071,7 +1553,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
               do: Broker.generate_stream_events(broker, [Message.user("sentinel-input")], config),
               else: Broker.generate_stream(broker, [Message.user("sentinel-input")], nil, config)
 
-          assert {:error, error} = stream |> Enum.to_list() |> List.last()
+          assert {:error, error} = stream |> Enum.to_list() |> semantic_events() |> List.last()
           refute inspect(error) =~ "sentinel"
           refute Jason.encode!(error) =~ "sentinel"
         end)
@@ -1087,7 +1569,9 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
         server = server(@gateway, [http(@status, "sentinel-error")])
 
         assert [{:error, error}] =
-                 invoke(@gateway, @mode, config(retryable_statuses: [@status])) |> Enum.to_list()
+                 semantic_invoke(@gateway, @mode, config(retryable_statuses: [@status]))
+                 |> Enum.to_list()
+                 |> semantic_events()
 
         assert error.http_status == @status
         assert error.wire_attempt == 1
@@ -1102,7 +1586,10 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     test "#{gateway} #{mode} ambiguous local failure requires admission by default" do
       server = server(@gateway, [http(503, "sentinel-error")])
       config = CompletionConfig.new(recovery: [max_attempts: 2, base_delay: 0])
-      assert [{:error, error}] = invoke(@gateway, @mode, config) |> Enum.to_list()
+
+      assert [{:error, error}] =
+               semantic_invoke(@gateway, @mode, config) |> Enum.to_list() |> semantic_events()
+
       assert error.resend_permission == :admission_required
       assert error.acceptance == :unknown
       assert length(GenServer.call(server, :requests)) == 1
@@ -1122,6 +1609,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       assert [{:error, error}] =
                Broker.generate_stream(broker, [Message.user("sentinel-input")], [tool], config())
                |> Enum.to_list()
+               |> semantic_events()
 
       assert error.reason == :stream_interrupted
 
@@ -1152,7 +1640,9 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       [_, frame] = String.split(response, "\r\n\r\n", parts: 2)
       frame = String.trim_trailing(frame, "\n")
       server(Ollama, [http(200, frame)])
-      assert hd(invoke(Ollama, @mode, config()) |> Enum.to_list()) == {:content, "answer"}
+
+      assert hd(semantic_invoke(Ollama, @mode, config()) |> Enum.to_list() |> semantic_events()) ==
+               {:content, "answer"}
     end
   end
 
@@ -1175,9 +1665,10 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
 
       task =
         Task.Supervisor.async_nolink(supervisor, fn ->
-          invoke(@gateway, @mode, config())
+          semantic_invoke(@gateway, @mode, config())
           |> Stream.each(fn item -> send(owner, {:delivered, item}) end)
           |> Enum.to_list()
+          |> semantic_events()
         end)
 
       assert_receive {:delivered, {:content, "sentinel-output"}}, 2000
@@ -1196,13 +1687,13 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
 
       task =
         Task.Supervisor.async_nolink(supervisor, fn ->
-          invoke(@gateway, @mode, config) |> Enum.to_list()
+          semantic_invoke(@gateway, @mode, config) |> Enum.to_list() |> semantic_events()
         end)
 
       assert_receive {:wire_request, request}, 2000
       Agent.update(clock, fn _ -> 1000 end)
       assert :ok = GenServer.call(server, {:release, success(@gateway)})
-      assert hd(Task.await(task, 2000)) == {:content, "answer"}
+      assert hd(semantic_events(Task.await(task, 2000))) == {:content, "answer"}
       assert GenServer.call(server, :requests) == [request]
     end
   end
@@ -1221,7 +1712,9 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       owner = self()
 
       events =
-        invoke(Ollama, @mode, config(observer: &send(owner, {:event, &1}))) |> Enum.to_list()
+        semantic_invoke(Ollama, @mode, config(observer: &send(owner, {:event, &1})))
+        |> Enum.to_list()
+        |> semantic_events()
 
       expected =
         if @mode == :legacy,
@@ -1255,7 +1748,11 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       end
 
     if gateway == Ollama do
-      Jason.encode!(%{message: %{tool_calls: calls}, done: stage == :finish}) <> "\n"
+      Jason.encode!(%{
+        message: %{tool_calls: calls},
+        done: stage == :finish,
+        done_reason: if(stage == :finish, do: "stop")
+      }) <> "\n"
     else
       sse(%{
         choices: [
@@ -1290,7 +1787,12 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     assert history.attempt_id == error.attempt_id
     assert history.wire_attempt == 1
     assert length(GenServer.call(server, :requests)) == 1
-    assert {:parser_failure, _exception} = CompletionError.cause(error)
+
+    if error.provider == :ollama do
+      assert CompletionError.cause(error) in [:invalid_stream_event, :unexpected_tool_calls]
+    else
+      assert {:parser_failure, _exception} = CompletionError.cause(error)
+    end
 
     for safe <- [
           inspect(error),
@@ -1338,6 +1840,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
             config(observer: &send(owner, {:event, &1}))
           )
           |> Enum.to_list()
+          |> semantic_events()
 
         send(owner, {:output, events})
       end)
@@ -1407,6 +1910,20 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
 
     CompletionConfig.new(recovery: recovery)
   end
+
+  defp semantic_events(events),
+    do:
+      Enum.reject(events, fn
+        {kind, _} when kind in [:progress, :metrics] -> true
+        _ -> false
+      end)
+
+  # Older contracts assert semantic content and exact lifecycle/socket behavior.
+  # New telemetry contracts below assert the complete, unfiltered event sequence.
+  defp semantic_invoke(gateway, mode, config),
+    do:
+      invoke(gateway, mode, config)
+      |> Stream.reject(fn {kind, _} -> kind in [:progress, :metrics] end)
 
   defp invoke(gateway, :events, config),
     do: gateway.complete_stream_events("gpt-4o", [Message.user("sentinel-input")], config)

@@ -898,7 +898,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
   defp evidence_body(_gateway, _operation, :partial_body), do: ":keepalive\n\n"
 
   defp evidence_body(Ollama, _operation, :terminal_body),
-    do: Jason.encode!(%{message: %{content: ""}, done: true}) <> "\n"
+    do: Jason.encode!(%{message: %{content: ""}, done: true, done_reason: "stop"}) <> "\n"
 
   defp evidence_body(_gateway, _operation, :terminal_body),
     do:

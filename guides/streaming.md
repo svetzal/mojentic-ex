@@ -186,6 +186,59 @@ to connection setup and idle waits, without a total generation timeout. A recove
 budget starts after the first failure; it does not truncate active generation.
 Retry-After cannot bypass the delay ceiling or recovery deadline.
 
+### Ollama telemetry migration
+
+With `config.recovery` enabled, both Ollama streaming entrypoints now emit
+`{:progress, metadata}` for every structurally valid chat frame and
+`{:metrics, metadata}` when that frame supplies counters or durations. Broker
+forwards these tuples from both stream consumers; ChatSession forwards them
+without adding them to message text or interaction counts. Handle these tuples
+before writing string chunks to the UI:
+
+```elixir
+Enum.each(stream, fn
+  {:progress, metadata} -> report_progress(metadata)
+  {:metrics, metadata} -> report_metrics(metadata)
+  {:error, error} -> report_failure(error)
+  text when is_binary(text) -> IO.write(text)
+end)
+```
+
+Both maps contain `logical_request_id`, `attempt_id`, `wire_attempt` and
+`frame_index`. Frame indices start at one for each wire attempt, including an
+admitted retry. Progress reports `done`, per-frame `content_bytes` and
+`reasoning_bytes` (UTF-8 bytes, not character counts), and `tool_fragments`.
+Metrics contain only the supplied nonnegative integer fields:
+`prompt_eval_count`, `eval_count`, `total_duration`, `load_duration`,
+`prompt_eval_duration` and `eval_duration`. Durations retain Ollama's nanosecond
+units. Missing fields remain absent; values are neither estimated nor accumulated.
+These maps contain no content, model name or tool arguments.
+
+A valid length terminal yields Progress, Metrics (when supplied), then the
+original incomplete-completion cause inside `CompletionError`. That frame's
+content, reasoning and completed tools are withheld. Preceding accepted content
+remains delivered; failure cannot authorize tool execution or replay. Malformed
+frames emit no telemetry of their own. Metadata delivery does not count as
+semantic output for retry policy. Cancellation while a consumer is paused on
+Progress discards buffered Metrics/output and cannot turn into success. Capture
+failure retains observed response evidence through the explicit private
+`CompletionError.received_evidence/1` API.
+
+| Provider / configuration | Progress and Metrics | Terminal behavior |
+| --- | --- | --- |
+| Ollama, recovery enabled | Validated frame metadata with local attempt identity | Only `done: true`, `done_reason: "stop"` succeeds |
+| Ollama, recovery disabled | No new telemetry | Existing parsers and legacy finish behavior retained |
+| OpenAI / oMLX | No fabricated Ollama counters or durations | Existing provider parsing and recovery retained |
+
+This increment follows the reviewed Rust recovery terminal behavior at
+`4ca1ed279c02eab37827a1ed07c30e961155ecf3`, using Elixir tuples/maps and explicit
+UTF-8 byte fields. Reasoning parity with recovery disabled and ordinary completion
+finish handling remain deferred. In the recovery-disabled legacy HTTP
+characterization, the existing adapter re-enumerates the cold stream and sends
+two identical requests for the fixture; it ignores content carried on the final
+frame. This increment preserves that behavior. The disabled terminal-event API
+sends one request and retains its existing content-then-length-error sequence.
+
 ### Cancellation migration and limits
 
 Cancellation errors now retain the received HTTP status, headers and exact bytes,

@@ -2,7 +2,7 @@ defmodule Mojentic.LLM.StreamRecovery do
   @moduledoc false
 
   alias Mojentic.LLM.{CompletionError, CompletionRequest, Recovery, ToolCall}
-  alias Mojentic.LLM.Gateways.{OllamaStream, OpenAIStream}
+  alias Mojentic.LLM.Gateways.{Ollama, OllamaStream, OpenAIStream}
 
   # One local worker owns every HTTP continuation for this logical request.
   # Demand is acknowledged before another semantic event can be delivered.
@@ -51,6 +51,7 @@ defmodule Mojentic.LLM.StreamRecovery do
               buffer: "",
               tools: %{},
               finished: false,
+              frame_index: 0,
               progress: progress(),
               status: nil,
               headers: [],
@@ -392,6 +393,39 @@ defmodule Mojentic.LLM.StreamRecovery do
     exception -> failure({:parser_failure, exception}, state)
   end
 
+  # Validate Ollama frames before emitting metadata or accepting their semantics.
+  # Each wire attempt starts a fresh parser and frame index.
+  defp parse_frames(_chunk, frames, %{provider: :ollama} = state) do
+    Enum.reduce_while(frames, {:ok, [], state}, fn frame, {:ok, events, current} ->
+      cond do
+        Map.has_key?(frame, "error") ->
+          {:halt, {:ok, events ++ [{:error, {:provider_error, frame["error"]}}], current}}
+
+        OllamaStream.valid_recovery_frame?(frame) and valid_terminal_tools?(frame, current) ->
+          case safely(current, fn -> ollama_frame(frame, current) end) do
+            {:ok, new_events, updated} ->
+              combined = events ++ new_events
+
+              if Enum.any?(new_events, fn {kind, _} -> kind == :error end),
+                do: {:halt, {:ok, reject_semantics(combined, new_events), updated}},
+                else: {:cont, {:ok, combined, updated}}
+
+            error ->
+              {:halt, error}
+          end
+
+        true ->
+          observed =
+            case safely(current, fn -> {:ok, observe(frame, current)} end) do
+              {:ok, updated} -> updated
+              _ -> current
+            end
+
+          {:halt, {:ok, reject_chunk(events ++ [{:error, :invalid_stream_event}]), observed}}
+      end
+    end)
+  end
+
   defp parse_frames(chunk, frames, %{mode: :events} = state) do
     with {:ok, state} <- observe_frames(frames, state) do
       if is_nil(chunk), do: finish_events(frames, state), else: parse(chunk, frames, state)
@@ -399,6 +433,91 @@ defmodule Mojentic.LLM.StreamRecovery do
   end
 
   defp parse_frames(chunk, frames, state), do: parse(chunk, frames, state)
+
+  defp valid_terminal_tools?(%{"done" => false}, _state), do: true
+
+  defp valid_terminal_tools?(frame, state) do
+    candidate = accumulate(message(frame)["tool_calls"] || [], state)
+    calls = complete_tools(candidate.tools)
+
+    map_size(candidate.tools) == length(calls) and
+      Enum.all?(calls, fn call -> byte_size(call.name) > 0 end)
+  end
+
+  defp reject_semantics(events, frame_events) do
+    if Enum.any?(frame_events, fn
+         {:error, {:incomplete_completion, _}} -> true
+         _ -> false
+       end),
+       do: events,
+       else: reject_chunk(events)
+  end
+
+  defp reject_chunk(events),
+    do: Enum.filter(events, fn {kind, _} -> kind in [:progress, :metrics, :error] end)
+
+  defp ollama_frame(frame, state) do
+    state = observe(frame, %{state | frame_index: state.frame_index + 1})
+    # Parse evidence without semantic output: a rejected final frame cannot leak
+    # content or complete a tool, but its validated provider counters survive.
+    encoded = Jason.encode!(Map.put(frame, "message", %{})) <> "\n"
+    {terminal, parser_state} = OllamaStream.parse(state.parser_state, encoded)
+    state = %{state | parser_state: parser_state}
+    metadata = ollama_telemetry(frame, state)
+
+    if frame["done"] and frame["done_reason"] != "stop" do
+      {:ok, metadata ++ terminal, state}
+    else
+      case state.mode do
+        :events ->
+          content = message(frame)["content"]
+          semantics = if present?(content), do: [{:content, content}], else: []
+          calls = message(frame)["tool_calls"] || []
+
+          if calls == [],
+            do: {:ok, metadata ++ semantics ++ terminal, state},
+            else: {:ok, metadata ++ [{:error, :unexpected_tool_calls}], state}
+
+        :legacy ->
+          {:ok, semantics, state} = parse_frame(frame, [], state)
+          semantics = Enum.reject(semantics, fn {kind, _} -> kind == :completed end)
+          {:ok, metadata ++ semantics ++ terminal, state}
+      end
+    end
+  end
+
+  defp ollama_telemetry(frame, state) do
+    delta = message(frame)
+    identity = Map.put(state.ids, :frame_index, state.frame_index)
+
+    progress =
+      Map.merge(identity, %{
+        content_bytes: byte_size(delta["content"] || ""),
+        reasoning_bytes: byte_size(delta["thinking"] || ""),
+        tool_fragments: length(delta["tool_calls"] || []),
+        done: frame["done"]
+      })
+
+    fields = Map.merge(Ollama.reported_usage(frame) || %{}, Ollama.reported_timings(frame) || %{})
+
+    metrics =
+      Map.new(fields, fn {key, value} ->
+        {Map.fetch!(
+           %{
+             "prompt_eval_count" => :prompt_eval_count,
+             "eval_count" => :eval_count,
+             "total_duration" => :total_duration,
+             "load_duration" => :load_duration,
+             "prompt_eval_duration" => :prompt_eval_duration,
+             "eval_duration" => :eval_duration
+           },
+           key
+         ), value}
+      end)
+
+    metrics = if map_size(metrics) == 0, do: [], else: [{:metrics, Map.merge(identity, metrics)}]
+    [{:progress, progress} | metrics]
+  end
 
   # Rescue at the frame boundary so observations from earlier frames survive.
   # Parsing a chunk is atomic for delivery: an exception yields none of its events.
@@ -581,6 +700,9 @@ defmodule Mojentic.LLM.StreamRecovery do
 
         {:tool_calls, calls} ->
           %{delivered | completed_tool_calls: delivered.completed_tool_calls + length(calls)}
+
+        {kind, _metadata} when kind in [:progress, :metrics] ->
+          delivered
       end
 
     progress = %{state.progress | delivered: delivered}

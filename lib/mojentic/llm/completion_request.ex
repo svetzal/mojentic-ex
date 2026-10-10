@@ -126,6 +126,26 @@ defmodule Mojentic.LLM.CompletionRequest do
     {:error, %{error | history: [Map.delete(CompletionError.safe_metadata(error), :history)]}}
   end
 
+  @doc false
+  def retain_stream_capture(error, evidence, snapshot) do
+    progress =
+      evidence |> Mojentic.HTTP.ReceivedEvidence.progress() |> merge_received_progress(snapshot)
+
+    ids = Map.take(error, [:logical_request_id, :attempt_id, :wire_attempt])
+
+    error = %{
+      error
+      | progress: progress,
+        http_status: evidence.status || error.http_status,
+        phase: if(progress.headers_received, do: :streaming, else: error.phase),
+        private_evidence: fn ->
+          Map.take(evidence, [:status, :headers, :body]) |> Map.put(:ids, ids)
+        end
+    }
+
+    %{error | history: [Map.delete(CompletionError.safe_metadata(error), :history)]}
+  end
+
   defp merge_received_progress(progress, nil), do: progress
 
   defp merge_received_progress(progress, snapshot) do

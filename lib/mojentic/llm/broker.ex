@@ -423,6 +423,9 @@ defmodule Mojentic.LLM.Broker do
       {:element, {:content, text} = event, continuation} ->
         {[event], %{state | continuation: continuation, content: state.content <> text}}
 
+      {:element, {kind, _} = event, continuation} when kind in [:progress, :metrics] ->
+        {[event], %{state | continuation: continuation}}
+
       {:element, {kind, _} = event, continuation} when kind in [:completed, :error] ->
         record_stream_response(state, event)
         {[event], %{state | continuation: continuation, terminal: true}}
@@ -514,6 +517,9 @@ defmodule Mojentic.LLM.Broker do
     case next_element(cont) do
       {:element, {:content, chunk}, next_cont} ->
         {[chunk], {next_cont, acc_tool_calls, acc_content <> chunk, iterations_remaining}}
+
+      {:element, {kind, _} = event, next_cont} when kind in [:progress, :metrics] ->
+        {[event], {next_cont, acc_tool_calls, acc_content, iterations_remaining}}
 
       {:element, {:tool_calls, tool_calls}, next_cont} ->
         {[], {next_cont, acc_tool_calls ++ tool_calls, acc_content, iterations_remaining}}

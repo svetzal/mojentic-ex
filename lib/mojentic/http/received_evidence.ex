@@ -77,7 +77,7 @@ defmodule Mojentic.HTTP.ReceivedEvidence do
   defp decode_message(body) do
     case Jason.decode(body) do
       {:ok, %{"message" => message} = frame} when is_map(message) ->
-        [{message, frame["done"] == true}]
+        [{message, frame["done"] == true and frame["done_reason"] == "stop"}]
 
       {:ok, %{"choices" => [%{"message" => message} | _]}} when is_map(message) ->
         [{message, true}]

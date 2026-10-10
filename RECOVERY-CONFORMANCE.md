@@ -1492,3 +1492,79 @@ working tree. Complete logs and source snapshots are retained outside this
 worktree in the persistent archive identified by
 [archive receipt](.foundry/archive-receipt.json). All changes remain uncommitted
 for Foundry; no release or ref operation was performed.
+
+## Recovery-enabled Ollama telemetry and rejected terminals (c5)
+
+This increment implements the streaming correction against reviewed Rust
+`4ca1ed279c02eab37827a1ed07c30e961155ecf3`. Its `frames.rs` source is retained in
+`.foundry/rust-frames.rs`. Rust retains validated Progress/Metrics on a rejected
+finish while withholding that frame's semantics. Elixir exposes idiomatic
+`{:progress, map}` / `{:metrics, map}` events with exact local attempt identity,
+one-based per-attempt indices, explicit UTF-8 byte counts and unchanged supplied
+nonnegative integer counts/nanosecond durations. Absent metrics stay absent.
+
+The proof-first loopback HTTP test genuinely failed on both original public
+stream APIs: legacy delivered rejected content/reasoning and reported success;
+terminal events delivered rejected content with no telemetry. The source fix
+passes the identical probe. See [.foundry/proof.json](.foundry/proof.json) and its
+complete rejecting/corrected logs. Rejecting Mix exit is **2**, not a setup error;
+corrected exit is **0**. No marker toggles or count-only acceptance substitute.
+
+| Boundary contract | HTTP evidence |
+| --- | --- |
+| Valid length terminal | Progress → supplied Metrics → original structured failure; exact counters/durations and UTF-8 bytes; no semantic delivery, retry or success |
+| Successful frames | Ordered metadata and semantic output; exact identities and increasing frame indices; unknown metrics absent |
+| Malformed frames | Invalid counters, durations, content, reasoning, message, terminal flag, model, reason and tool shape produce no telemetry of their own |
+| Admitted retry | Same logical ID, distinct attempt IDs, byte-identical requests and index reset to one |
+| Paused consumer cancellation | Buffered Metrics and semantic output discarded; actual closed socket; rejected tools never counted completed |
+| Capture failure | Original received bytes retained privately, observed semantics retained, no delivery/replay |
+| Broker and ChatSession | Both Broker consumers forward metadata; session text contains only accepted strings; failure cannot finalize |
+| Completed tool then failed follow-up | Exactly one tool invocation, two requests, distinct logical follow-up and no replay |
+| Recovery disabled | Legacy re-enumeration sends two identical fixture requests and ignores final content; terminal-event API sends one request and yields final content then length error; no telemetry introduced |
+| OpenAI / oMLX | Existing semantic/lifecycle/cancellation tests retained; no invented Ollama telemetry |
+
+The older HTTP contracts explicitly project semantic events while keeping their
+exact progress, history, payload, cancellation and socket assertions. New tests
+assert complete unfiltered telemetry sequences. Completed-tool fixtures now
+explicitly report `done_reason: "stop"`; malformed frame causes are validated
+protocol errors instead of accidental parser exceptions. Ordinary generation,
+runtime pins, scripts/recovery-mix, coverage floor, exclusions, privacy fixes,
+dependencies and release state are preserved. Foundry owns synchronization and
+Git finalization; all mutations remain in this worktree.
+
+Fresh quality receipts, independent review, source hashes and persistent archive
+location are recorded in `.foundry/` after validation. Historical gate counts and
+missing logs elsewhere in this document are not evidence for this increment.
+
+Final validation on unchanged Elixir **1.18.5** / OTP **28.5.0.7** passes
+format, dev/test compilation with warnings as errors, strict Credo with zero
+issues, plain tests, coverage, both Dialyzer environments and docs. Both complete
+test runs pass **22 doctests and 2,447 tests**, zero failures, retaining the same
+**19 integration exclusions**. Coverage is **89.89%**, above the unchanged
+**80%** floor. The earlier full-run failure exposed three intended successful
+cancellation fixtures lacking a stop reason; those fixtures now explicitly report
+stop without relaxing their socket, cancellation or progress assertions. Final
+terminal tools are validated before telemetry, including missing-name and bad
+JSON cases; valid nonterminal fragmentation remains covered.
+
+MixAudit and Hex audit pass with no vulnerable or retired/advisory packages.
+MixAudit's automatic refresh still encounters the external read-only FETCH_HEAD;
+read-only freshness evidence verifies installed advisory HEAD equals upstream
+main at `935abf7410a2bbb18e12579dee6e31267c3ed244`. Configured Sobelow passes.
+The exact unfiltered command in `.foundry/additional-quality.json` returns **1**
+with **seven existing low-confidence Traversal.FileModule findings**. Their source
+is unchanged, verified in `.foundry/audit-baseline.json`. No suppression was added.
+Hex outdated returns **1** for available upgrades as an informational result.
+Docs retain the existing missing LICENSE and igniter usage-rule link warnings.
+
+[Independent review](.foundry/independent-review.md) inspects the source, HTTP
+proof and completed receipts. [All quality receipts](.foundry/all-quality.json),
+[evidence validation](.foundry/evidence-validation.json),
+[source hashes](.foundry/source-hashes.json) and
+[invariants](.foundry/invariants.json) bind this increment to its retained logs.
+Complete capture logs, final source snapshots and original baseline snapshots
+are preserved outside this worktree at the persistent location recorded by
+[archive receipt](.foundry/archive-receipt.json). Read-only remote evidence reports
+main at the unchanged starting HEAD `90a8ec382b792346e92dc55d00ec08d45e06fafb`;
+Foundry owns final synchronization and direct-main finalization. No executor
+commit, push, merge, rebase, tag or release was performed.
