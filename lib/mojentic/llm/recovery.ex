@@ -13,7 +13,7 @@ defmodule Mojentic.LLM.Recovery do
   `trace_observer: callback` explicitly opts into sensitive evidence at ReqClient.
   The callback must return `:ok`; any other return or raised/thrown/exited failure
   produces a terminal, payload-free `:capture_failed` completion error. Persistence
-  is caller-owned. No library storage, masking or automatic trace logging occurs.
+  is caller-owned. No persistent library storage, masking or automatic trace logging occurs.
   Broker and ChatSession forward this option through their completion config.
 
   Each event has `ids: %{logical_request_id: id, attempt_id: id, wire_attempt: n}`
@@ -37,7 +37,17 @@ defmodule Mojentic.LLM.Recovery do
   Authoritative cancellation
   kills a blocked capture worker, so terminal capture delivery is not guaranteed
   on cancellation. No extra read, resend or model request fills missing evidence.
-  Custom HTTP behaviours must implement `:wire_trace` to provide exact evidence;
+  With `cancel_ref`, ReqClient records received status, headers and bytes before
+  capture callbacks, independently of delivered progress. Cancellation errors retain
+  this sensitive response in memory via `CompletionError.received_evidence/1`;
+  inspection, JSON and lifecycle events omit it. Original typed causes, when
+  available, remain accessible through `CompletionError.cause/1`. There is no extra
+  provider read or resend. Stream terminal acceptance requires consumer demand after
+  final capture/cleanup; cancellation before acceptance prevents success.
+  A paused enumerator cannot forward mailbox cancellation until it resumes. For
+  prompt cancellation while paused, retain the recovery-owner PID from the
+  `attempt_started` observer (`self()` inside that observer) and send to it directly.
+  Custom HTTP behaviours must implement `:wire_trace` and `:received_observer` to provide exact evidence;
   these guarantees apply to the default ReqClient boundary.
   """
   alias Mojentic.LLM.{CompletionError, CompletionRequest}
@@ -325,7 +335,7 @@ defmodule Mojentic.LLM.Recovery do
 
         case result do
           {:not_sent, _} -> result
-          _ -> request_result(opts, result)
+          _ -> if(opts[:cancel_ref], do: result, else: request_result(opts, result))
         end
 
       reason ->
@@ -375,16 +385,37 @@ defmodule Mojentic.LLM.Recovery do
     end
   end
 
-  defp await_request(opts, ref, pid, monitor, started, dispatched, progress \\ nil) do
+  defp await_request(
+         opts,
+         ref,
+         pid,
+         monitor,
+         started,
+         dispatched,
+         progress \\ nil,
+         evidence \\ nil
+       ) do
     cancel = opts[:cancel_ref]
 
     receive do
-      {:stream_delivery, ^pid, updated, owner, delivery_ref} ->
-        send(owner, {:stream_delivery_ack, delivery_ref})
-        await_request(opts, ref, pid, monitor, started, dispatched, updated)
+      {:request_evidence, ^pid, received} ->
+        await_request(opts, ref, pid, monitor, started, dispatched, progress, received)
+
+      {:stream_delivery, ^pid, _updated, owner, delivery_ref} ->
+        case guard_send(opts, nil) do
+          :ok ->
+            send(owner, {:stream_delivery_ack, delivery_ref})
+            await_request(opts, ref, pid, monitor, started, dispatched, progress, evidence)
+
+          :cancelled ->
+            {:error, {:request_cancelled, evidence, progress, nil}}
+        end
+
+      {:stream_delivery_commit, ^pid, updated} ->
+        await_request(opts, ref, pid, monitor, started, dispatched, updated, evidence)
 
       {:stream_progress, ^pid, updated} ->
-        await_request(opts, ref, pid, monitor, started, dispatched, updated)
+        await_request(opts, ref, pid, monitor, started, dispatched, updated, evidence)
 
       {^ref, :dispatch_ready} ->
         # The worker's final guard has completed. Account only after the caller
@@ -400,7 +431,10 @@ defmodule Mojentic.LLM.Recovery do
         end
 
       {^ref, result} ->
-        result
+        case guard_send(opts, nil) do
+          :ok -> result
+          :cancelled -> {:error, {:request_cancelled, evidence, progress, result}}
+        end
 
       {:DOWN, ^monitor, :process, ^pid, _reason} ->
         {:error, :rejected}
@@ -408,6 +442,7 @@ defmodule Mojentic.LLM.Recovery do
       {:cancel, ^cancel} ->
         cond do
           not dispatched -> {:not_sent, :cancelled}
+          evidence != nil -> {:error, {:request_cancelled, evidence, progress, nil}}
           progress != nil -> {:error, {:stream_cancelled, progress}}
           true -> {:error, :cancelled}
         end
@@ -471,6 +506,9 @@ defmodule Mojentic.LLM.Recovery do
         end
     end
   end
+
+  @doc false
+  def cancelled?(opts), do: guard_send(opts, nil) == :cancelled
 
   defp guard_send(opts, deadline) do
     cancel = opts[:cancel_ref]

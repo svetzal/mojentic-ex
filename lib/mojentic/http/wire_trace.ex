@@ -6,7 +6,8 @@ defmodule Mojentic.HTTP.WireTrace do
     defexception message: "wire capture failed"
   end
 
-  # Raw evidence is handed only to the opt-in caller, never retained in errors.
+  # External capture receives sensitive evidence only through the opt-in hook.
+  # The recovery owner records received evidence before that hook can block.
   def notify(nil, _event), do: :ok
 
   def notify({callback, ids}, event) do
@@ -20,16 +21,25 @@ defmodule Mojentic.HTTP.WireTrace do
     _, _ -> {:error, :capture_failed}
   end
 
-  def stream(nil, _request, stream), do: stream
+  def stream(trace, request, stream, observer \\ nil, mode \\ :ordinary)
 
-  def stream(trace, request, stream) do
+  def stream(nil, _request, stream, nil, _mode), do: stream
+
+  def stream(trace, request, stream, observer, mode) do
     Stream.resource(
       fn ->
         continuation = &Enumerable.reduce(stream, &1, fn item, _ -> {:suspend, item} end)
         capture = notify(trace, request)
-        %{continuation: continuation, capture: capture, observed: false, done: false}
+
+        %{
+          continuation: continuation,
+          capture: capture,
+          observed: false,
+          done: false,
+          evidence: Mojentic.HTTP.ReceivedEvidence.new(mode)
+        }
       end,
-      &next(&1, trace, request),
+      &next(&1, trace, observer),
       fn state ->
         state.continuation.({:halt, nil})
 
@@ -49,10 +59,12 @@ defmodule Mojentic.HTTP.WireTrace do
 
   defp next(%{done: true} = state, _trace, _request), do: {:halt, state}
 
-  defp next(state, trace, _request) do
+  defp next(state, trace, observer) do
     case state.continuation.({:cont, nil}) do
       {:suspended, item, continuation} ->
-        state = %{state | continuation: continuation}
+        evidence = Mojentic.HTTP.ReceivedEvidence.observe(item, state.evidence)
+        if observer, do: observer.(evidence)
+        state = %{state | continuation: continuation, evidence: evidence}
 
         with :ok <- state.capture,
              :ok <- notify(trace, event(item, state.observed)) do
@@ -67,6 +79,9 @@ defmodule Mojentic.HTTP.WireTrace do
         end
 
       {done, _} when done in [:done, :halted] ->
+        evidence = Mojentic.HTTP.ReceivedEvidence.complete(state.evidence)
+        if observer, do: observer.(evidence)
+
         case notify(trace, %{
                type: :response_end,
                outcome: :complete,

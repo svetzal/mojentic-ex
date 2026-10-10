@@ -21,6 +21,7 @@ defmodule Mojentic.LLM.CompletionError do
     :logical_request_id,
     :attempt_id,
     :private_cause,
+    :private_evidence,
     wire_attempt: 1,
     resend_permission: :not_granted,
     history: []
@@ -62,6 +63,7 @@ defmodule Mojentic.LLM.CompletionError do
           wire_attempt: non_neg_integer(),
           resend_permission: atom(),
           history: [map()],
+          private_evidence: nil | (-> map()),
           private_cause: (-> term())
         }
 
@@ -71,11 +73,17 @@ defmodule Mojentic.LLM.CompletionError do
     error
     |> Map.from_struct()
     |> Map.delete(:private_cause)
+    |> Map.delete(:private_evidence)
     |> Map.update!(:retry_after, fn
       {kind, value} -> %{kind: kind, value: value}
       state -> state
     end)
   end
+
+  @doc "Explicitly retrieves sensitive received status, headers and exact body on cancellation."
+  @spec received_evidence(t()) :: map() | nil
+  def received_evidence(%__MODULE__{private_evidence: nil}), do: nil
+  def received_evidence(%__MODULE__{private_evidence: evidence}), do: evidence.()
 
   @doc "Explicitly retrieves the original cause, which may contain secrets."
   @spec cause(t()) :: term()

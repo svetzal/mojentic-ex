@@ -1103,3 +1103,85 @@ correction does not establish remote inference termination, cancellation-time
 received-progress retention, disabled reasoning parity, ordinary generate finish
 handling, exhaustive recovery conformance or six-port parity. The remaining
 historical whole-contract limitations remain in force.
+
+
+## Cancellation received-evidence correction (October 10, 2026)
+
+This correction starts at `48df7c1` and supersedes the historical c13 limitation
+on cancellation-time received-progress retention. The initial tree was clean;
+`git fetch origin main` succeeded. Foundry owns finalization: no pull/rebase,
+commit, push, merge, tag or release was performed. The existing AGENTS.md release
+authorization, runtime pins, dependencies, coverage floor, exclusions and
+`scripts/recovery-mix` remain unchanged. Only this isolated worktree was written.
+
+[Behavioral proof](.foundry/proof.json) records the public OpenAI event-streaming
+rejection and corrected pass. The rejecting HTTP200 fixture delivered exactly
+174 bytes to a blocked body capture hook, then cancellation reported zero raw
+bytes. The corrected probe asserts all 174 retained bytes, actual status/headers,
+observed content/reasoning/tool fragments, zero semantic delivery, exact unmasked
+identities in trace/error/history/lifecycle, failure then one cancellation, one
+server-observed request, and peer-observed closure before fixture teardown.
+The actual rejecting Mix exit is 2; the corrected exit is 0.
+
+`CancellationSocketWireTest` adds public loopback assertions for all three providers
+and all four adapter entrypoints: cancellation at headers, partial ordinary and
+structured bodies, blocked received-body capture, terminal-only frames, and
+observed-but-undelivered content/reasoning/tool fragments. Exact body equality and
+byte lengths accompany status/header assertions. Native closed-cause fixtures use
+TCP write half-close while retaining the peer's read side, proving original
+`Mint.TransportError` retention on HTTP200 and HTTP503 before caller cancellation.
+Paused consumers cancel via the recovery-owner PID; closure and terminal failure
+are asserted while the consumer is still paused. Buffered terminal frames cannot
+produce success or completed-tool execution. Broker/session streaming forwarding
+asserts unchanged failed finalization; ordinary forwarding asserts both full
+attempt identities, retained history after a 503, identical request encoding and
+no third dispatch. Ollama final JSON without a newline is retained at complete EOF
+before a blocked terminal capture hook. Existing admission/backoff and
+retries-disabled regressions remain in the full suite.
+
+`WireTrace` records received evidence before calling user capture hooks;
+`Recovery.request` owns its snapshots separately from committed delivery. Sensitive
+response evidence is explicitly inspectable via `CompletionError.received_evidence/1`
+and omitted from inspection, JSON, safe history and lifecycle events. Available
+original causes are preserved separately. Final capture/cleanup precedes terminal
+consumer acceptance; cancellation before acceptance remains authoritative.
+
+Read-only comparison used the exact Rust revision
+`4ca1ed279c02eab37827a1ed07c30e961155ecf3`, including `engine.rs` body observation
+before capture and post-terminal cancellation checks, and `frames.rs` terminal
+completed-tool accounting. Elixir retains its existing event API's unsupported-tool
+and suppressed-reasoning behavior. No coordinated parity claim follows.
+[Independent review](.foundry/cancellation-review.md) identified terminal-demand,
+delivery-commit, EOF evidence and completed-tool accounting issues, corrected here.
+
+Remaining limits: evidence covers data exposed by ReqClient, not unread socket
+buffers, TLS or transfer framing. A blocked enumerator cannot itself forward
+mailbox cancellation; prompt paused-consumer cancellation targets the recovery
+owner. Capture termination notification is not guaranteed when its worker is
+killed. Cancellation after terminal consumer acceptance cannot retract committed
+success. Custom HTTP behaviours need the internal received-observer option for
+retention. Retained raw bodies consume memory until the error is released. Socket
+closure never proves remote inference termination. Disabled reasoning parity,
+ordinary generate finish handling, the broader immutable-request/privacy matrix,
+and exhaustive six-port conformance remain deferred.
+
+Fresh gate results and complete captures are indexed in
+[quality evidence](.foundry/quality.json), with source hashes per command.
+Format, development/test compilation with warnings as errors, strict Credo,
+development/test Dialyzer, documentation, MixAudit, Hex audit and both configured
+and unfiltered Sobelow pass. Dialyzer reports zero errors/skips/unnecessary skips;
+Credo reports no issues. The unchanged full coverage suite passes **22 doctests
+and 1,918 tests**, with zero failures, the same **19 integration exclusions** and
+**89.22%** coverage above the unchanged **80%** floor. The separate plain
+full-suite run also passes **22 doctests and 1,918 tests**, zero failures and
+the same 19 exclusions.
+
+MixAudit reports no vulnerabilities. Its automatic refresh was denied at the
+read-only database Git path, so read-only local HEAD/upstream main verification
+separately confirms both are `935abf7410a2bbb18e12579dee6e31267c3ed244`.
+Hex audit reports no retired or security advisory packages. Documentation retains
+existing missing LICENSE/igniter-rule link warnings; non-Phoenix Sobelow retains
+missing-router and lockfile keyword warnings. `hex.outdated --all` exits 1 for
+available updates and is informational, not an advisory finding. No dependency
+upgrade or advisory suppression was added. The independent review was read-only;
+Foundry retains ownership of Git finalization.

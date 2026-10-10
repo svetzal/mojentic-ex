@@ -168,3 +168,12 @@ effects already completed are not rolled back or replayed, so retrying the whole
 session send is an application decision. Recovery applies to the failed provider
 request only; local providers require an admission policy as described in the
 streaming guide.
+
+
+Cancellation errors forwarded by `send/3` and `send_stream/3` preserve received
+response evidence and prior attempts. `CompletionError.received_evidence(error)`
+is a sensitive inspection API; keep its raw bytes and headers out of ordinary
+logs. `finalize_stream/1` returns the same cancellation error and releases the
+handle without adding a successful assistant response. For cancellation during a
+paused consumer callback, send directly to the recovery owner recorded by the
+`:attempt_started` observer, as described in the streaming guide.

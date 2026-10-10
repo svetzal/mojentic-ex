@@ -62,7 +62,13 @@ defmodule Mojentic.LLM.StreamRecovery do
                 url,
                 body,
                 headers,
-                Keyword.put(opts, :wire_trace, CompletionRequest.trace(recovery, ids)),
+                Keyword.merge(opts,
+                  wire_trace: CompletionRequest.trace(recovery, ids),
+                  evidence_mode: {provider, mode},
+                  received_observer: fn evidence ->
+                    send(initial.tracker, {:request_evidence, self(), evidence})
+                  end
+                ),
                 initial
               )
             end
@@ -72,6 +78,16 @@ defmodule Mojentic.LLM.StreamRecovery do
             end
 
             case Recovery.request(recovery, deadline, {started, attempt}) do
+              {:error, {:request_cancelled, evidence, progress, original}} ->
+                CompletionRequest.cancelled(
+                  evidence,
+                  progress,
+                  original,
+                  provider,
+                  operation(mode),
+                  ids
+                )
+
               {:error, {:stream_cancelled, progress}} ->
                 failure(:cancelled, Map.merge(initial, progress))
 
@@ -95,7 +111,15 @@ defmodule Mojentic.LLM.StreamRecovery do
         send(owner, {ref, :result, result})
       end)
 
-    %{pid: pid, monitor: monitor, ref: ref, cancel: cancel, done: false, cancelling: false}
+    %{
+      pid: pid,
+      monitor: monitor,
+      ref: ref,
+      cancel: cancel,
+      done: false,
+      cancelling: false,
+      terminal_committed: false
+    }
   end
 
   defp watch_owner(owner) do
@@ -120,7 +144,15 @@ defmodule Mojentic.LLM.StreamRecovery do
   defp next(%{done: true} = state), do: {:halt, state}
 
   defp next(state) do
-    await(state)
+    cancel = state.cancel
+
+    receive do
+      {:cancel, ^cancel} when not state.terminal_committed ->
+        send(state.pid, {:cancel, cancel})
+        await(%{state | cancelling: true})
+    after
+      0 -> await(state)
+    end
   end
 
   defp await(state) do
@@ -149,9 +181,12 @@ defmodule Mojentic.LLM.StreamRecovery do
       {^ref, :result, {:error, error}} ->
         {[{:error, error}], %{state | done: true}}
 
-      {:cancel, ^cancel} ->
+      {:cancel, ^cancel} when not state.terminal_committed ->
         send(state.pid, {:cancel, cancel})
         await(%{state | cancelling: true})
+
+      {:cancel, ^cancel} ->
+        await(state)
 
       {:DOWN, ^monitor, :process, _, _} ->
         {[{:error, :stream_worker_failed}], %{state | done: true}}
@@ -166,8 +201,25 @@ defmodule Mojentic.LLM.StreamRecovery do
 
     receive do
       {:stream_delivery_ack, ^delivery_ref} ->
-        send(worker, {ref, :delivered})
-        {[event], state}
+        cancel = state.cancel
+
+        receive do
+          {:cancel, ^cancel} ->
+            send(state.pid, {:cancel, cancel})
+            await(%{state | cancelling: true})
+        after
+          0 ->
+            send(state.pid, {:stream_delivery_commit, worker, progress})
+            send(worker, {ref, :delivered})
+
+            if event == :terminal,
+              do: await(%{state | terminal_committed: true}),
+              else: {[event], state}
+        end
+
+      {:cancel, cancel} when cancel == state.cancel ->
+        send(state.pid, {:cancel, cancel})
+        await(%{state | cancelling: true})
 
       {^ref, :result, {:error, error}} ->
         {[{:error, error}], %{state | done: true}}
@@ -226,7 +278,7 @@ defmodule Mojentic.LLM.StreamRecovery do
         end
 
       {done, _} when done in [:done, :halted] ->
-        finish(state)
+        authorize_success(finish(state), state)
     end
   rescue
     _exception in Mojentic.HTTP.WireTrace.CaptureError ->
@@ -239,7 +291,7 @@ defmodule Mojentic.LLM.StreamRecovery do
 
   defp halt_wire(rest, result, state) do
     rest.({:halt, nil})
-    result
+    authorize_success(result, state)
   rescue
     _exception in Mojentic.HTTP.WireTrace.CaptureError ->
       progress =
@@ -250,6 +302,15 @@ defmodule Mojentic.LLM.StreamRecovery do
 
       failure(:capture_failed, %{state | progress: progress})
   end
+
+  # Final capture/cleanup completes before consumer acceptance. A paused consumer
+  # leaves this attempt cancellable; after acceptance its terminal result is committed.
+  defp authorize_success({:ok, {progress, _evidence}} = result, state) do
+    yield(:terminal, %{state | progress: progress}, progress)
+    result
+  end
+
+  defp authorize_success(result, _state), do: result
 
   defp finish(%{provider: :ollama, buffer: buffer} = state) when buffer != "" do
     {frames, state} = frames("\n", state)

@@ -41,6 +41,8 @@ defmodule Mojentic.LLM.CompletionRequest do
       )
     end
 
+    tracker = self()
+
     result =
       Mojentic.LLM.Recovery.request(
         recovery,
@@ -55,17 +57,94 @@ defmodule Mojentic.LLM.CompletionRequest do
                retry: false,
                redirect: false,
                recovery_metadata: true,
-               wire_trace: trace(recovery, ids)
+               wire_trace: trace(recovery, ids),
+               received_observer:
+                 if(recovery[:cancel_ref],
+                   do: fn evidence -> send(tracker, {:request_evidence, self(), evidence}) end
+                 )
              )
            )
          end}
       )
 
     case result do
-      {:not_sent, reason} -> {:not_sent, reason}
-      response -> finish(response, parse, recovery, provider, operation, ids)
+      {:not_sent, reason} ->
+        {:not_sent, reason}
+
+      {:error, {:request_cancelled, evidence, progress, original}} ->
+        cancelled(evidence, progress, original, provider, operation, ids)
+
+      response ->
+        finish(response, parse, recovery, provider, operation, ids)
     end
   end
+
+  @doc false
+  def cancelled(evidence, snapshot, original, provider, operation, ids) do
+    evidence = evidence || Mojentic.HTTP.ReceivedEvidence.new(:ordinary)
+
+    response =
+      if evidence.status,
+        do:
+          {:ok,
+           %{
+             status_code: evidence.status,
+             headers: evidence.headers,
+             body: evidence.body,
+             phase: :streaming
+           }},
+        else: {:error, :cancelled}
+
+    error = build(response, :cancelled, provider, operation, ids)
+    progress = Mojentic.HTTP.ReceivedEvidence.progress(evidence)
+
+    progress = merge_received_progress(progress, snapshot)
+
+    semantic = progress.observed
+
+    interrupted =
+      operation in [:complete_stream, :complete_stream_events] and
+        (semantic.content or semantic.reasoning or semantic.tool_fragments > 0)
+
+    cause = cancellation_cause(original, evidence.cause)
+
+    error = %{
+      error
+      | progress: progress,
+        reason: if(interrupted, do: :stream_interrupted, else: :cancelled),
+        phase: if(progress.headers_received, do: :streaming, else: error.phase),
+        private_cause: fn -> cause end,
+        private_evidence: fn ->
+          Map.take(evidence, [:status, :headers, :body]) |> Map.put(:ids, ids)
+        end
+    }
+
+    {:error, %{error | history: [Map.delete(CompletionError.safe_metadata(error), :history)]}}
+  end
+
+  defp merge_received_progress(progress, nil), do: progress
+
+  defp merge_received_progress(progress, snapshot) do
+    observed =
+      Map.merge(progress.observed, snapshot.progress.observed, fn
+        _key, left, right when is_boolean(left) -> left or right
+        _key, left, right -> max(left, right)
+      end)
+
+    %{progress | observed: observed, delivered: snapshot.progress.delivered}
+  end
+
+  defp cancellation_cause({:error, %CompletionError{} = error}, _cause),
+    do: CompletionError.cause(error)
+
+  defp cancellation_cause({:error, cause}, _received), do: original_cause(cause)
+  defp cancellation_cause(_result, received), do: original_cause(received || :cancelled)
+
+  defp original_cause({:http_response, _status, _headers, _body, cause}),
+    do: original_cause(cause)
+
+  defp original_cause(%Finch.TransportError{source: source}), do: source
+  defp original_cause(cause), do: cause
 
   @doc false
   def trace(recovery, ids) do
@@ -81,33 +160,27 @@ defmodule Mojentic.LLM.CompletionRequest do
     {:error, %{error | wire_attempt: 0, history: []}}
   end
 
-  defp finish({:ok, %{status_code: 200}} = response, parse, opts, provider, operation, ids) do
-    case decode(parse, response) do
-      {:ok, completion} = success ->
-        {:ok, wire_response} = response
-        progress = progress(response, wire_response.body)
+  defp finish(
+         {:ok, %{status_code: 200} = response} = received,
+         parse,
+         opts,
+         provider,
+         operation,
+         ids
+       ) do
+    decoded = decode(parse, received)
 
-        delivered = %{
-          content: present?(completion.content),
-          reasoning: present?(completion.thinking),
-          tool_fragments: 0,
-          completed_tool_calls: length(completion.tool_calls)
-        }
+    if Mojentic.LLM.Recovery.cancelled?(opts) do
+      evidence = %{
+        Mojentic.HTTP.ReceivedEvidence.new(:ordinary)
+        | status: response.status_code,
+          headers: response.headers,
+          body: response.body
+      }
 
-        emit(
-          opts,
-          :attempt_succeeded,
-          Map.merge(ids, %{
-            wire_attempt: ids.wire_attempt,
-            phase: :decoding,
-            progress: %{progress | delivered: delivered}
-          })
-        )
-
-        success
-
-      {:error, cause} ->
-        {:error, build(response, cause, provider, operation, ids)}
+      cancelled(evidence, nil, decoded, provider, operation, ids)
+    else
+      finish_decoded(decoded, received, opts, provider, operation, ids)
     end
   end
 
@@ -130,6 +203,39 @@ defmodule Mojentic.LLM.CompletionRequest do
   defp finish(response, _parse, _opts, provider, operation, ids) do
     {:error, build(response, response, provider, operation, ids)}
   end
+
+  defp finish_decoded(
+         {:ok, completion} = success,
+         {:ok, response} = received,
+         opts,
+         _provider,
+         _operation,
+         ids
+       ) do
+    progress = progress(received, response.body)
+
+    delivered = %{
+      content: present?(completion.content),
+      reasoning: present?(completion.thinking),
+      tool_fragments: 0,
+      completed_tool_calls: length(completion.tool_calls)
+    }
+
+    emit(
+      opts,
+      :attempt_succeeded,
+      Map.merge(ids, %{
+        wire_attempt: ids.wire_attempt,
+        phase: :decoding,
+        progress: %{progress | delivered: delivered}
+      })
+    )
+
+    success
+  end
+
+  defp finish_decoded({:error, cause}, response, _opts, provider, operation, ids),
+    do: {:error, build(response, cause, provider, operation, ids)}
 
   defp decode(parse, response) do
     parse.(response)

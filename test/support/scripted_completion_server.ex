@@ -38,6 +38,12 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
 
         sockets =
           case response do
+            {:stream_half_close, response} ->
+              :ok = :gen_tcp.send(socket, response)
+              :ok = :gen_tcp.shutdown(socket, :write)
+              send(state.owner, {:held_response_sent, request, response})
+              [socket | state.sockets]
+
             {:stream_hold, response} ->
               :ok = :gen_tcp.send(socket, response)
               send(state.owner, {:held_response_sent, request, response})

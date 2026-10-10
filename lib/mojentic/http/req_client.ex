@@ -129,7 +129,9 @@ defmodule Mojentic.HTTP.ReqClient do
       WireTrace.stream(
         Keyword.get(opts, :wire_trace),
         %{type: :request, method: :post, url: url, headers: headers, body: body},
-        stream
+        stream,
+        Keyword.get(opts, :received_observer),
+        Keyword.get(opts, :evidence_mode, :ordinary)
       )
 
     {:ok, stream}

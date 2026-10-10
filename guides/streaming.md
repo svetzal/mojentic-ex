@@ -186,6 +186,34 @@ to connection setup and idle waits, without a total generation timeout. A recove
 budget starts after the first failure; it does not truncate active generation.
 Retry-After cannot bypass the delay ceiling or recovery deadline.
 
+### Cancellation migration and limits
+
+Cancellation errors now retain the received HTTP status, headers and exact bytes,
+including ordinary/structured partial bodies and stream fragments observed before
+a blocked capture hook. Use `CompletionError.received_evidence(error)` only in an
+explicit sensitive inspection/storage path; it returns `%{status: status,
+headers: headers, body: body, ids: ids}` or `nil` when no response was observed.
+`CompletionError.cause(error)` retains an available native transport or parser
+cause separately. Safe history and lifecycle metadata retain the exact IDs and
+received/delivered progress, with no raw response payload or credential headers.
+
+Cancellation before consumer acceptance of a terminal result produces the actual
+attempt failure followed by exactly one terminal cancellation event. A terminal
+frame alone does not authorize success: final capture/cleanup and consumer demand
+must complete first. After terminal acceptance, completion is committed; a later
+cancellation does not retract that result. Tools buffered by the broker are never
+executed on a cancelled attempt, and cancelled session streams fail finalization.
+
+If an enumerator is paused inside its own callback, it cannot forward mailbox
+messages until it resumes. To cancel promptly while paused, retain the recovery
+owner PID from `self()` inside the `:attempt_started` lifecycle observer and send
+`{:cancel, cancel_ref}` directly to that PID. Capture hooks run in another request
+worker and may be killed without a terminal trace notification. Evidence covers
+bytes already exposed by ReqClient, not unread socket data. No additional read,
+request, remote termination claim or active-generation deadline is introduced.
+Custom HTTP implementations must honor the internal received-observer option to
+provide this retention guarantee. Retries-disabled calls keep their existing path.
+
 `Broker.generate_stream/4` remains a tool-executing stream. With recovery enabled,
 it yields `{:error, error}` to the consumer instead of silently halting on adapter
 failures, and may yield `{:thinking, text}` alongside strings. Tools execute only
@@ -196,8 +224,9 @@ Recovery-enabled broker streaming suppresses default payload tracing, including
 messages, accumulated content and tool arguments. The recovery `observer` supplies
 safe lifecycle metadata. Error inspection and JSON encoding exclude response text
 and original causes; `CompletionError.cause(error)` is the explicit private
-inspection API and must not be sent to default logs. Raw per-wire evidence is
-available only through the explicit `trace_observer` option described below. Providers expose no supported status, idempotency or
+inspection API and must not be sent to default logs. Raw per-wire capture is
+available through the explicit `trace_observer` option described below. Cancellation
+response evidence is also available through `CompletionError.received_evidence/1`. Providers expose no supported status, idempotency or
 remote cancellation guarantee; see `Recovery.capabilities/1`.
 
 The deterministic production-HTTP cases and gate results are recorded in
@@ -234,7 +263,9 @@ outcome and evidence availability. Each event carries the same unmasked logical
 request ID, attempt ID and wire number as lifecycle/error metadata. HTTP failures,
 malformed provider JSON and partial transport responses retain their observed
 bytes. The callback receives credentials and payloads without masking; the library
-stores none of them. Default errors, JSON, lifecycle events and logs stay safe.
+does not persist them. With `cancel_ref`, the library retains received response
+evidence in memory until the cancellation error is released. Default error
+inspection, JSON, lifecycle events and logs omit it.
 
 Return exactly `:ok`. An exception, throw, exit or any other return causes terminal
 `capture_failed`, never another inference or successful session finalization.
