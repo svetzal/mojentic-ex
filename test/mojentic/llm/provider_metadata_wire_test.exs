@@ -27,6 +27,11 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
     :ok
   end
 
+  @tag :short_alphabetic_proof
+  test "public OpenAI ordinary errors omit decorated short alphabetic prompt echoes" do
+    check_boundary(OpenAI, :ordinary, :embedded_short_alphabetic)
+  end
+
   for gateway <- [OpenAI, Ollama, OMLX],
       operation <- [
         :ordinary,
@@ -48,9 +53,11 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
         :decorated_uuid,
         :embedded_uuid,
         :embedded_short_token,
+        :embedded_short_alphabetic,
         :credential_uuid,
         :payload_uuid,
         :control_uuid,
+        :control_short_code,
         :control
       ],
       gateway != Ollama or fixture != :credential_uuid do
@@ -64,25 +71,30 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
   end
 
   for gateway <- [OpenAI, Ollama, OMLX],
-      operation <- [:ordinary, :structured, :legacy, :events] do
+      operation <- [:ordinary, :structured, :legacy, :events],
+      fixture <- [:uuid, :embedded_short_alphabetic] do
     @gateway gateway
     @operation operation
+    @fixture fixture
     @tag :provider_metadata_cancellation
-    test "#{gateway} #{operation} cancellation excludes received echoes and closes the socket" do
-      check_cancellation(@gateway, @operation)
+    test "#{gateway} #{operation} #{fixture} cancellation excludes received echoes and closes the socket" do
+      log = capture_log(fn -> check_cancellation(@gateway, @operation, @fixture) end)
+      {secret, _prompt, _request_id, _code} = cancellation_fixture(@fixture)
+      refute log =~ secret
     end
   end
 
-  defp check_cancellation(gateway, operation) do
+  defp check_cancellation(gateway, operation, fixture) do
+    {secret, prompt, request_id, expected_code} = cancellation_fixture(fixture)
     body = Jason.encode!(%{error: %{code: "overloaded"}})
 
     reply =
-      response(body, @uuid)
+      response(body, request_id)
       |> String.replace("Content-Length: #{byte_size(body)}", "Content-Length: 9999")
 
     server = start_supervised!({ScriptedCompletionServer, {self(), [{:stream_hold, reply}]}})
     assert_receive {:server_port, port}
-    configure(gateway, port, "overloaded")
+    configure(gateway, port, "credential-control")
     tracer = start_supervised!({TracerSystem, []})
     supervisor = start_supervised!(Task.Supervisor)
     owner = self()
@@ -102,27 +114,35 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
 
     task =
       Task.Supervisor.async_nolink(supervisor, fn ->
-        invoke(gateway, operation, @uuid <> " overloaded", config, tracer)
+        invoke(gateway, operation, prompt, config, tracer)
       end)
 
     assert_receive {:wire_request, wire}, 2000
     assert_receive {:metadata_exact, %{type: :response_data, body: ^body}}, 2000
     send(task.pid, {:cancel, cancel})
     assert {:error, error} = Task.await(task, 2000)
-    assert_cancelled_metadata(error, body)
+    assert_cancelled_metadata(error, body, expected_code)
     assert GenServer.call(server, {:peer_state, wire}) == {:error, :closed}
     assert GenServer.call(server, :requests) == [wire]
     events = for _ <- 1..3, do: receive_lifecycle()
     assert Enum.map(events, & &1.type) == [:attempt_started, :attempt_failed, :cancelled]
     assert List.last(events).metadata == CompletionError.safe_metadata(error)
     for event <- events, do: assert(event.metadata.attempt_id == error.attempt_id)
-    assert_private(error, @uuid, tracer, events)
-    refute inspect(events) =~ "overloaded"
+    assert_private(error, secret, tracer, events)
+    evidence = CompletionError.received_evidence(error)
+    assert {"x-request-id", request_id} in evidence.headers
+    assert evidence.ids.attempt_id == error.attempt_id
+    assert CompletionError.cause(error) == :cancelled
   end
 
-  defp assert_cancelled_metadata(error, body) do
+  defp cancellation_fixture(:uuid), do: {@uuid, @uuid <> " overloaded", @uuid, nil}
+
+  defp cancellation_fixture(:embedded_short_alphabetic),
+    do: {"Bob", "Please use Bob.", "reqBob", "overloaded"}
+
+  defp assert_cancelled_metadata(error, body, expected_code) do
     assert error.provider_request_id == nil
-    assert error.provider_code == nil
+    assert error.provider_code == expected_code
     assert error.http_status == 503
     assert error.progress.headers_received
     assert error.progress.raw_bytes == byte_size(body)
@@ -130,52 +150,73 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
     assert CompletionError.received_evidence(error).body == body
   end
 
-  for gateway <- [OpenAI, Ollama, OMLX], operation <- [:legacy, :events] do
+  for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:legacy, :events],
+      fixture <- [:uuid, :embedded_short_alphabetic] do
     @gateway gateway
     @operation operation
+    @fixture fixture
     @tag :provider_metadata_frame
-    test "#{gateway} #{operation} semantic provider errors retain sensitive evidence privately" do
-      provider_error = %{"code" => "overloaded", "message" => @uuid}
-      decoded = Jason.encode!(%{"error" => provider_error})
-      frame = if @gateway == Ollama, do: decoded <> "\n", else: "data: " <> decoded <> "\n\n"
-      reply = response(frame, @uuid) |> String.replace("503 Result", "200 Result")
-      server = start_supervised!({ScriptedCompletionServer, {self(), [reply]}})
-      assert_receive {:server_port, port}
-      configure(@gateway, port, "overloaded")
-      owner = self()
-      tracer = start_supervised!({TracerSystem, []})
+    test "#{gateway} #{operation} #{fixture} semantic provider errors retain sensitive evidence privately" do
+      {secret, prompt, request_id, expected_code} = cancellation_fixture(@fixture)
 
-      config =
-        CompletionConfig.new(
-          recovery: [
-            trace_observer: fn event ->
-              send(owner, {:metadata_exact, event})
-              :ok
-            end
-          ]
-        )
+      log =
+        capture_log(fn ->
+          provider_error = %{"code" => "overloaded", "message" => secret}
+          decoded = Jason.encode!(%{"error" => provider_error})
+          frame = if @gateway == Ollama, do: decoded <> "\n", else: "data: " <> decoded <> "\n\n"
+          reply = response(frame, request_id) |> String.replace("503 Result", "200 Result")
+          server = start_supervised!({ScriptedCompletionServer, {self(), [reply]}})
+          assert_receive {:server_port, port}
+          configure(@gateway, port, "credential-control")
+          owner = self()
+          tracer = start_supervised!({TracerSystem, []})
 
-      assert {:error, error} =
-               invoke(@gateway, @operation, @uuid <> " overloaded", config, tracer)
+          config =
+            CompletionConfig.new(
+              recovery: [
+                trace_observer: fn event ->
+                  send(owner, {:metadata_exact, event})
+                  :ok
+                end
+              ]
+            )
 
-      assert error.provider_code == nil
-      assert error.provider_request_id == nil
-      assert error.http_status == 200
-      assert error.progress.raw_bytes == byte_size(frame)
-      assert CompletionError.cause(error) == {:provider_error, provider_error}
-      evidence = CompletionError.received_evidence(error)
-      assert evidence.status == 200
-      assert {"x-request-id", @uuid} in evidence.headers
-      assert Jason.decode!(evidence.body) == %{"error" => provider_error}
-      assert_receive {:metadata_exact, %{type: :response_data, body: ^frame}}
-      assert_receive {:wire_request, wire}
-      assert GenServer.call(server, :requests) == [wire]
-      assert_private(error, @uuid, tracer, CompletionError.safe_metadata(error))
+          assert {:error, error} =
+                   invoke(@gateway, @operation, prompt, config, tracer)
+
+          assert error.provider_code == expected_code
+          assert error.provider_request_id == nil
+          assert error.http_status == 200
+          assert error.progress.raw_bytes == byte_size(frame)
+          assert CompletionError.cause(error) == {:provider_error, provider_error}
+          evidence = CompletionError.received_evidence(error)
+          assert evidence.status == 200
+          assert {"x-request-id", request_id} in evidence.headers
+          assert Jason.decode!(evidence.body) == %{"error" => provider_error}
+          assert_receive {:metadata_exact, %{type: :response_data, body: ^frame}}
+          assert_receive {:wire_request, wire}
+          assert GenServer.call(server, :requests) == [wire]
+          assert_private(error, secret, tracer, CompletionError.safe_metadata(error))
+        end)
+
+      refute log =~ secret
     end
   end
 
   defp check_boundary(gateway, operation, fixture) do
     {secret, code, request_id, expected_code, expected_id} = fixture(fixture)
+    # ChatSession's default system prompt includes "a", which overlaps overloaded.
+    expected_code =
+      if operation in [:session, :session_legacy] and expected_code == "overloaded",
+        do: nil,
+        else: expected_code
+
+    expected_id =
+      if operation in [:session, :session_legacy] and fixture in [:control, :control_uuid],
+        do: nil,
+        else: expected_id
+
     body = Jason.encode!(%{error: %{code: code, message: secret}})
 
     prompt =
@@ -183,13 +224,19 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
         :credential_uuid -> "outbound-prompt-control"
         :embedded_uuid -> "Please use #{secret}."
         :embedded_short_token -> "Please use #{secret}."
+        :embedded_short_alphabetic -> "Please use #{secret}."
         _ -> secret
       end
 
     credential =
-      if fixture in [:payload_uuid, :embedded_uuid, :embedded_short_token],
-        do: "credential-control",
-        else: secret
+      if fixture in [
+           :payload_uuid,
+           :embedded_uuid,
+           :embedded_short_token,
+           :embedded_short_alphabetic
+         ],
+         do: "credential-control",
+         else: secret
 
     reply = response(body, request_id)
     server = start_supervised!({ScriptedCompletionServer, {self(), [reply, reply]}})
@@ -233,11 +280,15 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
   defp fixture(:uuid), do: echo(@uuid, false)
   defp fixture(:embedded_uuid), do: echo(@uuid, true)
   defp fixture(:embedded_short_token), do: {"secret7", "secret7", "reqsecret7", nil, nil}
+  defp fixture(:embedded_short_alphabetic), do: {"Bob", "overloaded", "reqBob", "overloaded", nil}
   defp fixture(:credential_uuid), do: echo(@uuid, false)
   defp fixture(:payload_uuid), do: echo(@uuid, false)
 
   defp fixture(:control_uuid),
     do: {"sk_fixtureCredential_123456789", "overloaded", @uuid, "overloaded", @uuid}
+
+  defp fixture(:control_short_code),
+    do: {"sk_fixtureCredential_123456789", "busy", "req-provider-42", "busy", "req-provider-42"}
 
   defp fixture(:recognized_code), do: echo("overloaded", false)
   defp fixture(:decorated_token), do: echo("sk_fixtureCredential_123456789", true)
@@ -336,7 +387,7 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
     assert evidence.body == body
     assert {"x-request-id", request_id} in evidence.headers
     assert evidence.ids.attempt_id == error.attempt_id
-    refute is_nil(CompletionError.cause(error))
+    assert_original_cause(CompletionError.cause(error), body, evidence.headers)
     assert_receive {:metadata_exact, %{type: :request} = request}
     assert request.body == wire_body
 
@@ -348,6 +399,16 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
     assert_receive {:metadata_exact, %{type: :response_headers, status: 503} = headers}
     assert {"x-request-id", request_id} in headers.headers
     assert_receive {:metadata_exact, %{type: :response_data, body: ^body}}
+  end
+
+  defp assert_original_cause({:ok, cause}, body, headers) do
+    assert cause.status_code == 503
+    assert cause.body == body
+    assert cause.headers == headers
+  end
+
+  defp assert_original_cause(cause, body, headers) do
+    assert cause == {:http_response, 503, headers, body}
   end
 
   defp assert_private(error, secret, tracer, safe) do

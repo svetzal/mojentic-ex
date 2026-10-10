@@ -491,18 +491,7 @@ defmodule Mojentic.LLM.CompletionRequest do
 
   defp tokens(text), do: Regex.scan(~r/[A-Za-z0-9_-]+/, text) |> List.flatten()
 
-  defp token_echo?(value, token) do
-    # Short words in prose must occur as identifier components, not single
-    # letters inside an unrelated provider code (for example the article "a").
-    if byte_size(token) >= 8 or token in @provider_codes or Regex.match?(~r/[0-9_-]/, token) do
-      String.contains?(value, token)
-    else
-      Regex.match?(
-        Regex.compile!("(?:^|[^A-Za-z0-9])" <> Regex.escape(token) <> "(?:$|[^A-Za-z0-9])"),
-        value
-      )
-    end
-  end
+  defp token_echo?(value, token), do: String.contains?(value, token)
 
   defp retry_after(nil), do: :absent
   defp retry_after(:invalid), do: :invalid

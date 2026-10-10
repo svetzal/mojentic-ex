@@ -313,11 +313,11 @@ metadata that overlaps the immutable request body, decoded payload strings, or
 supplied header values, including the credential after its authorization scheme.
 Full-string direct and decorated echoes are omitted. Embedded UUIDs, recognized
 codes, and token-shaped values are also excluded, including tokens next to
-sentence punctuation. Short alphabetic prose words are matched as identifier
-components to avoid treating an article such as `a` as a credential inside every
-unrelated code. A short word embedded in a longer prompt and concatenated without
-an identifier boundary (for example `Bob` into `reqBob`) is outside that policy. Recognized provider codes are
-retained only when they are independent of those outbound values; unknown codes
+sentence punctuation. Short alphabetic prose tokens also match inside decorated
+identifiers: `Bob` in `Please use Bob.` excludes `reqBob`. Overlapping provider
+metadata is optional and may be omitted conservatively, including overlaps with
+short words. Recognized provider codes are retained only when they are independent
+of those outbound values; unknown codes
 are omitted. Duplicate or malformed request-ID headers remain omitted.
 
 This filtering applies to ordinary and structured completions, legacy and event
