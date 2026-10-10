@@ -197,6 +197,15 @@ headers: headers, body: body, ids: ids}` or `nil` when no response was observed.
 cause separately. Safe history and lifecycle metadata retain the exact IDs and
 received/delivered progress, with no raw response payload or credential headers.
 
+The original observed transport cause also survives cancellation after the HTTP
+worker has returned its normalized failure, before the recovery owner accepts it.
+For example, a truncated response can return a `Req.TransportError` from ordinary
+POST while `CompletionError.cause(error)` still exposes the observed
+`Mint.TransportError`. Received evidence takes precedence over that normalized
+result; when no received cause exists, the returned failure remains the fallback.
+This applies to ordinary and structured completions as well as streams, including
+broker/session forwarding. No extra request is made to recover the cause.
+
 Cancellation before consumer acceptance of a terminal result produces the actual
 attempt failure followed by exactly one terminal cancellation event. A terminal
 frame alone does not authorize success: final capture/cleanup and consumer demand

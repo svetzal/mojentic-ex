@@ -129,6 +129,260 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
     end
   end
 
+  for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [
+        :complete,
+        :complete_object,
+        :events,
+        :legacy,
+        :broker,
+        :broker_object,
+        :session,
+        :broker_stream,
+        :session_stream
+      ],
+      status <- [200, 401] do
+    @gateway gateway
+    @operation operation
+    @status status
+    @tag :cancellation_handoff
+    test "#{gateway} #{operation} HTTP #{status} cancellation after HTTP worker exit retains observed cause" do
+      assert_handoff_cancellation(@gateway, @operation, @status)
+    end
+  end
+
+  defp assert_handoff_cancellation(gateway, operation, status) do
+    owner = self()
+    stream_mode = handoff_stream_mode(operation)
+
+    body =
+      if stream_mode,
+        do: paused_body(gateway, stream_mode),
+        else: evidence_body(gateway, :complete, :terminal_body)
+
+    response =
+      String.replace(evidence_response(body), "HTTP/1.1 200 OK", "HTTP/1.1 #{status} Response")
+
+    server =
+      start_supervised!({ScriptedCompletionServer, {owner, [{:stream_half_close, response}]}})
+
+    assert_receive {:server_port, port}
+    configure(gateway, port)
+    cancel = make_ref()
+
+    config = handoff_config(owner, cancel)
+
+    supervisor = start_supervised!(Task.Supervisor)
+
+    task =
+      Task.Supervisor.async_nolink(supervisor, fn ->
+        invoke_handoff(gateway, operation, config, owner)
+      end)
+
+    assert_receive {:wire_request, wire}, 2000
+    assert_receive {:socket_lifecycle, %{type: :attempt_started, metadata: started}}, 2000
+    assert_receive {:handoff_owner, recovery_owner}, 2000
+    assert_receive {:handoff_worker, worker}, 2000
+    cancel_after_handoff(recovery_owner, worker, cancel, stream_mode, status, body)
+
+    assert {:error, error} = Task.await(task, 2000)
+    assert %Mint.TransportError{reason: :closed} = CompletionError.cause(error)
+    ids = assert_handoff_identity(started)
+    assert_handoff_progress(error, stream_mode, status, body)
+    assert_handoff_evidence(error, ids, status, body)
+    lifecycle = assert_handoff_lifecycle(error, started, gateway, operation)
+    assert_handoff_traces_and_privacy(error, ids, started, wire, lifecycle)
+
+    assert GenServer.call(server, {:peer_state, wire}) == {:error, :closed}
+    assert GenServer.call(server, :requests) == [wire]
+    refute_received {:tool_executed, _}
+
+    if operation == :session_stream do
+      assert_receive {:session_handle, handle, original}
+      assert ChatSession.finalize_stream(handle) == {:error, error}
+      assert ChatSession.messages(elem(handle, 0)) == original
+    end
+  end
+
+  defp handoff_config(owner, cancel) do
+    CompletionConfig.new(
+      recovery: [
+        cancel_ref: cancel,
+        max_attempts: 3,
+        observer: fn event ->
+          send(owner, {:socket_lifecycle, event})
+          if event.type == :attempt_started, do: send(owner, {:handoff_owner, self()})
+        end,
+        trace_observer: fn event ->
+          send(owner, {:socket_trace, event})
+
+          if event.type == :response_end and event.outcome == :failed do
+            send(owner, {:handoff_worker, self()})
+
+            receive do
+              :return_from_capture -> :ok
+            end
+          end
+
+          :ok
+        end
+      ]
+    )
+  end
+
+  defp cancel_after_handoff(recovery_owner, worker, cancel, stream_mode, status, body) do
+    monitor = Process.monitor(worker)
+    true = :erlang.suspend_process(recovery_owner)
+    send(worker, :return_from_capture)
+
+    try do
+      # The hook has returned and the HTTP worker has handed off its result.
+      # Cancellation is queued only after normal worker exit, before owner acceptance.
+      assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}, 2000
+      assert_returned_failure(recovery_owner, stream_mode, status, body)
+      send(recovery_owner, {:cancel, cancel})
+    after
+      :erlang.resume_process(recovery_owner)
+    end
+  end
+
+  defp assert_handoff_identity(started) do
+    ids = Map.take(started, [:logical_request_id, :attempt_id, :wire_attempt])
+    assert UUID.info!(ids.logical_request_id)[:version] == 4
+    assert UUID.info!(ids.attempt_id)[:version] == 4
+    refute ids.logical_request_id == ids.attempt_id
+    assert ids.wire_attempt == 1
+    ids
+  end
+
+  defp assert_handoff_progress(error, stream_mode, status, body) do
+    assert error.http_status == status
+    assert error.provider_request_id == "evidence-id"
+    assert error.retry_after == {:delay_seconds, 4}
+    assert error.progress.headers_received
+    assert error.progress.raw_bytes == byte_size(body)
+
+    observed =
+      if is_nil(stream_mode) or stream_mode == :events,
+        do: paused_observed(:events),
+        else: expected_observed(:legacy, :observed_body)
+
+    assert error.progress.observed == observed
+
+    delivered =
+      cond do
+        is_nil(stream_mode) or status != 200 -> empty_semantic()
+        stream_mode == :events -> %{observed | reasoning: false}
+        true -> %{observed | tool_fragments: 0}
+      end
+
+    assert error.progress.delivered == delivered
+  end
+
+  defp assert_handoff_evidence(error, ids, status, body) do
+    assert CompletionError.received_evidence(error) == %{
+             status: status,
+             body: body,
+             ids: ids,
+             headers: [
+               {"content-length", "9999"},
+               {"retry-after", "4"},
+               {"x-request-id", "evidence-id"},
+               {"x-secret", "credential-secret"}
+             ]
+           }
+  end
+
+  defp assert_handoff_lifecycle(error, started, gateway, operation) do
+    {:messages, messages} = Process.info(self(), :messages)
+    lifecycle = for {:socket_lifecycle, event} <- messages, do: event
+    assert Enum.map(lifecycle, & &1.type) == [:attempt_failed, :cancelled]
+    assert Enum.all?(lifecycle, &(&1.metadata == CompletionError.safe_metadata(error)))
+
+    stream_mode = handoff_stream_mode(operation)
+    adapter_operation = handoff_adapter_operation(operation)
+    stage = if stream_mode, do: :incomplete_response, else: :received_response
+    assert_cancellation_error(error, started, gateway, adapter_operation, stage, true)
+    lifecycle
+  end
+
+  defp assert_handoff_traces_and_privacy(error, ids, started, wire, lifecycle) do
+    traces = drain_traces([])
+    assert Enum.all?(traces, &(&1.ids == ids))
+    assert [%{type: :request} = request] = Enum.filter(traces, &(&1.type == :request))
+    assert_trace_request(request, wire, started)
+
+    assert Enum.filter(traces, &(&1.type == :response_end)) == [
+             %{type: :response_end, outcome: :failed, evidence: :available, ids: ids}
+           ]
+
+    for secret <- ["payload-secret", "reason-secret", "credential-secret", "secret-argument"] do
+      refute inspect(error) =~ secret
+      refute Jason.encode!(error) =~ secret
+      refute inspect(CompletionError.safe_metadata(error)) =~ secret
+      refute Mojentic.Error.format_error(error) =~ secret
+      refute Jason.encode!(lifecycle) =~ secret
+    end
+  end
+
+  defp assert_returned_failure(owner, stream_mode, status, body) do
+    {:messages, messages} = Process.info(owner, :messages)
+
+    assert [{_ref, {:error, returned}}] =
+             Enum.filter(messages, &match?({ref, {:error, _}} when is_reference(ref), &1))
+
+    if stream_mode do
+      assert %CompletionError{http_status: ^status} = returned
+
+      assert %Finch.TransportError{source: %Mint.TransportError{reason: :closed}} =
+               CompletionError.cause(returned)
+    else
+      assert {:http_response, ^status, _headers, ^body, cause} = returned
+
+      if status == 200,
+        do: assert(%Req.TransportError{reason: :closed} = cause),
+        else: assert(%Finch.TransportError{source: %Mint.TransportError{reason: :closed}} = cause)
+    end
+  end
+
+  defp handoff_stream_mode(operation) when operation in [:events, :legacy], do: operation
+  defp handoff_stream_mode(:broker_stream), do: :broker
+  defp handoff_stream_mode(:session_stream), do: :session
+  defp handoff_stream_mode(_operation), do: nil
+
+  defp handoff_adapter_operation(operation) when operation in [:broker, :session], do: :complete
+  defp handoff_adapter_operation(:broker_object), do: :complete_object
+
+  defp handoff_adapter_operation(operation) when operation in [:broker_stream, :session_stream],
+    do: :legacy
+
+  defp handoff_adapter_operation(operation), do: operation
+
+  defp invoke_handoff(gateway, operation, config, _owner)
+       when operation in [:broker, :session] do
+    forwarded_complete(Broker.new("gpt-4o", gateway), operation, config)
+  end
+
+  defp invoke_handoff(gateway, :broker_object, config, _owner) do
+    Broker.generate_object(
+      Broker.new("gpt-4o", gateway),
+      [Message.user("payload-secret")],
+      %{"type" => "object"},
+      config
+    )
+  end
+
+  defp invoke_handoff(gateway, operation, config, owner)
+       when operation in [:broker_stream, :session_stream] do
+    gateway
+    |> forwarded_stream(handoff_stream_mode(operation), config, owner)
+    |> Enum.to_list()
+    |> List.last()
+  end
+
+  defp invoke_handoff(gateway, operation, config, owner),
+    do: invoke(gateway, operation, config, owner)
+
   for gateway <- [OpenAI, Ollama, OMLX], caller <- [:broker, :session] do
     @gateway gateway
     @caller caller

@@ -1185,3 +1185,110 @@ missing-router and lockfile keyword warnings. `hex.outdated --all` exits 1 for
 available updates and is informational, not an advisory finding. No dependency
 upgrade or advisory suppression was added. The independent review was read-only;
 Foundry retains ownership of Git finalization.
+
+
+## Preserved HTTP-result handoff correction (2026-10-10)
+
+This worktree starts at preserved campaign commit
+`5c1344d5afa14cba513ce172a46f1ba496ce280d`, retaining its received-evidence
+tracking, public regressions and documentation. The tree was initially clean.
+Read-only `git ls-remote origin refs/heads/main` confirmed
+`48df7c1aeed7f216af757c46bd6e4da2abf812f3`, matching the cached origin/main and
+preserved commit's parent. Foundry prohibits ref changes, so no fetch, rebase,
+commit, merge, push, tag or release was performed. Foundry owns final landing.
+
+### Behavioral proof before expansion
+
+[Proof](.foundry/proof.json) records the actual rejecting exit **2** and corrected
+exit **0**, with complete stdout/stderr in linked logs. The smallest initial
+probe used public OpenAI ordinary completion and real ReqClient loopback HTTP200.
+A truncated Content-Length response ends with server write-half-close while its
+read side remains open. The test pauses the recovery owner, releases the capture
+hook, monitors normal HTTP-worker exit, and verifies the normalized failure is
+queued before sending cancellation and resuming the owner. Cancellation happens
+after the hook returned and the worker exited, never while capture is blocked.
+The rejecting assertion expected `Mint.TransportError` but received
+`Req.TransportError`; the correction prefers the separately recorded received
+cause over the normalized returned result. Existing returned-result and no-cause
+fallbacks remain intact. Ordinary retries-disabled POST normalization is unchanged.
+
+### Public boundary matrix
+
+The added `cancellation_handoff` matrix covers OpenAI, Ollama and oMLX at HTTP200
+and permanent HTTP401, through ordinary/structured adapters, event/legacy streams,
+Broker ordinary/structured/legacy stream and ChatSession ordinary/legacy stream
+(54 cases). Each verifies normal worker exit and the actual queued failure before
+cancellation, original typed Mint closed cause, numeric status, exact received
+headers/body, observed versus delivered semantic progress, unmasked UUID attempt
+identities and one-entry history. Stream HTTP200 may deliver content/reasoning;
+HTTP401 delivers no semantic data. Incomplete tool fragments never complete or
+execute. Events retain observed reasoning separately from suppressed delivery.
+
+The lifecycle queue contains attempt failure before exactly one terminal
+cancellation, with safe metadata equal to the final error; no success, retry,
+admission or tool replay occurs. One actual wire request and peer-observed local
+closure are asserted. Failed session stream finalization retains prior messages.
+Safe formatting, inspection, JSON and lifecycle serialization omit synthetic
+credential/payload echoes. Exact tracing remains explicitly sensitive and retains
+matching IDs. Tests use supervised processes, monitors and bounded awaits without
+sleeping or checking process liveness. No extra provider read or model call occurs.
+
+Local closure still cannot prove remote inference termination. Cancellation after
+accepted success cannot retract it. This change does not rebuild recovery, alter
+runtime pins, dependencies, coverage floors/exclusions or retries-disabled behavior.
+All previous cancellation, history, capture-blocked and terminal-demand regressions
+remain present. Migration guidance is updated in
+[streaming](guides/streaming.md#cancellation-migration-and-limits).
+
+### Fresh validation evidence
+
+The final full coverage run passes **22 doctests and 1,972 tests**, zero failures,
+with the unchanged **19 integration exclusions** and **89.25%** coverage above the
+unchanged **80%** floor. [Quality evidence](.foundry/quality.json) records actual
+command exits and SHA-256 hashes of complete captured stdout/stderr. The initial
+strict Credo gate rejected the large new test helper; focused setup, handoff,
+evidence, progress and lifecycle helpers corrected it without suppressions. That
+failed gate remains in [initial validation](.foundry/initial-quality.json).
+[Capture index](.foundry/capture-index.json) retains setup/probe failures and passes
+without presenting instrumentation or dependency-setup failures as the behavioral
+proof. [Proof validation](.foundry/proof-validation.json) checks JSON shape, field
+types, actual recorded exits, log existence and the rejecting/passing assertions.
+[Source hashes](.foundry/source-hashes.json) bind validation to the source and
+unchanged runtime/dependency/gate configuration.
+
+The separate plain suite also passes **22 doctests and 1,972 tests**, zero failures
+and the same 19 exclusions. MixAudit finds no vulnerabilities and Hex audit finds
+no retired or advisory packages. MixAudit's automatic database refresh is denied
+at the read-only external Git path; [read-only freshness verification](.foundry/logs/advisory-database-freshness.log)
+confirms installed HEAD and upstream main both equal
+`935abf7410a2bbb18e12579dee6e31267c3ed244`. Configured and unfiltered Sobelow pass;
+existing non-Phoenix router and lockfile keyword warnings remain. Documentation
+build passes with the existing missing LICENSE/igniter-rule link warnings.
+`hex.outdated --all` exits 1 for available updates, informational rather than an
+advisory result. No dependency or advisory suppression changes were made.
+
+Development and test Dialyzer both pass with **zero errors, skipped warnings or
+unnecessary skips**. Every required gate passes on the final source. No runtime,
+dependency, coverage or exclusion setting changed.
+
+| Final check | Exit | Complete log |
+|---|---:|---|
+| `scripts/recovery-mix format --check-formatted` | 0 | [format](.foundry/logs/final-format.log) |
+| `scripts/recovery-mix compile --warnings-as-errors` | 0 | [compile](.foundry/logs/final-compile.log) |
+| `MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | [test-compile](.foundry/logs/final-test-compile.log) |
+| `scripts/recovery-mix credo --strict` | 0 | [credo](.foundry/logs/final-credo.log) |
+| `scripts/recovery-mix test test/mojentic/llm/cancellation_socket_wire_test.exs --only cancellation_handoff` | 0 | [handoff](.foundry/logs/final-handoff.log) |
+| `scripts/recovery-mix test --cover` | 0 | [test-cover](.foundry/logs/final-test-cover.log) |
+| `scripts/recovery-mix test` | 0 | [test](.foundry/logs/final-test.log) |
+| `scripts/recovery-mix deps.audit` | 0 | [deps-audit](.foundry/logs/final-deps-audit.log) |
+| `scripts/recovery-mix hex.audit` | 0 | [hex-audit](.foundry/logs/final-hex-audit.log) |
+| `scripts/recovery-mix sobelow --config` | 0 | [sobelow-config](.foundry/logs/final-sobelow-config.log) |
+| `scripts/recovery-mix sobelow --exit low` | 0 | [sobelow-unfiltered](.foundry/logs/final-sobelow-unfiltered.log) |
+| `scripts/recovery-mix hex.outdated --all` | 1 | [hex-outdated](.foundry/logs/final-hex-outdated.log) |
+| `scripts/recovery-mix docs` | 0 | [docs](.foundry/logs/final-docs.log) |
+| `scripts/recovery-mix dialyzer` | 0 | [dialyzer](.foundry/logs/final-dialyzer.log) |
+| `MIX_ENV=test scripts/recovery-mix dialyzer` | 0 | [test-dialyzer](.foundry/logs/final-test-dialyzer.log) |
+
+Independent final review is recorded in [.foundry/handoff-review.md](.foundry/handoff-review.md).
+Foundry retains ownership of finalization; completed source changes remain in the
+working tree, with no commit, push, merge, rebase, tag or release.

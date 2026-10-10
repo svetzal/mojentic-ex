@@ -134,6 +134,10 @@ defmodule Mojentic.LLM.CompletionRequest do
     %{progress | observed: observed, delivered: snapshot.progress.delivered}
   end
 
+  # Received evidence precedes POST normalization and retains the native cause.
+  # A returned HTTP result must not replace it during cancellation handoff.
+  defp cancellation_cause(_result, cause) when not is_nil(cause), do: original_cause(cause)
+
   defp cancellation_cause({:error, %CompletionError{} = error}, _cause),
     do: CompletionError.cause(error)
 
