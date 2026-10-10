@@ -68,10 +68,11 @@ defmodule Mojentic.HTTP.ReqClientTest do
     assert_receive {:cancel_result, {:error, :closed}}, 2000
   end
 
-  for winner <- [:finch, :receive_loop] do
+  for winner <- [:finch, :receive_loop], tracing <- [false, true] do
     @winner winner
+    @tracing tracing
     @tag :stalled_timeout_proof
-    test "stalled stream #{@winner} timeout retains the legacy timeout contract" do
+    test "stalled stream #{@winner} timeout tracing #{@tracing} retains the legacy timeout contract" do
       server =
         start_supervised!(
           {Mojentic.TestSupport.ScriptedCompletionServer,
@@ -83,7 +84,8 @@ defmodule Mojentic.HTTP.ReqClientTest do
       {:ok, stream} =
         ReqClient.post_stream("http://127.0.0.1:#{port}/stream", "{}", [],
           recv_timeout: 100,
-          stream_timeout: :idle
+          stream_timeout: :idle,
+          wire_trace: if(@tracing, do: {fn _ -> :ok end, %{}})
         )
 
       events =
@@ -109,6 +111,7 @@ defmodule Mojentic.HTTP.ReqClientTest do
       assert_receive {:wire_request, request}
       assert String.ends_with?(request, "\r\n\r\n{}")
       assert GenServer.call(server, :requests) == [request]
+      assert GenServer.call(server, {:peer_state, request}) == {:error, :closed}
     end
   end
 
@@ -147,7 +150,64 @@ defmodule Mojentic.HTTP.ReqClientTest do
       assert_receive {:wire_request, request}
       assert String.ends_with?(request, "\r\n\r\n{}")
       assert GenServer.call(server, :requests) == [request]
+      assert GenServer.call(server, {:peer_state, request}) == {:error, :closed}
     end
+  end
+
+  test "closing one stream leaves another stream at the same origin cancellable" do
+    response = "HTTP/1.1 200 OK\r\nContent-Length: 999\r\n\r\npartial"
+
+    server =
+      start_supervised!(
+        {Mojentic.TestSupport.ScriptedCompletionServer,
+         {self(), [{:stream_hold, response}, {:stream_hold, response}]}}
+      )
+
+    assert_receive {:server_port, port}
+    supervisor = start_supervised!(Task.Supervisor)
+    owner = self()
+    cancel = make_ref()
+    url = "http://127.0.0.1:#{port}/stream"
+
+    task =
+      Task.Supervisor.async_nolink(supervisor, fn ->
+        {:ok, stream} =
+          ReqClient.post_stream(url, "held", [],
+            recv_timeout: 2000,
+            stream_timeout: :idle,
+            stream_metadata: true,
+            cancel_ref: cancel
+          )
+
+        stream
+        |> Stream.map(fn
+          {:data, "partial"} = event ->
+            send(owner, :held_stream_ready)
+            assert_receive :resume, 2000
+            event
+
+          event ->
+            event
+        end)
+        |> Enum.to_list()
+      end)
+
+    assert_receive :held_stream_ready, 2000
+    assert_receive {:wire_request, held_request}
+
+    {:ok, stream} = ReqClient.post_stream(url, "halted", [], recv_timeout: 2000)
+    assert Enum.take(stream, 1) == [{:data, "partial"}]
+    assert_receive {:wire_request, halted_request}
+    assert GenServer.call(server, {:peer_state, halted_request}) == {:error, :closed}
+
+    send(task.pid, {:cancel, cancel})
+    send(task.pid, :resume)
+
+    assert [{:headers, 200, _}, {:data, "partial"}, {:error, :cancelled}] =
+             Task.await(task, 2000)
+
+    assert GenServer.call(server, {:peer_state, held_request}) == {:error, :closed}
+    assert GenServer.call(server, :requests) == [held_request, halted_request]
   end
 
   @tag :stalled_post_boundary

@@ -139,15 +139,50 @@ defmodule Mojentic.HTTP.ReqClient do
     deadline =
       if mode == :idle, do: {:idle, timeout}, else: System.monotonic_time(:millisecond) + timeout
 
-    case Req.post(url,
-           body: body,
-           headers: headers,
-           receive_timeout: timeout,
-           connect_options: [timeout: timeout],
-           retry: false,
-           redirect: false,
-           into: :self
-         ) do
+    # A native Finch timeout can return an unfinished socket to its pool before
+    # cancellation reaches the worker. Give each stream its own pool so cleanup
+    # also closes that socket, without interrupting another request.
+    pool = Finch.Pool.new(url, tag: make_ref())
+
+    # Link the pool's supervisor to the consumer too: recovery may kill a
+    # blocked consumer before Stream.resource can run its finalizer.
+    {:ok, pool_supervisor} =
+      Supervisor.start_link(
+        [
+          {Finch.Pool,
+           finch: Req.Finch, pool: pool, size: 1, conn_opts: [transport_opts: [timeout: timeout]]}
+        ],
+        strategy: :one_for_one
+      )
+
+    result =
+      try do
+        Req.post(url,
+          body: body,
+          headers: headers,
+          receive_timeout: timeout,
+          finch: [name: Req.Finch, pool_tag: pool.tag],
+          retry: false,
+          redirect: false,
+          into: :self
+        )
+      rescue
+        exception ->
+          stop_stream_pool(pool_supervisor)
+          reraise exception, __STACKTRACE__
+      end
+
+    result =
+      case result do
+        {:ok, response} ->
+          {:ok, Req.Response.put_private(response, :mojentic_stream_pool, pool_supervisor)}
+
+        error ->
+          stop_stream_pool(pool_supervisor)
+          error
+      end
+
+    case result do
       {:ok, %{status: status} = response} when status in 200..299 ->
         if metadata,
           do: {:headers, response, {deadline, cancel}},
@@ -157,7 +192,7 @@ defmodule Mojentic.HTTP.ReqClient do
         {:failed_headers, response, deadline, cancel}
 
       {:ok, response} ->
-        Req.cancel_async_response(response)
+        close_response(response)
 
         if metadata,
           do: {:error, {:http_response, response.status, flatten_headers(response.headers)}},
@@ -257,12 +292,26 @@ defmodule Mojentic.HTTP.ReqClient do
     end
   end
 
-  defp close_stream({:failed_headers, response, _, _}), do: Req.cancel_async_response(response)
-  defp close_stream({:failed_body, response, _, _, _}), do: Req.cancel_async_response(response)
-  defp close_stream({:recovering, response, _, _}), do: Req.cancel_async_response(response)
-  defp close_stream({:headers, response, _deadline}), do: Req.cancel_async_response(response)
-  defp close_stream({:streaming, response, _deadline}), do: Req.cancel_async_response(response)
+  defp close_stream({:failed_headers, response, _, _}), do: close_response(response)
+  defp close_stream({:failed_body, response, _, _, _}), do: close_response(response)
+  defp close_stream({:recovering, response, _, _}), do: close_response(response)
+  defp close_stream({:headers, response, _deadline}), do: close_response(response)
+  defp close_stream({:streaming, response, _deadline}), do: close_response(response)
   defp close_stream(_), do: :ok
+
+  defp close_response(response) do
+    Req.cancel_async_response(response)
+    stop_stream_pool(response.private.mojentic_stream_pool)
+    :ok
+  end
+
+  # Tracing can finalize a suspended stream after its error path already closed
+  # the pool. Only an already-stopped supervisor makes cleanup a no-op.
+  defp stop_stream_pool(pid) do
+    Supervisor.stop(pid, :normal, 5000)
+  catch
+    :exit, {:noproc, {GenServer, :stop, [^pid, :normal, 5000]}} -> :ok
+  end
 
   defp flatten_headers(headers) when is_map(headers) do
     Enum.flat_map(headers, fn {key, values} ->

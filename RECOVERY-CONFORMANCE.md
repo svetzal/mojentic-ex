@@ -986,14 +986,14 @@ All changes remain uncommitted for Foundry's controller-owned landing on main.
 
 ## Ordinary completion body-read progress correction (2026-10-09)
 
-The rejecting public-boundary capture recorded 60 failures against the previous
+The archived rejecting public-boundary capture recorded 60 failures against the previous
 production code: each expected received HTTP 200 evidence and instead observed
 `http_status: nil`. The corrected matrix passes all 120 cases through the real
 `Mojentic.HTTP.ReqClient` and scripted TCP server. See
-[behavioral proof](.foundry/proof.json),
-[rejecting capture](.foundry/logs/body-progress/rejecting.stdout.log),
-[corrected capture](.foundry/logs/body-progress/corrected.stdout.log), and the
-[complete gate log index](.foundry/body-progress-evidence.json).
+[behavioral proof](.foundry/historical/body-progress/proof.json),
+[rejecting capture](.foundry/historical/body-progress/logs/body-progress/rejecting.stdout.log),
+[corrected capture](.foundry/historical/body-progress/logs/body-progress/corrected.stdout.log), and the
+[complete gate log index](.foundry/historical/body-progress/body-progress-evidence.json).
 
 OpenAI, Ollama and oMLX are covered through ordinary and structured gateway
 completion, ordinary and structured broker calls, and ordinary session sends,
@@ -1021,3 +1021,85 @@ The former ordinary body-read buffered-progress limitation is removed. This does
 not establish progress retention when authoritative cancellation kills a blocked
 worker, remote inference termination, disabled reasoning parity, ordinary generate
 finish handling, or exhaustive conformance beyond the retained limitations above.
+
+## Stalled-stream socket cancellation correction (2026-10-09)
+
+This standalone correction continues preserved revision
+`82da60802c6188d5c3d6104eedde730aa1df8feb`. The controller supplied synchronization
+and preservation verification; this executor did not fetch, rebase, commit, push,
+merge, tag or modify shared refs. Historical release guidance remains unchanged.
+No sibling port, dependency, runtime pin, threshold, exclusion or audit scope
+was changed. The earlier HTTP 200 correction remains intact. Its archived proof,
+captures and gate index were copied byte-for-byte into
+[historical/body-progress](.foundry/historical/body-progress/); those captures
+remain historical rather than evidence of this correction's full-suite success.
+
+The independent idle-stream gate failure is a **production cancellation defect**,
+not an established fixture race. The original idle test passed in the first fresh
+focused run, but two strengthened probes deterministically waited for the actual
+Finch transport timeout before allowing consumption to continue. Requeuing its
+notification or draining it selected the native-error and receive-loop paths.
+Both returned the required legacy timeout result, but both rejected
+`{:error, :timeout}` where the real server's socket read required
+`{:error, :closed}` before teardown. The locked Finch HTTP1 implementation returns
+an unfinished open connection to its pool on a native receive timeout; cancelling
+its already-exited async worker cannot close that pooled connection.
+
+Each stream now uses an individually tagged, user-managed Finch pool under a
+consumer-linked supervisor. Normal stream cleanup cancels the async response and
+stops the owned supervisor, including a socket already returned to that pool.
+Consumer death also shuts down the supervisor. Cleanup treats only the precise
+already-stopped supervisor exit as idempotent because tracing may finalize a
+suspended error continuation twice. Other failures still propagate. Async stream
+connections are consequently released rather than reused after that stream ends;
+ordinary non-metadata POST retains its existing Req path.
+
+The original server-observed closure assertion and fixture remain unchanged.
+No wait was increased. The native and receive-loop timer probes now run with
+tracing enabled and disabled, and recovery POST probes also require peer closure
+while retaining HTTP 200, exact partial body and the original Req timeout cause.
+A same-origin concurrency regression checks that halting one stream closes its
+socket without preventing explicit cancellation and closure of another stream.
+All assertions execute before server teardown or response release.
+
+[Early behavioral proof](.foundry/proof.json) records the two rejecting cases,
+source hashes, source snapshots and complete logs. The final focused HTTP run
+passes **15 tests**. The final boundary run passes **175 selected cases**
+(692 declared, 517 excluded by selection), including all **120 HTTP 200 progress
+cases**, **48 provider/tracing socket cancellation cases**, four timer/tracing
+closure cases and three existing POST boundary compatibility cases. Existing
+provider payloads, retries-disabled behavior, safe errors, native causes, exact
+headers and partial bytes, admission rules, lifecycle/trace identities and local
+ambiguity guards remain covered. No total deadline, local inference overlap or
+tool replay was introduced.
+
+Intermediate failed captures remain in the proof: the first pool-stop lookup
+raced teardown, and a subsequent non-idempotent supervisor stop rejected repeated
+tracing finalization. These runs are not represented as successful gates.
+[Final gate index](.foundry/cancellation-evidence.json) hashes the complete
+acceptance captures. All commands use `scripts/recovery-mix` with unchanged
+Elixir **1.18.5** and OTP **28.5.0.7**. Format, development and test compilation
+with warnings as errors, strict Credo, development and test Dialyzer, documentation,
+MixAudit, Hex audit and configured Sobelow pass. Dialyzer reports zero errors,
+skips and unnecessary skips; Credo reports no issues. The full coverage suite
+passes **22 doctests and 1,831 tests**, with the unchanged **19 integration
+exclusions**, and **89.30%** coverage above the unchanged **80%** threshold.
+The separate plain full-suite run also passes **22 doctests and 1,831 tests**
+with zero failures and the same 19 exclusions.
+
+MixAudit finds no vulnerabilities; Hex audit finds no retired or advisory
+packages. Read-only advisory freshness verification matches the local database
+HEAD to upstream main. The unchanged configured non-Phoenix Sobelow scan retains
+its missing-router and lockfile keyword warnings. Docs retain the historical
+missing LICENSE and igniter-rule link warnings. `hex.outdated --all` exits 1 for
+available upgrades, an informational result rather than a vulnerability finding.
+No advisory suppression was added or edited.
+
+[Executor skeptical review](.foundry/skeptical-review.md) and
+[mechanical evidence validator](.foundry/validate-evidence.py) document the checks
+and limits. An independent external skeptical review remains Foundry's prerequisite
+before controller-owned landing. All source changes remain uncommitted. This
+correction does not establish remote inference termination, cancellation-time
+received-progress retention, disabled reasoning parity, ordinary generate finish
+handling, exhaustive recovery conformance or six-port parity. The remaining
+historical whole-contract limitations remain in force.
