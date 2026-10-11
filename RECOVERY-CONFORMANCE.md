@@ -1779,3 +1779,136 @@ retains baseline, original probe input, corrected/final sources, complete captur
 review and manifests outside this temporary worktree. Foundry receives the
 completed uncommitted changes; no Git refs, release files or sibling sources were
 modified.
+
+
+## Controller reconciliation of lifecycle acceptance (October 11)
+
+The controller prepared this correction outside the worker sandbox from preserved
+`11d45874685c5491cdf5c34c1a64889e53562270`, whose parent is delivered main
+`b72931caea20e519df426af9df500a6c57b424a7`. Actual clean-clone fetch and pull
+with rebase are recorded in the durable controller synchronization receipt below.
+Earlier tasks stopped before source edits because their prompts did not supply
+that receipt for the current delivered main. This was a controller handoff failure.
+
+The new public-HTTP probes use OpenAI, Ollama and oMLX production transports
+against scripted loopback servers. Each probe checks two server-observed requests,
+independently specified payloads and byte-identical admitted retries. It then
+corrupts the actual captured lifecycle observation to verify the test's strength.
+These deliberate observation mutations are verifier probes, not claims that the
+provider or production library emitted those corrupted identities.
+
+The original assertions accepted missing, corrupted or masked logical request IDs,
+attempt IDs and wire-attempt numbers on non-start transitions. They also accepted
+missing attempt terminal events in the timeline. The separate 36-case rejecting
+matrix recorded 33 failures and three passing existing response-end controls.
+After the assertion correction, all 81 tests in `ImmutableRequestWireTest` pass.
+The existing gateway, broker and session matrix additionally checks mutations on
+every non-start lifecycle transition. Successful original observations retain
+exact complete identities, immutable payload, tool execution once and wire counts.
+Retry transitions retain the failed attempt identity and identify the actual next
+wire-attempt number. Terminal events must exist exactly once before ordering.
+
+The only further execution configuration change is `timeout: 900` on the existing
+required test/coverage gate. Its command, required flag, coverage floor, runtime
+pins and exclusions are unchanged. This is a validation execution allowance,
+not a generation or request timeout. The preserved permanent-status veto remains
+unchanged and has its original historical proof separately retained.
+
+Durable receipts on ops-01 are in
+`/home/svetzal/.foundry/operations/mojentic-port-alignment-20261010/controller-repair/`:
+
+- `synchronization.json` records actual fetch/pull commands, current main and hashes.
+- `proof.json`, `lifecycle-matrix-rejecting.log` and
+  `lifecycle-corrected-full.log` retain fresh assertion-bearing verification.
+- `rejecting-matrix-source.exs` retains the actual pre-correction verifier source.
+- `historical-permanent-status-proof/` preserves recovered historical proof and
+  its original captures, separately from this fresh verification.
+- `quality.json` records each completed full check with actual exit, command,
+  elapsed time and complete log hash. A partial record is not an all-gates pass.
+
+Earlier relative `.foundry/` links belong to disposable worktrees and do not
+substitute for these durable receipts. No current independent review or main
+landing is claimed by this controller preparation. Existing unfiltered security
+findings remain visible and no suppression or audit scope is changed.
+
+Controller preparation also finished the initial candidate's full plain and
+coverage suites (22 doctests, 3,142 tests, zero failures, 19 unchanged exclusions),
+as recorded against the retained initial candidate sources. A final redundant
+terminal-count and integer-index assertion was then added before the ordering
+comparison. The final focused 81-test module, format and strict Credo checks pass.
+Fresh full gates on the exact integrated source remain required before its code
+commit or landing; the initial-candidate full results do not stand in for that
+execution. The handoff packet retains both source versions and their actual logs.
+
+
+## Fresh integration of the controller reconciliation
+
+The task checkout was verified clean at preserved correction
+`11d45874685c5491cdf5c34c1a64889e53562270` before edits. The supplied
+`synchronization-current.json` receipt names canonical main
+`b034277fe19620e0f1a329b8a99975ccc8e4ae74`; read-only canonical HEAD, clean
+status and remote main observations independently matched that receipt.
+Both commits share delivered parent `b72931caea20e519df426af9df500a6c57b424a7`.
+Current main adds the handoff text; this worktree retains the preserved veto,
+tests and guidance and copies that handoff byte-for-byte. This is a content
+reconciliation. HEAD and all Git refs remain unchanged; Foundry owns finalization.
+
+All seven prepared source hashes and the patch hash were verified before copying.
+The supplied early behavioral proof was restored before broad validation, with
+historical permanent-status failures retained separately. Fresh local HTTP proof
+then substituted the supplied pre-correction verifier and reproduced **33 failing
+rejection probes** (exit **2**), with three existing response-end controls passing.
+Restoring the exact prepared verifier yielded **81 tests, zero failures** (exit
+**0**). The restored source hashes were rechecked before running full gates.
+These are actual loopback HTTP observations through public OpenAI, Ollama and
+oMLX gateway, broker and session paths; no live inference was used.
+
+Fresh validation on the integrated executable source, using pinned Elixir
+**1.18.5** / OTP **28.5.0.7**, completed as follows:
+
+| Check | Actual exit | Result |
+| --- | --- | --- |
+| Format | 0 | Formatted |
+| Development and test compilation with warnings as errors | 0 / 0 | Project compilation passed |
+| Strict Credo | 0 | Zero issues |
+| Plain tests | 0 | 22 doctests, 3,142 tests, zero failures, 19 exclusions |
+| Coverage tests | 0 | Same counts; 90.07% against the unchanged 80% floor |
+| Development and test Dialyzer | 0 / 0 | Zero errors and zero skipped warnings |
+| MixAudit | 0 | No vulnerabilities reported |
+| Hex audit | 0 | No retired or advisory packages reported |
+| Configured Sobelow | 0 | Existing configuration unchanged |
+| Unfiltered Sobelow with private functions and low threshold | 1 | Seven unresolved low-confidence traversal findings |
+| Documentation generation | 0 | Existing LICENSE and igniter usage-rule link warnings |
+| All-package outdated report | 1 | Informational available upgrades; no dependency changes |
+
+MixAudit's attempted advisory refresh was denied at external read-only FETCH_HEAD.
+Its installed advisory revision was independently verified equal to upstream main
+at `935abf7410a2bbb18e12579dee6e31267c3ed244`. This limitation remains disclosed.
+The unfiltered Sobelow findings are in `ollama.ex:574`,
+`openai_messages_adapter.ex:174` and `file_manager.ex:142,174,207,222,719`.
+Those files match both preserved HEAD and current main byte-for-byte. These
+findings remain unresolved; configured audit success does not establish a clean
+unfiltered audit. No suppression, audit scope reduction or upgrade was applied.
+The initial missing-dependency probe failure is retained separately; installing
+locked dependencies did not change the lockfile.
+
+Independent skeptical review checked prepared hashes, main-content reconciliation,
+real HTTP proof, exact identities on every lifecycle transition, independent
+negative observations, immutable request bytes, distinct attempts, completed tool
+execution once and terminal presence before ordering. Final independent review
+also verified every gate log hash, final source hashes, coverage and unchanged
+finding-source bytes against preserved HEAD and current main. It found no new
+source or evidence issue. Its assessment remains qualified by the seven unresolved
+unfiltered audit findings; it neither accepts those findings nor authorizes a
+policy bypass or Git finalization.
+
+Complete stdout/stderr captures, actual command exits, source revisions and hash
+manifests, proof inputs, historical failures and review reports are retained in
+Foundry's external durable evidence archive. They are execution evidence rather
+than repository assets. This section records results after validation; executable
+source, gate configuration and tests did not change during validation.
+Permanent-status veto, HTTP-200/socket-closure assertions, runtime pins, coverage
+floor and exclusions remain intact. The only execution allowance is the authorized
+`timeout: 900` on the existing test gate. No dependency upgrades, release, sibling
+or harness edits, Git finalization or campaign-budget extension occurred.
+Main landing and whole-mission completion are not claimed.

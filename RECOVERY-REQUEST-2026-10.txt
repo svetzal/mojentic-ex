@@ -68,3 +68,34 @@ Mojentic owns structured errors, request-level retry mechanics, streaming semant
 Deliverable
 
 Implement and document the shared contract in each maintained Mojentic library, with provider capability notes, migration examples and deterministic conformance tests. Pin implementation versions in the harness while integrating and validating recovery in a fresh registered experiment. Do not restart the stopped benchmark as part of library implementation.
+
+
+Controller handoff correction (October 11, 2026)
+
+The previous controller synchronization receipt for b09ddc9 is historical.
+Workers stopped because no current-main receipt was supplied. The authorized
+controller has now synchronized the clean canonical clone on ops-01 outside
+the worker sandbox. Before source edits, read the current receipt at
+/home/svetzal/.foundry/operations/mojentic-port-alignment-20261010/controller-repair/synchronization-current.json
+and compare its HEAD with read-only canonical main. That receipt supplies the
+previously authorized sync prerequisite; do not request another confirmation
+or try to change parent Git metadata or sandbox permissions.
+
+The controller prepared a concrete correction from preserved permanent-status
+fix 11d45874685c5491cdf5c34c1a64889e53562270. Read the handoff packet at
+/home/svetzal/.foundry/operations/mojentic-port-alignment-20261010/controller-repair/handoff.json
+for exact source paths, hashes, fresh rejecting/passing HTTP proof, historical
+proof recovery, completed checks and any checks requiring fresh execution.
+Reuse this prepared correction instead of reconstructing the already retained
+work. The packet becomes ready before the controller resumes this campaign.
+Copy the documented source correction and early proof into the writable task
+checkout. Preserve historical failures and the exact status veto. Verify all
+required gates on the actual integrated source, retain complete captures outside
+the disposable checkout, and obtain independent review before direct-main landing.
+The prepared work checks all lifecycle identities against actual public HTTP
+requests and requires terminal events before ordering, with independent negative
+observation probes. Only the test gate gains its authorized 900-second allowance.
+
+This is an operational handoff under existing owner authorization. The original
+mission, security requirements and 12-cycle limit remain binding. Existing
+unfiltered findings are unresolved; preparation is not whole-mission completion.

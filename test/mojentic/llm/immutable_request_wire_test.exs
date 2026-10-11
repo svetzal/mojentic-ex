@@ -256,6 +256,63 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
     end
   end
 
+  for gateway <- [OpenAI, Ollama, OMLX],
+      defect <-
+        [:response_end, :attempt_failed, :attempt_succeeded] ++
+          for(
+            key <- [:logical_request_id, :attempt_id, :wire_attempt],
+            mutation <- [:missing, :corrupted, :masked],
+            do: {key, mutation}
+          ) do
+    @gateway gateway
+    @defect defect
+    @tag :lifecycle_rejection_proof
+    test "#{gateway} actual HTTP evidence rejects #{inspect(defect)}", %{path: path} do
+      fixture = server(@gateway, [http(503, "busy"), success(@gateway, :complete)])
+      invoke(@gateway, :complete, history(path), config(path, self()), "gpt-4o")
+      bodies = GenServer.call(fixture, :requests) |> Enum.map(&encoded/1)
+      assert length(bodies) == 2
+      assert Enum.all?(bodies, &(Jason.decode!(&1) == expected(@gateway, :complete, "gpt-4o")))
+      assert hd(bodies) == List.last(bodies)
+      data = %{timeline: drain(:timeline), traces: drain(:trace), lifecycle: drain(:lifecycle)}
+      assert_evidence_data(data, bodies, [1, 2])
+      corrupted = corrupt_evidence(data, @defect)
+
+      assert_raise ExUnit.AssertionError, fn ->
+        assert_evidence_data(corrupted, bodies, [1, 2])
+      end
+    end
+  end
+
+  defp corrupt_evidence(data, {key, mutation}) do
+    index = Enum.find_index(data.lifecycle, &(&1.type == :attempt_failed))
+    original = Enum.at(data.lifecycle, index)
+    value = if key == :wire_attempt, do: 999, else: "corrupted-identity"
+
+    metadata =
+      case mutation do
+        :missing -> Map.delete(original.metadata, key)
+        :corrupted -> Map.put(original.metadata, key, value)
+        :masked -> Map.put(original.metadata, key, "[redacted]")
+      end
+
+    corrupted = %{original | metadata: metadata}
+
+    %{
+      data
+      | lifecycle: List.replace_at(data.lifecycle, index, corrupted),
+        timeline:
+          Enum.map(data.timeline, fn
+            {:lifecycle, ^original} -> {:lifecycle, corrupted}
+            event -> event
+          end)
+    }
+  end
+
+  defp corrupt_evidence(data, type) do
+    %{data | timeline: Enum.reject(data.timeline, fn {_source, event} -> event.type == type end)}
+  end
+
   defp session_turn(gateway, operation, recovery) do
     session =
       ChatSession.new(Broker.new("gpt-4o", gateway),
@@ -606,13 +663,23 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
   end
 
   defp assert_evidence(bodies, attempts) do
-    timeline = drain(:timeline)
-    traces = drain(:trace)
-    lifecycle = drain(:lifecycle)
+    data = %{timeline: drain(:timeline), traces: drain(:trace), lifecycle: drain(:lifecycle)}
+    assert_evidence_data(data, bodies, attempts)
+    assert_rejects_corrupted_evidence(data, bodies, attempts)
+    assert_receive {:admitted, context}
+    requests = Enum.filter(data.traces, &(&1.type == :request))
+    [first, _second] = Enum.take(requests, -2)
+    assert context.failure.attempt_id == first.ids.attempt_id
+  end
+
+  defp assert_evidence_data(data, bodies, attempts) do
+    %{timeline: timeline, traces: traces, lifecycle: lifecycle} = data
     requests = Enum.filter(traces, &(&1.type == :request))
     assert Enum.map(requests, & &1.body) == bodies
     assert Enum.map(requests, & &1.ids.wire_attempt) == attempts
     assert_attempt_ids(requests, lifecycle)
+    assert for({:lifecycle, event} <- timeline, do: event) == lifecycle
+    assert for({:trace, event} <- timeline, do: event) == traces
     [first, second] = Enum.take(requests, -2)
     assert first.ids.logical_request_id == second.ids.logical_request_id
 
@@ -639,20 +706,83 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
                :attempt_succeeded
              ]
     end
+  end
 
-    assert_receive {:admitted, context}
-    assert context.failure.attempt_id == first.ids.attempt_id
+  defp assert_rejects_corrupted_evidence(data, bodies, attempts) do
+    for {event, index} <- Enum.with_index(data.lifecycle),
+        event.type != :attempt_started,
+        key <- [:logical_request_id, :attempt_id, :wire_attempt],
+        mutation <- [:missing, :corrupted, :masked] do
+      value = if key == :wire_attempt, do: 999, else: "corrupted-identity"
+
+      metadata =
+        case mutation do
+          :missing -> Map.delete(event.metadata, key)
+          :corrupted -> Map.put(event.metadata, key, value)
+          :masked -> Map.put(event.metadata, key, "[redacted]")
+        end
+
+      corrupted =
+        put_in(
+          data,
+          [:lifecycle],
+          List.replace_at(data.lifecycle, index, %{event | metadata: metadata})
+        )
+
+      assert_raise ExUnit.AssertionError, fn ->
+        assert_evidence_data(corrupted, bodies, attempts)
+      end
+    end
+
+    for type <- [:response_end, :attempt_failed, :attempt_succeeded] do
+      corrupted = %{
+        data
+        | timeline: Enum.reject(data.timeline, fn {_source, event} -> event.type == type end)
+      }
+
+      assert_raise ExUnit.AssertionError, fn ->
+        assert_evidence_data(corrupted, bodies, attempts)
+      end
+    end
   end
 
   defp assert_attempt_ids(requests, lifecycle) do
-    started = Enum.filter(lifecycle, &(&1.type == :attempt_started))
+    [failed, next] = Enum.take(requests, -2)
 
-    assert Enum.map(
-             started,
-             &Map.take(&1.metadata, [:logical_request_id, :attempt_id, :wire_attempt])
-           ) == Enum.map(requests, & &1.ids)
+    expected =
+      Enum.flat_map(requests, fn request ->
+        types =
+          if request == failed do
+            [
+              :attempt_started,
+              :attempt_failed,
+              :admission_pending,
+              :admission_allowed,
+              :backoff_started,
+              :retry_started
+            ]
+          else
+            [:attempt_started, :attempt_succeeded]
+          end
 
+        Enum.map(types, &{&1, request.ids})
+      end)
+
+    actual =
+      Enum.map(lifecycle, fn event ->
+        {event.type, Map.take(event.metadata, [:logical_request_id, :attempt_id, :wire_attempt])}
+      end)
+
+    assert actual == expected
     assert length(Enum.uniq(Enum.map(requests, & &1.ids.attempt_id))) == length(requests)
+    assert failed.ids.logical_request_id == next.ids.logical_request_id
+    assert next.ids.wire_attempt == failed.ids.wire_attempt + 1
+
+    retry = Enum.filter(lifecycle, &(&1.type == :retry_started))
+    assert length(retry) == 1
+    assert hd(retry).metadata.next_attempt == next.ids.wire_attempt
+    assert hd(retry).metadata.attempt_id == failed.ids.attempt_id
+    refute hd(retry).metadata.attempt_id == next.ids.attempt_id
   end
 
   defp assert_trace_attempt(request, first, traces, timeline) do
@@ -668,8 +798,13 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
     assert Enum.take(order, 2) == [:attempt_started, :request]
     ending = if request == first, do: :attempt_failed, else: :attempt_succeeded
 
-    assert Enum.find_index(order, &(&1 == :response_end)) <
-             Enum.find_index(order, &(&1 == ending))
+    assert Enum.count(order, &(&1 == :response_end)) == 1
+    assert Enum.count(order, &(&1 == ending)) == 1
+    response_end = Enum.find_index(order, &(&1 == :response_end))
+    terminal = Enum.find_index(order, &(&1 == ending))
+    assert is_integer(response_end)
+    assert is_integer(terminal)
+    assert response_end < terminal
 
     events = Enum.filter(traces, &(&1.ids == request.ids))
     assert hd(events).type == :request
