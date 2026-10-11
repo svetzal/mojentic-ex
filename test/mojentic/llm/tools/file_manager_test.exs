@@ -24,6 +24,66 @@ defmodule Mojentic.LLM.Tools.FileManagerTest do
     %{fs: fs, base_path: base_path}
   end
 
+  describe "sandbox containment through public tools" do
+    setup %{base_path: base_path} do
+      sibling_path = base_path <> "2"
+      File.mkdir_p!(sibling_path)
+      File.write!(Path.join(sibling_path, "secret.txt"), "private content")
+
+      on_exit(fn -> File.rm_rf!(sibling_path) end)
+
+      %{sibling_path: sibling_path, escape_path: "../#{Path.basename(sibling_path)}"}
+    end
+
+    test "rejects reading from a sibling sharing the sandbox prefix", %{
+      fs: fs,
+      escape_path: escape_path
+    } do
+      path = Path.join(escape_path, "secret.txt")
+
+      assert ReadFileTool.run(ReadFileTool.new(fs), %{"path" => path}) ==
+               {:error,
+                "Error reading file '#{path}': Path #{escape_path} attempts to escape the sandbox"}
+    end
+
+    test "rejects writing to a sibling sharing the sandbox prefix", %{
+      fs: fs,
+      escape_path: escape_path,
+      sibling_path: sibling_path
+    } do
+      path = Path.join(escape_path, "secret.txt")
+
+      assert {:error, message} =
+               WriteFileTool.run(WriteFileTool.new(fs), %{"path" => path, "content" => "changed"})
+
+      assert String.ends_with?(message, "Path #{escape_path} attempts to escape the sandbox")
+      assert File.read!(Path.join(sibling_path, "secret.txt")) == "private content"
+    end
+
+    test "rejects listing a sibling sharing the sandbox prefix", %{
+      fs: fs,
+      escape_path: path
+    } do
+      assert ListFilesTool.run(ListFilesTool.new(fs), %{"path" => path}) ==
+               {:error,
+                "Error listing files in '#{path}': Path #{path} attempts to escape the sandbox"}
+    end
+
+    test "rejects creating a directory in a sibling sharing the sandbox prefix", %{
+      fs: fs,
+      escape_path: escape_path,
+      sibling_path: sibling_path
+    } do
+      path = Path.join(escape_path, "new_directory")
+
+      assert {:error, message} =
+               CreateDirectoryTool.run(CreateDirectoryTool.new(fs), %{"path" => path})
+
+      assert String.ends_with?(message, "Path #{path} attempts to escape the sandbox")
+      refute File.exists?(Path.join(sibling_path, "new_directory"))
+    end
+  end
+
   describe "FilesystemGateway.new/1" do
     test "creates gateway with valid directory path", %{base_path: base_path} do
       assert {:ok, %FilesystemGateway{base_path: path}} = FilesystemGateway.new(base_path)
@@ -34,9 +94,27 @@ defmodule Mojentic.LLM.Tools.FileManagerTest do
       assert {:error, msg} = FilesystemGateway.new("/nonexistent/path")
       assert String.contains?(msg, "not a directory")
     end
+
+    test "normalizes the stored base path", %{base_path: base_path} do
+      normalized_base = Path.expand(base_path)
+
+      assert {:ok, %FilesystemGateway{base_path: ^normalized_base}} =
+               FilesystemGateway.new(Path.join(base_path, "."))
+    end
   end
 
   describe "FilesystemGateway.resolve_path/2" do
+    test "accepts the sandbox directory itself", %{fs: fs, base_path: base_path} do
+      assert {:ok, ^base_path} = FilesystemGateway.resolve_path(fs, ".")
+    end
+
+    test "accepts descendants when the sandbox is the filesystem root" do
+      root = Path.expand("/")
+      {:ok, fs} = FilesystemGateway.new(root)
+      assert {:ok, path} = FilesystemGateway.resolve_path(fs, "tmp/file.txt")
+      assert path == Path.join(root, "tmp/file.txt")
+    end
+
     test "resolves valid relative paths", %{fs: fs} do
       assert {:ok, path} = FilesystemGateway.resolve_path(fs, "test.txt")
       assert String.ends_with?(path, "test.txt")

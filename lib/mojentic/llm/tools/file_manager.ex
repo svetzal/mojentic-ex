@@ -31,7 +31,7 @@ defmodule Mojentic.LLM.Tools.FilesystemGateway do
     resolved = Path.join(base_path, path) |> Path.expand()
     normalized_base = Path.expand(base_path)
 
-    if String.starts_with?(resolved, normalized_base) do
+    if List.starts_with?(Path.split(resolved), Path.split(normalized_base)) do
       {:ok, resolved}
     else
       {:error, "Path #{path} attempts to escape the sandbox"}

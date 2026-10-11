@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Prevent FileManager sandbox escapes into sibling directories whose names share
+  the base path prefix by checking normalized path components.
+
 ## [2.1.0] - 2026-09-30
 
 - Reject malformed streaming delta, tool-call and provider evidence shapes with
