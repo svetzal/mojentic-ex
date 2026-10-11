@@ -1,4 +1,185 @@
-# Completion recovery conformance: Elixir streaming increment
+# Completion recovery conformance: whole-mission assessment
+
+## October 11, 2026 closeout review
+
+This section consolidates the normative requirements in
+[the approved contract](TRANSIENT-RECOVERY-2026-10.md) and
+[the owner request](RECOVERY-REQUEST-2026-10.txt). The historical sections below
+remain intact, including failures and qualifications; their reported runs are
+not fresh execution evidence. This closeout changes this assessment only. It
+does not reconstruct landed corrections, change runtime behavior, or certify
+the harness, other five ports, a release, or a main landing.
+
+The initial task checkout was clean at
+`7d0398edc20fd6f4cbfeb46c72a90f6c5f736b49`. Read-only inspection found clean
+canonical Elixir main at the plan's delivered revision
+`bc7e1a20396296851c982d1c88486a04f9cabc79`. The task HEAD is its ancestor;
+the intervening diff concerns the file-manager symlink correction, its tests
+and changelog, rather than completion recovery. Those changes are not copied
+or reverted by this task. Consequently fresh execution below applies to the
+task source and cannot be represented as execution of every file at delivered main.
+
+The authorized controller receipt at
+`/home/svetzal/.foundry/operations/mojentic-port-alignment-20261010/controller-repair/synchronization-current.json`
+was read and retained. It records successful fetch/pull on clean canonical main
+`b034277fe19620e0f1a329b8a99975ccc8e4ae74`, not current `bc7e1a2`.
+It supplies historical synchronization evidence only. A current controller
+receipt and reconciliation of this checkout remain external prerequisites for
+current-main certification. No worker fetch, rebase, commit or ref mutation is
+substituted for that missing evidence. Foundry owns finalization.
+
+### Normative requirement map
+
+All test paths in this table are under `test/mojentic/llm/`. The wire modules
+exercise production ReqClient against scripted loopback HTTP servers, through
+OpenAI, Ollama and oMLX public completion APIs; they do not call live inference.
+The assessment distinguishes source review, executed assertions and external
+obligations rather than inferring behavior from test counts.
+
+The concrete adapter entrypoints are `complete/4`, `complete_object/4`,
+`complete_stream/4` and `complete_stream_events/3` in
+`lib/mojentic/llm/gateways/{openai,ollama,omlx}.ex`. Forwarding assertions cover
+`Broker.generate/4`, `generate_response/4`, `generate_object/4`,
+`generate_stream/4`, `generate_stream_events/3` and `ChatSession.send/3`,
+`send_stream/3`, `finalize_stream/1` in their corresponding LLM modules.
+
+| Requirement | Actual implementation and independently checked assertions |
+| --- | --- |
+| Completion-only ownership; no agent restart | `CompletionRequest.run/8` and `StreamRecovery.stream/8` own one immutable request. `Broker` and `ChatSession` propagate recovery configuration; retries do not re-enter the broker loop. Realtime, embeddings and model management remain outside this contract. |
+| Structured failure and bounded history | `CompletionError` defines category, provider, operation, numeric status, validated code/ID, Retry-After, phase, acceptance, observed/delivered progress, eligibility, permission, identities and private cause/evidence. `Recovery.loop/5` appends dispatched failures up to maximum attempts. `recovery_wire_test.exs` persistent-504 cases assert exact final error and ordered history, not only failure existence. |
+| Default compatibility and opt-in behavior | `CompletionConfig.recovery == nil` selects legacy adapter paths; enabled requests select `CompletionRequest`/`StreamRecovery`. `Recovery` defaults to one attempt. Disabled cases in `stream_recovery_wire_test.exs`, gateway tests and the full suite characterize legacy behavior. This does not promise disabled reasoning parity or change ordinary finish handling. |
+| Explicit policy and safe eligibility | `Recovery.valid_options?/1`, `eligible?/2`, `safe_stream_failure?/1` separate caller selections from resend permission. Malformed/protocol/capture failures cannot become successful retries. `recovery_wire_test.exs` permanent/decoding cases and `permanent_http_wire_test.exs` assert no blind resend under explicit category/status selection. |
+| Permanent status survives truncated body | `CompletionRequest.classify/2` retains HTTP precedence and `Recovery.eligible?/2` vetoes 400/401/403 regardless of caller selections. `permanent_http_wire_test.exs` covers complete, closed and timeout bodies with tracing on/off across all four APIs; selected transient 503 is the positive control. Follow-up cases in `stream_recovery_wire_test.exs` retain completed tool history without replay. |
+| Exact attempt limits and hidden retry removal | Recovery-enabled ordinary Req sets `retry: false`; streaming ReqClient does likewise. 503 recovery and persistent-504 wire cases assert exact server request count, distinct attempt IDs, one logical ID and complete lifecycle/history. Admission waits have no wire identity of their own. |
+| Exponential jitter and Retry-After | `Recovery.delay/2`, retry-after parsing and injected clock/jitter/sleeper implement bounded full jitter and provider minimum delays. `recovery_wire_test.exs` tests seconds/date/invalid/past headers, delay/budget refusal, first-failure monotonic budget, doubling/saturation and overflow. Refusal retains original HTTP failure. |
+| Recovery limits never time out active generation | `Recovery.guard_send/2` checks before dispatch, admission and delay. The deadline/budget bounds recovery only. Both recovery wire modules assert active generation may finish after the deadline and prohibit sends at the exact deadline. The test-gate timeout of 900 seconds is unrelated to generation. |
+| Asynchronous admission and local ambiguity | `Recovery.admission/2` supplies safe failure, previous attempt/logical identity, next attempt and progress, with explicit allow/reject/pending replies. Local ambiguous acceptance requires admission; timeout does not prove remote termination. Wire tests hold pending callbacks, assert no second request, resolve allow/reject and cancel blocked workers. |
+| Cancellation received evidence | `ReqClient`, `ReceivedEvidence` and `WireTrace` record received headers/body before external capture. `Recovery.await_request/8` and `CompletionRequest.cancelled/7` retain that evidence and native cause. `cancellation_socket_wire_test.exs:27` and the headers/partial/terminal and post-worker matrices assert exact bytes, HTTP 200/401, correlated identities/history, zero undelivered output and actual peer socket closure. |
+| Paused consumers and terminal precedence | `StreamRecovery.authorize_success/2` requires consumer demand after final capture/cleanup. `cancellation_socket_wire_test.exs:693` cancels the observer-reported owner while the consumer stays paused, requires failed/cancelled lifecycle and socket closure before resumption, then rejects completion/tool execution and preserves session history. Sending only to a paused enumerator's mailbox cannot provide prompt forwarding. |
+| Observed versus delivered semantics | `ReceivedEvidence.observe/2` and stream snapshots distinguish raw bytes, reasoning, content, fragments and completed calls from acknowledged delivery. Keepalive-only cases may recover; semantic partial cases interrupt without replay. Same-chunk parser/observation failures retain observed progress without falsely marking delivery. |
+| Capture failure retains progress and cannot resend | `CompletionRequest.retain_stream_capture/3` merges received evidence with observed/delivered snapshots. `stream_recovery_wire_test.exs:217` asserts rejected terminal capture retains exact body/content observation without completion or delivery. Callback return/raise/throw/exit and broker/session tests require terminal `capture_failed`, no resend and no tool execution. |
+| Immutable semantic payload and native controls | Adapters encode body and freeze endpoint/headers before recovery. `immutable_request_wire_test.exs:34,119,154,191` independently specifies expected payloads, compares disabled wire and admitted retries byte-for-byte, mutates image input after dispatch, and asserts native reasoning/tool/schema/sampling controls and prior session conversation. Legacy-adaptation freeze is checked in `recovery_wire_test.exs`. |
+| Privacy and inspectable original cause | `CompletionError.safe_metadata/1`, custom Inspect/Jason and safe broker/tracer logging omit private cause/evidence. Explicit `cause/1` and `received_evidence/1` retain sensitive data. Sentinel tests in both recovery wire modules cover credentials, content, tool arguments, provider-code/request-ID echoes and callback/sleeper errors. Explicit raw capture is sensitive and caller-owned. |
+| Lifecycle ordering and exact identities | `immutable_request_wire_test.exs:751` compares every event's complete logical ID, attempt ID and wire number against actual trace requests. Retry transition names the failed attempt and actual next wire number. At `:794`, exactly one response-end and attempt terminal must exist, with integer positions, before ordering is compared. No nil-index ordering can establish success. |
+| Independently rejecting identity assertions | The real HTTP negative matrix at `immutable_request_wire_test.exs:263` removes/corrupts/masks each identity independently and removes response-end/failure/success. Additional loops at `:711` mutate every non-start transition. Each altered observation must raise `ExUnit.AssertionError`; original observations must pass. These mutate verifier input, not production output. |
+| Telemetry ordering and rejected terminals | `StreamRecovery.ollama_frame/2` and `ollama_telemetry/2` emit validated progress/metrics before accepted semantics or terminal rejection. Tests at `stream_recovery_wire_test.exs:29,185,217,342,404,430` assert exact metadata, paused cancellation, capture failure, preserved prior semantics, no fabricated metadata and no completed rejected tools. OpenAI/oMLX cannot invent Ollama metrics. |
+| Completed tools execute once; depth retained | Broker tool execution follows accepted completion. `immutable_request_wire_test.exs:34`, `recovery_wire_test.exs:2232,2323` and `stream_recovery_wire_test.exs:307,1296,1476,1589` require one execution, exact tool-result follow-up history, immutable admitted resend and unchanged tool-depth budget. Interrupted/capture-failed streams cannot execute completed-but-undelivered tools. |
+| Capabilities and migration | `Recovery.capabilities/1` and [streaming guide](guides/streaming.md) expose local cancellation supported, remote cancellation/status/idempotency unsupported and exact remote termination unknown for all three adapters. Migration documents opt-in config, admission, error conversion and sensitive trace ownership. Custom HTTP implementations need both observers; guarantees here apply to ReqClient. |
+| Gates, audit policy and retained evidence | Fresh commands, exits, complete capture hashes, source hashes and review are retained outside the disposable checkout as described below. Runtime pins, coverage floor, exclusions, gate timeout, socket assertions and suppressions are unchanged. Unfiltered findings remain visible and informational under the October 11 owner policy; configured success is not an unfiltered clean audit. |
+| Cross-port/harness obligations | Exact Rust source comparison is recorded below. Five-port acceptance, harness revision/lock pinning, fresh registered experiment, durable trace persistence and model efficacy remain external obligations. This worker neither edits nor certifies the harness/parity matrix and does not restart any stopped experiment. |
+
+### Exact Rust comparison and capability limits
+
+An independent reviewer read the exact Rust object
+`4ca1ed279c02eab37827a1ed07c30e961155ecf3` using `git show`, rather than
+assuming a moving branch. Its `src/llm/recovery/adapter.rs` public completion APIs,
+`engine.rs` retry/capture implementation, `frames.rs` terminal metadata handling
+and `tests/recovery.rs` public wire tests express corresponding immutable
+request, admission, cancellation, exact
+trace, interruption and once-only tool contracts. Concrete matching assertions
+include `immutable_reasoning_tools_schema_and_sampling_all_adapters`,
+`native_history_tool_schema_combination_is_frozen_all_adapters`,
+`public_broker_recovery_never_reexecutes_tool`,
+`review_completed_tool_not_reexecuted_after_followup_failure`,
+`recovery_rejected_terminal_metadata_cancellation_wins` and
+`recovery_rejected_terminal_capture_retains_evidence_without_delivery`.
+This is a source/assertion comparison; no fresh Rust execution is claimed.
+Language-specific stream representations and cancellation ownership differ.
+
+| Exact Rust reference | Compared behavior |
+| --- | --- |
+| `src/llm/recovery/adapter.rs:67,89,102` | Public ordinary, object and streaming recovery entrypoints correspond to the Elixir adapter paths above. |
+| `src/llm/recovery/engine.rs:122,545` | Permanent-status veto and body observation before capture preserve status/progress through truncation or capture failure. |
+| `src/llm/recovery/engine.rs:674` | Rust reserves channel delivery capacity before advancing the stream; Elixir acknowledges demand explicitly. Source comparison does not equate these ownership mechanisms. |
+| `src/llm/recovery/frames.rs:311` | Terminal validation, progress/metrics ordering and safe tool completion correspond to the Elixir Ollama frame assertions. |
+| `tests/recovery.rs:652,1727,1845,2021,2059` | Paused cancellation, truncated permanent bodies, observed capture-failure semantics, terminal-only cancellation and ordered terminal lifecycle have public-boundary assertions. |
+| `tests/recovery.rs:2831,3341,3599,3649` | Completed-tool follow-up failure, terminal metadata cancellation and rejected-terminal capture/cancellation are explicitly checked. |
+
+Exact trace means application HTTP bytes supplied/observed by ReqClient, not
+TLS packets, transfer framing or every generated header. Transport chunk
+coalescing is possible. Early parser termination reports consumer halt rather
+than a fabricated complete response. Cancellation or a failed capture callback
+may prevent response-end delivery; no extra read or request fills the gap.
+Terminal-presence assertions apply to the complete fixture traces they test,
+not to traces deliberately interrupted by cancellation/capture failure.
+Socket closure establishes local cleanup only. No adapter proves remote
+termination, provides remote request status or implements provider idempotency.
+
+### Fresh evidence and review disposition
+
+The review-only acceptance probe was run before extending this document or
+running the full suite:
+`scripts/recovery-mix test test/mojentic/llm/immutable_request_wire_test.exs --only lifecycle_rejection_proof`.
+It exited 0: 81 declared tests, 45 excluded, 36 executed, zero failures. It
+exercised actual public HTTP and independently rejected the malformed
+observations inside the existing verifier. The initial dependency-absent probe
+failure remains retained; fetching locked dependencies did not upgrade them.
+This documentation objective uses direct proof and introduces no runtime defect
+correction. Historical pre-correction failure records are not relabeled as this
+run's rejecting proof.
+
+The five focused public-boundary modules then passed 1,785 tests. The initial
+plain full suite exited 2 with one existing realtime failure at
+`test/mojentic/realtime/session_test.exs:338`: after its 200-ms sleep, the
+assertion observed no sent payloads. The same-seed (`220507`) isolated module passed
+21 tests; the complete same-seed rerun then passed 22 doctests and 3,142 tests
+with 19 unchanged exclusions. No source, assertion, exclusion or concurrency
+setting changed between these runs. This is evidence of timing sensitivity,
+not proof of a particular scheduling cause or a fixed realtime test. The initial
+full failure remains separately retained as `test-initial-failure.json` and its
+full capture; it is not overwritten by the passing rerun.
+
+The initial exact coverage command also exited 2, with 90.07% coverage and one
+different realtime assertion failure at `session_test.exs:324`: after its 50-ms
+sleep, `Process.alive?/1` still returned true. Its receipt and full capture remain
+in `test-cover-initial-failure.json` and the corresponding log. The same-seed
+(`270330`) isolated module under coverage instrumentation passed 21 tests but
+exited 3: its 6.29% project-wide coverage was below the unchanged 80% floor.
+That narrow investigation is not a passing project coverage gate. No realtime
+test correction or timing-cause claim is made. The complete coverage command
+was then rerun with all existing tests, assertions and exclusions intact.
+
+Final execution results on the unchanged executable source, pinned Elixir
+**1.18.5** / OTP **28.5.0.7**, are:
+
+| Command/check | Actual exit | Result |
+| --- | --- | --- |
+| `scripts/recovery-mix format --check-formatted` | 0 | Formatted |
+| `scripts/recovery-mix compile --warnings-as-errors`; test-environment equivalent | 0 / 0 | Project compilation passed; dependency build warnings retained in captures |
+| `scripts/recovery-mix credo --strict` | 0 | Zero issues |
+| `scripts/recovery-mix test --seed 220507` | 0 | Same-seed full rerun: 22 doctests, 3,142 tests, zero failures, 19 exclusions |
+| `scripts/recovery-mix test --cover` | 0 | Exact configured command; same counts, 90.10% against unchanged 80% floor |
+| Development/test `scripts/recovery-mix dialyzer` | 0 / 0 | Zero errors, skipped warnings and unnecessary skips |
+| `scripts/recovery-mix deps.audit`; `hex.audit` | 0 / 0 | No vulnerabilities or retired/advisory packages reported; refresh limitation below |
+| `scripts/recovery-mix sobelow --config` | 0 | Existing configuration retained |
+| `scripts/recovery-mix sobelow --no-config --private --exit low --threshold low` | 1 | Seven unresolved low-confidence traversal findings, informational under owner policy |
+| `scripts/recovery-mix hex.outdated --all` | 1 | Informational available upgrades; no dependency changes |
+| `scripts/recovery-mix docs` | 0 | Existing LICENSE and igniter usage-rule link warnings retained |
+| CI configuration assertion | 0 | Exact runtime pins, project PLT cache and `timeout: 900` verified |
+
+MixAudit could not refresh its external read-only advisory Git metadata. A
+separate read-only upstream comparison verified installed advisory HEAD equals
+upstream main at `935abf7410a2bbb18e12579dee6e31267c3ed244`. This supports
+database freshness at observation time, not a successful refresh. Configured
+Sobelow also applies its existing exclusions when `--no-config` is absent; the
+initial implicitly configured scan is retained and is not unfiltered evidence.
+The actual unfiltered findings are at `ollama.ex:574`,
+`openai_messages_adapter.ex:174` and `file_manager.ex:142,174,207,222,719`.
+Their complete output remains visible. Informational handling does not accept
+or resolve these findings. No suppression, advisory exception or dependency
+upgrade was applied.
+
+Durable execution records are under
+`/home/svetzal/.foundry/tool-logs/mojentic-ex-closeout-7d0398e/`.
+They include initial/final source SHA-256 manifests, exact revision observations,
+the historical controller receipt, complete stdout/stderr captures, per-command
+actual exit/time/hash records, the acceptance log and independent review.
+These records are execution artifacts, not package assets. The review found no
+remaining small recovery defect in the mapped paths. Current-main synchronization
+and Foundry reconciliation remain outstanding; whole-mission completion and
+landing are not claimed by this assessment.
+
+## Historical increment record
 
 This increment retains the delivered non-streaming recovery at
 `a985c7b7303cecd0b864f697f8a4099b2e1522d9` and adds opt-in streaming recovery
