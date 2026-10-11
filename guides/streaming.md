@@ -394,3 +394,33 @@ This boundary detects echoed outbound strings, including JSON escaping, rather
 than arbitrary transformations such as a secret encoded by the provider in
 base64. It does not sanitize successful provider output or make opt-in exact
 capture safe for public logging. Recovery-disabled behavior is unchanged.
+
+### Frozen request inputs and existing adaptation limits
+
+With recovery enabled, each gateway adapts messages and controls and encodes the
+request before attempts start. Eligible retries reuse those encoded bytes; they
+also reuse the prepared endpoint and headers. An image path is a preparation
+input: replacing that file during admission cannot update an already prepared
+request. A later logical completion prepares its own request. Complete tool
+history stays in a retried follow-up; transport recovery does not execute the
+completed tool again.
+
+`ImmutableRequestWireTest` verifies full server-observed bodies through production
+Req for both stream APIs, ordinary and structured completions, brokers and session
+history, against independently specified payloads and recovery-disabled bytes.
+The event stream API supplies no tools; structured completion supplies a schema
+and no tool descriptors. OpenAI and oMLX history encodes tool IDs and JSON argument
+strings; Ollama history encodes argument objects and omits IDs, including tool
+result IDs. Ollama structured completion currently omits `think`, while ordinary
+and streaming completion send `think: true` for a configured reasoning effort.
+These are existing adaptation limits, preserved by recovery.
+
+`Message` has no native reasoning-history field. Assistant text in these fixtures
+is ordinary content, not evidence of native reasoning preservation. Received
+reasoning and configured reasoning controls retain their existing behavior.
+OpenAI drops `top_k` and non-reasoning-model `reasoning_effort`; o3 uses
+`max_completion_tokens` and adapts temperature to 1.0. oMLX sends `top_k` and
+`reasoning_effort` but ignores `num_ctx` and `num_predict`. Ollama uses `num_predict`
+in preference to `max_tokens`, and reasoning effort enables a boolean `think`
+rather than transmitting the effort level. Recovery does not add unsupported
+history or controls.

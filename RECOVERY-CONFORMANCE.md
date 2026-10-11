@@ -1568,3 +1568,142 @@ are preserved outside this worktree at the persistent location recorded by
 main at the unchanged starting HEAD `90a8ec382b792346e92dc55d00ec08d45e06fafb`;
 Foundry owns final synchronization and direct-main finalization. No executor
 commit, push, merge, rebase, tag or release was performed.
+
+## Immutable semantic-request acceptance evidence (c6 correction, October 10)
+
+This correction starts from audited main
+`538007a50659afa21e387adf66d9c6dca21cbd5b`. It addresses the immutable-payload
+section of TRANSIENT-RECOVERY-2026-10.md, RECOVERY-REQUEST-2026-10.txt section 4,
+and the October 10 supplement. The prior streaming test named “immutable full
+payload” used only one user message. It remains intact as historical coverage;
+this increment adds complete-payload acceptance evidence.
+
+The production Req boundary already freezes encoded request bodies. No production
+contract defect was demonstrated, so this correction changes tests and capability/
+migration documentation only. Dependencies, runtime pins, recovery-mix, coverage
+floor, exclusions, cancellation/socket assertions and prior fixes are unchanged.
+No release, live inference, benchmark restart, tool replay, timeout, sibling write
+or executor Git finalization occurs.
+
+### Proof before expansion
+
+The initial `--only immutable_proof` probe exercised `Broker.generate/4` through
+production Req and a TCP loopback provider: completed tool, rejected HTTP 503,
+explicit admission, successful retried follow-up. Its complete expected payload
+includes multimodal history, descriptors, schema and controls. Changing the image
+file **before preparation** rejected the original-image payload assertion (actual
+ExUnit exit **2**). Moving that same mutation into **retry admission after encoding**
+passed (exit **0**), including full follow-up history, exact byte equality, distinct
+attempt identities and one tool execution. This is an input-timing negative
+control, not a claimed production fix. The changed image's actual base64 bytes
+appear in the rejecting server body. It is not a marker or count-only probe.
+
+[Behavioral proof](.foundry/proof.json) points to complete rejecting and corrected
+logs. Both initial input snapshots are retained in `.foundry/` for reproduction.
+The first attempted run lacked installed dependencies; another fixture assertion
+incorrectly expected an unencoded tool result. These unsuccessful setup/fixture
+runs are retained separately in the capture logs. Broker tool results are already
+JSON encoded; the corrected expectation preserves that existing behavior.
+
+### Fresh executable assertions
+
+The new `Mojentic.LLM.ImmutableRequestWireTest` contains 45 deterministic tests:
+
+| Actual test name pattern | Assertions through production Req |
+| --- | --- |
+| `{gateway} {boundary} {operation} independently specified payload equals disabled wire and admitted retry` (24) | OpenAI/Ollama/oMLX × gateway/broker × ordinary/structured/legacy stream/terminal stream. Complete decoded payload equality against literal expected maps; exact encoded bytes match disabled characterization and both admitted attempts; mutable image changed during admission cannot alter the frozen request. |
+| `OpenAI o3 {operation} preserves supported {effort} reasoning controls and model adaptation` (12) | All four APIs and low/medium/high effort; exact model, max_completion_tokens, temperature 1.0, top_p, reasoning_effort, schema and history, and disabled/retry byte equality. |
+| `{gateway} broker admitted follow-up freezes complete history and mutable image without tool replay` (3) | Independently specified initial and follow-up bodies, complete prior history plus exact completed tool arguments/results, one tool execution, identical follow-up retry bytes, distinct logical initial/follow-up identities; disabled tool loop sends the same two semantic bodies and executes once. |
+| `{gateway} session {operation} retries complete prior conversation with default controls` (6) | Ordinary and legacy streaming after a successful prior session turn; full system/user/assistant/current-user history, default limits, temperature and descriptors; disabled/retry byte equality; successful final session contains exactly the accepted assistant response. |
+
+Every admitted case asserts the complete eight-event recovery lifecycle, exact
+wire-attempt numbers, one logical ID across retries and distinct attempt IDs.
+Each wire body's trace IDs equal its lifecycle `attempt_started` IDs in request
+order. A combined observer timeline verifies attempt start precedes the Req
+request trace, and response end precedes failure/success. All trace events for a
+wire attempt carry the same identity and exactly one request and response end.
+Admission's failure identifies the failed request. Full TCP request bodies are
+read according to Content-Length; requests are never reconstructed from retry
+helper state. Fixtures use explicit admission and a zero-delay sleeper, no live
+provider or sleeping test synchronization. Existing streaming cancellation,
+socket, partial-output and tool interruption assertions remain intact.
+
+Expected payloads use independently specified wire maps rather than production
+message adapters or request builders. UTF-8 content, image bytes, prior tool ID
+`history-id`, name `count`, arguments `{"value":"history-π"}`, result
+`history-result-δ`, generated tool ID `next-id` where supported, follow-up arguments
+`{"value":"next-π"}` and the JSON-encoded tool result are checked explicitly.
+The descriptor, object schema (properties/required/additionalProperties), model,
+all supported controls and generation limits are part of complete map equality;
+extra or omitted fields fail. OpenAI/oMLX use JSON argument strings and tool IDs.
+Ollama uses argument objects and omits IDs on both assistant and tool messages.
+
+### Characterized capabilities and limits
+
+| Adapter/API | Existing prepared representation preserved by retries |
+| --- | --- |
+| OpenAI gpt-4o | temperature, max_tokens, top_p, schema; top_k and reasoning_effort omitted; num_ctx/num_predict omitted with positive max_tokens |
+| OpenAI o3 | max_completion_tokens, temperature adapted to 1.0, top_p and low/medium/high reasoning_effort; top_k omitted |
+| oMLX | temperature, max_tokens, top_p, top_k, reasoning_effort and schema; num_ctx/num_predict omitted |
+| Ollama | temperature, num_ctx, positive num_predict (takes precedence over max_tokens), top_p/top_k under options; ordinary and streaming reasoning effort becomes think=true; structured completion omits think |
+| Structured APIs | Schema supplied, no tool descriptors; prior tool history remains |
+| Terminal-event APIs | No tool descriptors, schema/control/history preserved, include_usage for OpenAI/oMLX |
+| ChatSession | Own temperature/default-limit configuration, ordinary/legacy streaming only; all gateway controls are not exposed by these session APIs |
+| Recovery-disabled Ollama legacy stream | Existing double enumeration makes two equal fixture requests; characterized exactly, without changing it |
+
+`Message` has **no native reasoning-history field**. The fixture's ordinary
+assistant text is content, not native reasoning evidence. These tests establish
+supported history and controls only; they do not claim preservation of a field
+the API cannot represent. Received reasoning and existing reasoning behavior are
+preserved. No provider idempotency facility or wire identity header is invented.
+
+[Source hashes](.foundry/source-hashes.json) bind acceptance tests, relevant
+production boundaries, migration notes, invariants and specifications to this run.
+[Read-only synchronization evidence](.foundry/synchronization.json) distinguishes
+the historical supplied controller receipt from current HEAD/origin/remote checks.
+Foundry owns final synchronization and direct-main landing. This evidence closes
+the scoped acceptance gap; it does not claim six-port parity or an independent
+whole-mission review.
+
+Final gate/audit results and persistent archive receipt are recorded below after
+validation. Historical gate results elsewhere in this report do not substitute
+for this correction's fresh checks.
+
+Fresh format, dev/test compilation with warnings as errors, and strict Credo pass
+with zero project warnings/issues. Plain and coverage suites each pass **22
+doctests and 2,492 tests**, zero failures and the unchanged **19 exclusions**.
+Coverage is **90.07%**, above the unchanged **80%** floor, on pinned Elixir
+**1.18.5** / OTP **28.5.0.7**. Initial strict-Credo failures were corrected by
+splitting evidence assertion helpers and using underscored numeric literals;
+no lint suppression was added. [Quality receipts](.foundry/quality.json) retain
+commands, environment, actual exits and complete capture paths. Dependency-build
+charlist/Bitwise deprecation warnings remain in their original setup captures;
+project compilation itself passes warnings-as-errors.
+
+Dev and test Dialyzer and `mix docs` pass. Docs retain existing missing LICENSE
+and igniter usage-rule link warnings. MixAudit and Hex audit report no vulnerable,
+retired or advisory packages. MixAudit's automatic database refresh encounters
+read-only external FETCH_HEAD; [read-only freshness checks](.foundry/advisory-freshness.json)
+verify installed advisory HEAD matches upstream main at
+`935abf7410a2bbb18e12579dee6e31267c3ed244`.
+
+Configured Sobelow passes. A first scan without `--no-config` also loaded the
+existing configuration automatically; its receipt is retained as
+`sobelow-default-config`, not claimed as unfiltered evidence. The actual
+unfiltered command, `scripts/recovery-mix sobelow --no-config --private --exit low
+--threshold low`, returns **1** with **seven existing low-confidence
+Traversal.FileModule findings**: Ollama image reading, OpenAI image reading,
+and five file-manager read/write/mkdir locations. Their complete findings and
+locations are retained in the capture logs. All 87 production sources match the
+baseline, verified in [audit baseline](.foundry/audit-baseline.json). No security
+suppression or advisory exception was added or edited. `hex.outdated --all`
+returns **1** for available upgrades as an informational result; no dependency
+changes belong to this correction.
+
+[Evidence validation](.foundry/evidence-validation.json) verifies the behavioral
+proof shape, actual capture exit receipts, complete logs, required gates, source
+hashes and unchanged invariants. [Persistent archive receipt](.foundry/archive-receipt.json)
+locates full proof/gate/audit logs and baseline/final source snapshots outside
+this temporary worktree. The executor's [scoped self-review](.foundry/scope-review.md)
+is explicitly not an independent whole-mission review. Requested source changes
+remain uncommitted for Foundry review and direct-main finalization.

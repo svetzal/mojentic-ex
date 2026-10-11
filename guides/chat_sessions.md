@@ -177,3 +177,13 @@ logs. `finalize_stream/1` returns the same cancellation error and releases the
 handle without adding a successful assistant response. For cancellation during a
 paused consumer callback, send directly to the recovery owner recorded by the
 `:attempt_started` observer, as described in the streaming guide.
+
+Recovery preserves the encoded request for the current session turn, including
+prior system, user and assistant messages. The immutable-request loopback tests
+exercise both `send/3` and `send_stream/3` after a successful prior turn and compare
+the complete payload and retry bytes with recovery disabled. Session APIs build
+their own completion configuration from the session temperature and default
+limits; they do not expose every gateway sampling/reasoning control. The richer
+control/schema/tool-history matrix is tested through gateways and brokers.
+`Message` does not represent native reasoning history; ordinary assistant text
+must not be treated as reasoning evidence.

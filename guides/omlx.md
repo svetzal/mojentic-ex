@@ -143,3 +143,13 @@ including model loading, retain their configured request timeout.
 
 Embedding requests require a nonblank model name. Empty or whitespace-only
 names raise `ArgumentError` before any request.
+
+Opt-in recovery freezes the complete encoded request once per logical completion.
+The deterministic `ImmutableRequestWireTest` compares oMLX ordinary, structured,
+legacy streaming and terminal-event requests with independently specified full
+payloads and recovery-disabled bytes. It includes multimodal input, all supported
+controls, prior tool IDs, arguments and results, and a completed-tool follow-up
+that retries without executing the tool again. Mutable image-file changes during
+admission cannot change that follow-up's encoded body. Native reasoning history
+is not representable by the current `Message` struct; `reasoning_effort` and
+received `thinking` keep their existing behavior.
