@@ -18,7 +18,8 @@
     {
       "name": "test",
       "command": "scripts/recovery-mix test --cover",
-      "required": true
+      "required": true,
+      "timeout": 900
     },
     {
       "name": "deps-audit",
