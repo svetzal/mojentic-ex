@@ -1282,6 +1282,191 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     end
   end
 
+  for gateway <- [OpenAI, Ollama, OMLX],
+      caller <- [:broker, :session],
+      status <- [400, 401, 403],
+      truncated? <- [false, true],
+      tracing <- [false, true] do
+    @gateway gateway
+    @caller caller
+    @status status
+    @truncated truncated?
+    @tracing tracing
+    @tag :permanent_tool_followup
+    test "#{gateway} #{caller} completed tool then selected #{status} truncated #{truncated?} tracing #{tracing} fails without replay" do
+      assert_permanent_tool_followup(@gateway, @caller, @status, @truncated, @tracing)
+    end
+  end
+
+  defp assert_permanent_tool_followup(gateway, caller, status, truncated?, tracing) do
+    owner = self()
+    error_body = "permanent-tool-secret-π"
+    failure = http(status, error_body)
+
+    failure =
+      if truncated?,
+        do:
+          String.replace(
+            failure,
+            "Content-Length: #{byte_size(error_body)}",
+            "Content-Length: 999"
+          ),
+        else: failure
+
+    responses = [tool_response(gateway), failure]
+    server = server(gateway, responses)
+    tool = %Mojentic.TestSupport.CountingTool{owner: owner}
+    broker = Broker.new("gpt-4o", gateway)
+
+    recovery = [
+      retryable_categories: [:http, :transport],
+      retryable_statuses: [400, 401, 403, 503],
+      admission: fn context ->
+        send(owner, {:forbidden_tool_admission, context})
+        :allow
+      end,
+      sleeper: fn delay ->
+        send(owner, {:forbidden_tool_backoff, delay})
+        :ok
+      end,
+      observer: &send(owner, {:event, &1})
+    ]
+
+    recovery =
+      if tracing,
+        do:
+          Keyword.put(recovery, :trace_observer, fn event ->
+            send(owner, {:permanent_tool_trace, event})
+            :ok
+          end),
+        else: recovery
+
+    config = %{config(recovery) | max_tool_iterations: 1}
+    session = ChatSession.new(broker, tools: [tool])
+    original = ChatSession.messages(session)
+
+    stream =
+      case caller do
+        :broker ->
+          Broker.generate_stream(broker, [Message.user("sentinel-input")], [tool], config)
+
+        :session ->
+          {:ok, stream, handle} =
+            ChatSession.send_stream(session, "sentinel-input", recovery: config.recovery)
+
+          send(owner, {:permanent_tool_handle, handle})
+          stream
+      end
+
+    assert [{:error, error}] = semantic_events(Enum.to_list(stream))
+    assert error.http_status == status
+    assert error.category == :http
+    refute error.retry_eligible
+    assert error.progress.raw_bytes == byte_size(error_body)
+    assert CompletionError.received_evidence(error).body == error_body
+
+    if truncated?,
+      do:
+        assert(
+          match?(%{reason: :closed}, CompletionError.cause(error)) or
+            CompletionError.cause(error) == :closed
+        )
+
+    lifecycle = collect_events()
+    assert_permanent_tool_lifecycle(error, lifecycle)
+    assert_receive {:tool_executed, %{"value" => "sentinel-tool"}}
+    refute_received {:tool_executed, _}
+    requests = assert_permanent_tool_history(server, gateway)
+
+    assert_permanent_tool_finalization(
+      caller,
+      session,
+      original,
+      error,
+      tracing,
+      lifecycle,
+      requests,
+      responses
+    )
+  end
+
+  defp assert_permanent_tool_history(server, gateway) do
+    [first, second] = requests = GenServer.call(server, :requests)
+    initial = body(first)["messages"]
+    messages = body(second)["messages"]
+    assert Enum.drop(messages, -2) == initial
+    [assistant, result] = Enum.take(messages, -2)
+    assert assistant["role"] == "assistant"
+    assert [call] = assistant["tool_calls"]
+    assert call["type"] == "function"
+    assert call["function"]["name"] == "count"
+
+    if gateway == Ollama do
+      assert call["function"]["arguments"] == %{"value" => "sentinel-tool"}
+      assert result["tool_calls"] == [call]
+    else
+      assert call["id"] == "call-17"
+      assert Jason.decode!(call["function"]["arguments"]) == %{"value" => "sentinel-tool"}
+      assert result["tool_call_id"] == call["id"]
+    end
+
+    assert result["role"] == "tool"
+    assert result["content"] == Jason.encode!("tool-result-secret")
+    assert Enum.count(messages, &(&1["role"] == "tool")) == 1
+    requests
+  end
+
+  defp assert_permanent_tool_finalization(
+         caller,
+         session,
+         original,
+         error,
+         tracing,
+         lifecycle,
+         requests,
+         responses
+       ) do
+    traces = exact_messages(:permanent_tool_trace)
+
+    if tracing do
+      assert_stream_trace(traces, lifecycle, requests, responses)
+      ids = trace_ids(error)
+
+      assert [%{outcome: :failed, evidence: :available}] =
+               Enum.filter(traces, &(&1.type == :response_end and &1.ids == ids))
+    else
+      assert traces == []
+    end
+
+    if caller == :session do
+      assert_receive {:permanent_tool_handle, handle}
+      assert ChatSession.finalize_stream(handle) == {:error, error}
+      assert ChatSession.messages(session) == original
+    end
+
+    for safe <- [
+          inspect(error),
+          Jason.encode!(error),
+          inspect(lifecycle),
+          Jason.encode!(lifecycle)
+        ] do
+      refute safe =~ "secret"
+      refute safe =~ "sentinel"
+    end
+
+    refute_received {:forbidden_tool_admission, _}
+    refute_received {:forbidden_tool_backoff, _}
+  end
+
+  defp assert_permanent_tool_lifecycle(error, lifecycle) do
+    assert_tool_failure_lifecycle(error, lifecycle)
+    [failed] = Enum.filter(lifecycle, &(&1.type == :attempt_failed))
+    [exhausted] = Enum.filter(lifecycle, &(&1.type == :exhausted))
+    assert [Map.delete(failed.metadata, :history)] == error.history
+    assert exhausted.metadata == failed.metadata
+    assert failed.metadata == CompletionError.safe_metadata(error)
+  end
+
   for gateway <- [OpenAI, Ollama, OMLX] do
     @gateway gateway
     for caller <- [:broker, :session], tracing <- [false, true] do

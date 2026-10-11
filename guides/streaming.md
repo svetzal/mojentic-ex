@@ -186,6 +186,42 @@ to connection setup and idle waits, without a total generation timeout. A recove
 budget starts after the first failure; it does not truncate active generation.
 Retry-After cannot bypass the delay ceiling or recovery deadline.
 
+### Permanent HTTP status policy migration (October 10)
+
+HTTP 400, 401 and 403 always stop after the first failed provider request.
+Selecting them in `retryable_statuses`, enabling `:http` or `:transport`, or
+providing an admission callback cannot authorize a resend. This restriction
+also applies when a body read fails after those headers arrive: the numeric
+HTTP status takes precedence over the transport failure. Admission and backoff
+are never entered for these statuses. Correct the request or credentials before
+making a new application request.
+
+Existing policies may keep these entries, but they have no effect:
+
+```elixir
+CompletionConfig.new(
+  recovery: [
+    max_attempts: 2,
+    retryable_categories: [:http, :transport],
+    retryable_statuses: [400, 401, 403, 503],
+    admission: fn _context -> :allow end
+  ]
+)
+```
+
+Here 503 remains selectable for bounded recovery under the existing admission,
+semantic-output and tool-safety rules. The permanent-status rule covers ordinary,
+structured, legacy streaming and terminal-event completion, including Broker
+and ChatSession delegation. A permanent follow-up failure after a completed tool
+never re-executes that tool. Failed session streaming finalization returns the
+error and preserves session history.
+
+Use `CompletionError.received_evidence/1` to inspect retained status, headers and
+exact received bytes, and `CompletionError.cause/1` for the original body-read
+failure. Both are explicit sensitive inspection APIs; default formatting,
+serialization and lifecycle events remain privacy safe. Exact tracing remains
+opt-in and does not affect eligibility.
+
 ### Ollama telemetry migration
 
 With `config.recovery` enabled, both Ollama streaming entrypoints now emit
