@@ -1707,3 +1707,75 @@ locates full proof/gate/audit logs and baseline/final source snapshots outside
 this temporary worktree. The executor's [scoped self-review](.foundry/scope-review.md)
 is explicitly not an independent whole-mission review. Requested source changes
 remain uncommitted for Foundry review and direct-main finalization.
+
+## Permanent HTTP policy correction (October 10, c7)
+
+This correction starts from controller-provisioned `b72931caea20e519df426af9df500a6c57b424a7`,
+which read-only remote-main inspection also reports. The plan's historical base
+is `538007a50659afa21e387adf66d9c6dca21cbd5b`; no synchronization or ref mutation
+was attempted inside the restricted worktree. Foundry owns final synchronization
+and direct-main landing. The release authorization in AGENTS.md is preserved.
+
+The early real-Req proof sent a truncated 403 body to ordinary OpenAI with 403
+explicitly selected and both HTTP/transport categories enabled. The rejecting
+capture demonstrates an actual `admission_pending` event despite ineligible
+classification, numeric status and retained body-read evidence. The same probe
+passes after a numeric-status veto in `Recovery.eligible?/2`. The production
+change only prevents 400/401/403 from entering admission or backoff; configurable
+transient selection remains intact. [Behavioral proof](.foundry/proof.json)
+records actual exits (Mix uses 2 for the assertion failure, 0 for success) and
+complete captures, before matrix and documentation expansion.
+
+`permanent_http_wire_test.exs` exercises OpenAI, Ollama and oMLX ordinary,
+structured and both streaming APIs, ordinary/structured/streaming Broker paths,
+and ordinary/streaming ChatSession paths. Every status 400/401/403 is explicitly
+selected alongside 503 with HTTP and transport categories enabled. Complete,
+closed/truncated and timed-out/truncated bodies run with exact tracing disabled
+and enabled. Assertions tie one server-observed request to retained status,
+headers, exact received bytes, private body-read causes, error/history/lifecycle
+identities and opt-in response trace identities. Admission, delay, retry and
+success events are forbidden. Formatting and JSON omit sensitive contents.
+A real admitted-503 positive control and existing transient controls remain.
+
+Completed-tool follow-up cases cover all three providers through Broker and
+ChatSession with each permanent status, complete/truncated bodies and both trace
+settings. They prove one tool execution, exactly one failed follow-up request,
+concrete tool history and independent request identities, no replay, unchanged
+session history and failed stream finalization. Existing recovery, HTTP-200,
+socket assertions, coverage floor/exclusions and runtime pins are preserved.
+
+Fresh gate, unfiltered audit, independent review and persistent archive receipts
+for this correction are recorded in `.foundry/`; historical results above do not
+substitute for this run. See the policy migration section in
+[streaming guidance](guides/streaming.md).
+
+Final correction gates pass on pinned Elixir **1.18.5** / OTP **28.5.0.7**:
+format, dev/test compilation with warnings as errors, strict Credo (zero issues),
+plain tests, coverage, dev/test Dialyzer, MixAudit, Hex audit, configured Sobelow
+and docs. Plain and coverage runs each pass **22 doctests and 3,106 tests**, zero
+failures, with the unchanged **19 exclusions**. Coverage is **90.07%**, above the
+unchanged **80%** floor. [Fresh quality receipts](.foundry/quality.json) retain
+actual exits and complete stdout/stderr capture paths. Earlier interrupted and
+rejecting checks remain separately labeled and are not passing gate evidence.
+
+MixAudit/Hex audit report no vulnerable, retired or advisory packages. MixAudit's
+external FETCH_HEAD refresh is denied by the sandbox; the installed advisory
+revision matches upstream main at `935abf7410a2bbb18e12579dee6e31267c3ed244`,
+verified read-only in [freshness evidence](.foundry/advisory-freshness.json).
+The unfiltered Sobelow scan returns **1** with exactly the same **seven existing
+low-confidence Traversal.FileModule findings** as an actual unfiltered scan of
+the archived baseline. [Audit comparison](.foundry/audit-baseline.json) preserves
+the locations and both scans. No suppression was changed. `hex.outdated --all`
+returns **1** for informational available upgrades; dependencies remain unchanged.
+Docs retain the existing missing LICENSE and igniter usage-rule link warnings.
+
+The [independent reviewer](.foundry/independent-review.md) reports **no findings**
+and independently passes all **542 permanent-status cases** plus the **72 tool
+follow-up cases**. Review includes the real rejecting/passing proof captures and
+source hashes. [Evidence validation](.foundry/evidence-validation.json) checks
+proof shape/types/actual exits, complete logs, required gate results, unchanged
+invariants and final hashes. [Durable archive](.foundry/archive-receipt.json)
+retains baseline, original probe input, corrected/final sources, complete captures,
+review and manifests outside this temporary worktree. Foundry receives the
+completed uncommitted changes; no Git refs, release files or sibling sources were
+modified.

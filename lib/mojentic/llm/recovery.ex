@@ -172,7 +172,8 @@ defmodule Mojentic.LLM.Recovery do
   end
 
   defp eligible?(opts, error) do
-    error.reason != :stream_interrupted and safe_stream_failure?(error) and
+    error.http_status not in [400, 401, 403] and
+      error.reason != :stream_interrupted and safe_stream_failure?(error) and
       error.category in opts[:retryable_categories] and
       (error.category != :http or error.http_status in opts[:retryable_statuses]) and
       (error.retry_eligible or error.category in [:http, :client_timeout])
