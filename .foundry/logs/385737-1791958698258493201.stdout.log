@@ -1,0 +1,969 @@
+Cover compiling modules ...
+Running ExUnit with seed: 22460, max_cases: 16
+Excluding tags: [:integration]
+
+.........................................................................................................................
+Executing tool: resolve_date
+.Arguments: %{"relative_date_found" => "tomorrow"}
+Result: %{
+  summary: "The date on 'tomorrow' is 2026-10-15",
+  relative_date: "tomorrow",
+  resolved_date: "2026-10-15"
+}
+.
+Executing tool: resolve_date
+Arguments: %{}
+............................................................
+02:18:20.908 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:20.946 [debug] Received agent result for dc374dab-960d-4b6c-afa7-4298730d30e9: {:ok, [%Mojentic.AsyncDispatcherTest.EventB{source: Mojentic.AsyncDispatcherTest, correlation_id: "dc374dab-960d-4b6c-afa7-4298730d30e9", data: "from pid agent"}]}
+
+02:18:20.946 [debug] Processing event Mojentic.AsyncDispatcherTest.EventB for 1 agents
+
+02:18:20.947 [debug] Received agent result for dc374dab-960d-4b6c-afa7-4298730d30e9: {:ok, []}
+
+02:18:20.953 [debug] OutputAgent received: Mojentic.Examples.React.Events.InvokeThinking
+.
+02:18:20.953 [debug] OutputAgent received: SomeEvent
+........
+02:18:20.978 [error] Failed to process events: :processing_failed
+....................................
+02:18:21.122 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:21.123 [debug] Received agent result for chain-123: {:ok, [%Mojentic.AsyncDispatcherTest.EventB{source: Mojentic.AsyncDispatcherTest.SimpleAgent, correlation_id: "chain-123", data: "processed: test"}]}
+
+02:18:21.123 [debug] Processing event Mojentic.AsyncDispatcherTest.EventB for 1 agents
+
+02:18:21.123 [debug] Received agent result for chain-123: {:ok, []}
+........................................
+02:18:21.152 [info] Processing 1 tool call(s)
+.................................................................
+02:18:21.324 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:21.325 [debug] Received agent result for ef029925-268d-42f9-97e7-91a083ec0805: {:ok, [%Mojentic.AsyncDispatcherTest.EventB{source: Mojentic.AsyncDispatcherTest.SimpleAgent, correlation_id: "ef029925-268d-42f9-97e7-91a083ec0805", data: "processed: original"}]}
+.
+02:18:21.325 [debug] Processing event Mojentic.AsyncDispatcherTest.EventB for 1 agents
+.
+02:18:21.325 [debug] Received agent result for ef029925-268d-42f9-97e7-91a083ec0805: {:ok, []}
+.
+02:18:21.339 [warning] Failed to parse pull status chunk: invalid json
+...........................................
+02:18:21.368 [error] Failed to read image file: /nonexistent/path.jpg, reason: :enoent
+..............
+02:18:21.407 [info] Processing 1 tool call(s)
+
+02:18:21.407 [info] Processing 1 tool call(s)
+
+02:18:21.407 [info] Processing 1 tool call(s)
+
+02:18:21.407 [info] Processing 1 tool call(s)
+
+02:18:21.407 [info] Processing 1 tool call(s)
+
+02:18:21.407 [info] Processing 1 tool call(s)
+
+02:18:21.407 [info] Processing 1 tool call(s)
+
+02:18:21.407 [info] Processing 1 tool call(s)
+
+02:18:21.408 [info] Processing 1 tool call(s)
+
+02:18:21.408 [info] Processing 1 tool call(s)
+
+02:18:21.408 [info] Processing 1 tool call(s)
+
+02:18:21.408 [info] Processing 1 tool call(s)
+
+02:18:21.408 [info] Processing 1 tool call(s)
+
+02:18:21.408 [info] Processing 1 tool call(s)
+.
+02:18:21.408 [info] Processing 1 tool call(s)
+.
+02:18:21.408 [info] Processing 1 tool call(s)
+.
+02:18:21.408 [info] Processing 1 tool call(s)
+.
+02:18:21.408 [info] Processing 1 tool call(s)
+.
+02:18:21.408 [info] Processing 1 tool call(s)
+.
+02:18:21.408 [info] Processing 1 tool call(s)
+
+02:18:21.408 [info] Processing 1 tool call(s)
+
+02:18:21.408 [info] Processing 1 tool call(s)
+
+02:18:21.409 [info] Processing 1 tool call(s)
+
+02:18:21.409 [info] Processing 1 tool call(s)
+
+02:18:21.409 [info] Processing 1 tool call(s)
+
+02:18:21.409 [error] Streaming error: :stream_error
+
+02:18:21.409 [info] Processing 1 tool call(s)
+
+02:18:21.409 [error] Tool execution failed: Unknown error: {:tool_not_found, "unknown_tool"}
+
+02:18:21.409 [info] Processing 1 tool call(s)
+.........................................................................
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+.
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+.
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+.
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+.
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.498 [info] Processing 1 tool call(s) in stream
+
+02:18:21.499 [info] Processing 1 tool call(s) in stream
+..........
+02:18:21.527 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:21.528 [debug] Received agent result for 3fff5050-374e-47ee-b013-dd79254b3dad: {:ok, []}
+
+02:18:21.528 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:21.528 [debug] Received agent result for 219a9f03-3426-4afd-a93f-210e9afbda3f: {:ok, []}
+
+02:18:21.528 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:21.528 [debug] Received agent result for d7b92c7c-4ef5-404e-a309-eb2d3dc28ee6: {:ok, []}
+...
+02:18:21.610 [info] Processing 1 tool call(s) in stream
+.
+02:18:21.610 [info] Processing 1 tool call(s)
+.
+02:18:21.610 [info] Processing 1 tool call(s)
+.
+02:18:21.610 [info] Processing 1 tool call(s)
+.
+02:18:21.610 [error] Max tool iterations exceeded
+.......
+02:18:21.730 [info] Received TerminateEvent, stopping dispatcher
+.........................
+02:18:21.831 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:21.835 [debug] Received agent result for 4c28f815-f361-45b1-b701-83d9d57f1cce: {:ok, []}
+.................
+02:18:22.036 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:22.036 [debug] Received agent result for 218ab967-a8a1-4b75-9625-8c5320a9859a: {:ok, [%Mojentic.AsyncDispatcherTest.EventB{source: Mojentic.AsyncDispatcherTest.SimpleAgent, correlation_id: "218ab967-a8a1-4b75-9625-8c5320a9859a", data: "processed: original"}]}
+
+02:18:22.036 [debug] Processing event Mojentic.AsyncDispatcherTest.EventB for 1 agents
+
+02:18:22.037 [debug] Received agent result for 218ab967-a8a1-4b75-9625-8c5320a9859a: {:ok, [%Mojentic.AsyncDispatcherTest.EventC{source: Mojentic.AsyncDispatcherTest.EventBToEventCAgent, correlation_id: "218ab967-a8a1-4b75-9625-8c5320a9859a", data: "chained: processed: original"}]}
+
+02:18:22.037 [debug] Processing event Mojentic.AsyncDispatcherTest.EventC for 1 agents
+
+02:18:22.037 [debug] Received agent result for 218ab967-a8a1-4b75-9625-8c5320a9859a: {:ok, []}
+......................
+02:18:22.325 [debug] Processing event Mojentic.AsyncDispatcherTest.EventB for 1 agents
+
+02:18:22.325 [debug] Processing event Mojentic.AsyncDispatcherTest.EventC for 1 agents
+
+02:18:22.326 [debug] Received agent result for agg-test: {:ok, []}
+
+02:18:22.326 [debug] Received agent result for agg-test: {:ok, [%Mojentic.AsyncDispatcherTest.EventA{source: Mojentic.AsyncDispatcherTest, correlation_id: "agg-test", data: "aggregated"}]}
+
+02:18:22.326 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+.
+02:18:22.326 [debug] Received agent result for agg-test: {:ok, []}
+.
+02:18:22.336 [info] Processing 1 tool call(s)
+.
+02:18:22.338 user_request=Use a tool result=Used tool. DONE reason=done [info] Task completed
+.
+02:18:22.338 max_iterations=5 user_request=Long task result=Working [info] Max iterations reached
+.
+02:18:22.338 max_iterations=3 user_request=Never ending task result=Iteration 3 [info] Max iterations reached
+.
+02:18:22.339 user_request=Task result=I will fail at this. reason=fail [info] Task failed
+.
+02:18:22.339 user_request=Task result=I'm done with this task. reason=done [info] Task completed
+.
+02:18:22.339 user_request=Test result=Task is done! reason=done [info] Task completed
+.
+02:18:22.339 user_request=Task result=DONE reason=done [info] Task completed
+.
+02:18:22.339 max_iterations=1 user_request=Quick task result=Single attempt [info] Max iterations reached
+.
+02:18:22.339 user_request=Task result=DONE reason=done [info] Task completed
+.
+02:18:22.340 user_request=Complex problem result=DONE! Finished. reason=done [info] Task completed
+.
+02:18:22.340 user_request=Task result=This will fail eventually. reason=fail [info] Task failed
+.
+02:18:22.340 user_request=Impossible task result=I cannot do this. FAIL reason=fail [info] Task failed
+.
+02:18:22.340 user_request=Math problem result=DONE reason=done [info] Task completed
+.
+02:18:22.340 user_request=Test problem result=I solved it. DONE reason=done [info] Task completed
+.
+02:18:22.340 user_request=Task result=done reason=done [info] Task completed
+...........................
+02:18:22.527 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:22.527 [debug] Received agent result for bc8c44bf-b72f-4915-b152-8a83ffb228b6: {:ok, [%Mojentic.AsyncDispatcherTest.EventB{source: Mojentic.AsyncDispatcherTest.SimpleAgent, correlation_id: "bc8c44bf-b72f-4915-b152-8a83ffb228b6", data: "processed: module-test"}]}
+
+02:18:22.528 [debug] Processing event Mojentic.AsyncDispatcherTest.EventB for 1 agents
+
+02:18:22.528 [debug] Received agent result for bc8c44bf-b72f-4915-b152-8a83ffb228b6: {:ok, []}
+.
+02:18:22.628 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:22.629 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:22.629 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:22.629 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:22.629 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:22.629 [debug] Received agent result for 221f8e1b-b645-49aa-9807-869f48cfd46b: {:ok, []}
+
+02:18:22.629 [debug] Received agent result for e133187f-e468-44b4-b515-c3dc7d8a5d8e: {:ok, []}
+
+02:18:22.630 [debug] Received agent result for b354c3bb-90a8-4076-a89b-38026efba906: {:ok, []}
+
+02:18:22.630 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:22.630 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:22.630 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:22.630 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:22.630 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:22.631 [debug] Received agent result for b0f54cf1-5453-4035-a676-cd4f8ba4342c: {:ok, []}
+
+02:18:22.631 [debug] Received agent result for 46291fec-0734-439b-a9cf-5e773b747886: {:ok, []}
+
+02:18:22.631 [debug] Received agent result for 31a690ea-3f18-49c6-baaf-175aab2678ae: {:ok, []}
+
+02:18:22.631 [debug] Received agent result for 6c20f47d-2656-4688-8362-616ce345d3d5: {:ok, []}
+
+02:18:22.631 [debug] Received agent result for ffc4a5f6-23d0-4472-bfbf-329eee612c9a: {:ok, []}
+
+02:18:22.631 [debug] Received agent result for 51027b2f-5cf5-459c-b696-c09b08aabc68: {:ok, []}
+
+02:18:22.631 [debug] Received agent result for 1bad17e7-1043-4a5a-a093-3741ccb636a9: {:ok, []}
+............
+02:18:22.834 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:22.834 [debug] Received agent result for 02692931-aaee-4530-bd69-b2bf76a85198: {:ok, []}
+.......................................................
+02:18:23.035 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+
+02:18:23.035 [debug] Received agent result for custom-123: {:ok, []}
+..........
+02:18:23.298 [debug] Processing event Mojentic.AsyncDispatcherTest.EventA for 1 agents
+.......
+02:18:23.371 [info] Processing 1 tool call(s) in stream
+
+02:18:23.372 [info] Processing 1 tool call(s) in stream
+.
+02:18:23.375 [info] Processing 1 tool call(s)
+.....
+02:18:23.473 [info] Processing 1 tool call(s)
+..................................
+02:18:24.212 [info] Processing 1 tool call(s)
+
+02:18:24.212 [error] Max tool iterations exceeded
+...........
+02:18:24.239 [info] Processing 1 tool call(s)
+.
+02:18:24.240 [info] Processing 1 tool call(s)
+..................................
+02:18:24.304 [info] Processing 1 tool call(s)
+................................................
+.........................
+.................
+02:19:59.679 [info] Processing 1 tool call(s)
+......
+02:19:59.881 [error] Error generating response: {:http_error, 500}
+.....................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+02:20:46.813 [info] Processing 1 tool call(s)
+........................
+02:20:47.829 [info] Processing 1 tool call(s)
+................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+02:21:14.699 [warning] OpenAI completion parameter adaptation warning
+.
+02:21:14.755 [info] Processing 1 tool call(s)
+
+02:21:14.877 [info] Processing 1 tool call(s)
+.....
+02:21:15.330 [warning] Model gpt-4o is not a reasoning model, ignoring reasoning_effort parameter
+
+02:21:15.383 [warning] OpenAI completion parameter adaptation warning
+..
+02:21:15.509 [warning] Model gpt-4o is not a reasoning model, ignoring reasoning_effort parameter
+
+02:21:15.562 [warning] OpenAI completion parameter adaptation warning
+.
+02:21:15.629 [warning] Model gpt-4o is not a reasoning model, ignoring reasoning_effort parameter
+
+02:21:15.682 [warning] OpenAI completion parameter adaptation warning
+.
+02:21:15.748 [warning] Model o3 does not support temperature 0.6, using default 1.0
+
+02:21:15.750 [warning] OpenAI completion parameter adaptation warning
+...
+02:21:16.979 [warning] OpenAI completion parameter adaptation warning
+..
+02:21:17.152 [warning] OpenAI completion parameter adaptation warning
+
+02:21:17.153 [info] Processing 1 tool call(s)
+
+02:21:17.154 [warning] OpenAI completion parameter adaptation warning
+
+02:21:17.274 [warning] Model gpt-4o is not a reasoning model, ignoring reasoning_effort parameter
+
+02:21:17.275 [info] Processing 1 tool call(s)
+
+02:21:17.275 [warning] Model gpt-4o is not a reasoning model, ignoring reasoning_effort parameter
+..
+02:21:18.466 [warning] Model o3 does not support temperature 0.6, using default 1.0
+
+02:21:18.518 [warning] OpenAI completion parameter adaptation warning
+..
+02:21:18.640 [warning] Model gpt-4o is not a reasoning model, ignoring reasoning_effort parameter
+
+02:21:18.642 [warning] OpenAI completion parameter adaptation warning
+.....
+02:21:19.069 [warning] Model o3 does not support temperature 0.6, using default 1.0
+
+02:21:19.071 [warning] OpenAI completion parameter adaptation warning
+...
+02:21:19.314 [warning] Model gpt-4o is not a reasoning model, ignoring reasoning_effort parameter
+
+02:21:19.367 [warning] OpenAI completion parameter adaptation warning
+..
+02:21:19.490 [warning] OpenAI completion parameter adaptation warning
+.......
+02:21:20.010 [warning] OpenAI completion parameter adaptation warning
+.
+02:21:20.064 [warning] Model o3 does not support temperature 0.6, using default 1.0
+
+02:21:20.116 [warning] OpenAI completion parameter adaptation warning
+.
+02:21:20.182 [warning] Model gpt-4o is not a reasoning model, ignoring reasoning_effort parameter
+
+02:21:20.235 [warning] OpenAI completion parameter adaptation warning
+...
+02:21:20.411 [warning] OpenAI completion parameter adaptation warning
+..
+02:21:20.520 [warning] OpenAI completion parameter adaptation warning
+.....
+02:21:21.828 [warning] Model o3 does not support temperature 0.6, using default 1.0
+
+02:21:21.881 [warning] OpenAI completion parameter adaptation warning
+..
+02:21:22.003 [warning] Model o3 does not support temperature 0.6, using default 1.0
+
+02:21:22.056 [warning] OpenAI completion parameter adaptation warning
+.
+02:21:22.122 [warning] Model o3 does not support temperature 0.6, using default 1.0
+
+02:21:22.124 [warning] OpenAI completion parameter adaptation warning
+..
+02:21:22.243 [warning] OpenAI completion parameter adaptation warning
+...
+02:21:22.535 [warning] Model o3 does not support temperature 0.6, using default 1.0
+
+02:21:22.588 [warning] OpenAI completion parameter adaptation warning
+.
+02:21:22.653 [warning] OpenAI completion parameter adaptation warning
+.
+02:21:22.708 [warning] OpenAI completion parameter adaptation warning
+.
+02:21:22.762 [warning] Model o3 does not support temperature 0.6, using default 1.0
+
+02:21:22.814 [warning] OpenAI completion parameter adaptation warning
+.
+02:21:22.880 [warning] Model gpt-4o is not a reasoning model, ignoring reasoning_effort parameter
+
+02:21:22.932 [warning] OpenAI completion parameter adaptation warning
+..
+02:21:23.052 [warning] Model o3 does not support temperature 0.6, using default 1.0
+
+02:21:23.105 [warning] OpenAI completion parameter adaptation warning
+.
+02:21:23.171 [warning] OpenAI completion parameter adaptation warning
+...
+02:21:23.335 [warning] OpenAI completion parameter adaptation warning
+...
+02:21:23.576 [info] Processing 1 tool call(s)
+
+02:21:23.697 [info] Processing 1 tool call(s)
+..
+02:21:23.866 [warning] Model gpt-4o is not a reasoning model, ignoring reasoning_effort parameter
+
+02:21:23.918 [warning] OpenAI completion parameter adaptation warning
+.
+02:21:23.984 [warning] Model o3 does not support temperature 0.6, using default 1.0
+
+02:21:24.037 [warning] OpenAI completion parameter adaptation warning
+..
+02:21:24.158 [warning] Model o3 does not support temperature 0.6, using default 1.0
+
+02:21:24.159 [warning] OpenAI completion parameter adaptation warning
+..
+02:21:24.292 [warning] OpenAI completion parameter adaptation warning
+..
+..
+.
+.
+.
+...
+.
+.
+....
+.
+.
+..
+..
+.
+.
+.
+..
+..
+.
+.
+..
+...
+.
+.
+...
+...
+..
+.
+.
+..
+...
+..
+.
+...
+.
+.
+.
+.
+..
+.
+..
+...
+...
+..
+..
+.
+..
+..
+.
+..
+.
+.
+.
+..
+........
+.
+.
+...
+..
+...
+.
+..
+.
+..
+..
+...
+..
+.
+...
+.
+.
+..
+.
+...
+.
+..
+.
+.
+..
+..
+.
+.
+..
+...
+..
+..
+.
+.
+..
+.
+.
+...
+.
+..
+..
+......
+.
+.
+.
+.
+.
+.
+..
+..
+.
+...
+.
+..
+02:22:12.925 [info] Processing 1 tool call(s) in stream
+
+02:22:12.928 [error] Max tool iterations exceeded in streaming path
+..
+02:22:13.084 [info] Processing 1 tool call(s) in stream
+....
+02:22:13.293 [info] Processing 1 tool call(s) in stream
+..
+.
+.
+02:22:13.605 [info] Processing 1 tool call(s) in stream
+...
+02:22:13.818 [info] Processing 1 tool call(s) in stream
+....
+02:22:13.980 [info] Processing 1 tool call(s) in stream
+....
+02:22:14.195 [info] Processing 1 tool call(s) in stream
+...
+02:22:14.357 [info] Processing 1 tool call(s) in stream
+.
+02:22:14.411 [info] Processing 1 tool call(s) in stream
+.......
+02:22:14.835 [info] Processing 1 tool call(s) in stream
+.....
+...
+.....
+02:22:15.718 [info] Processing 1 tool call(s) in stream
+.
+02:22:15.772 [info] Processing 1 tool call(s) in stream
+..
+02:22:15.878 [info] Processing 1 tool call(s) in stream
+...
+......
+02:22:16.401 [info] Processing 1 tool call(s) in stream
+.
+02:22:16.456 [info] Processing 1 tool call(s) in stream
+.....
+.
+..
+02:22:17.029 [info] Processing 1 tool call(s) in stream
+.
+02:22:17.083 [info] Processing 1 tool call(s) in stream
+.
+02:22:17.191 [info] Processing 1 tool call(s) in stream
+.........
+02:22:17.718 [info] Processing 1 tool call(s) in stream
+.
+02:22:17.772 [info] Processing 1 tool call(s) in stream
+...
+02:22:17.930 [info] Processing 1 tool call(s) in stream
+..
+02:22:18.091 [info] Processing 1 tool call(s) in stream
+.
+.
+....
+02:22:18.510 [info] Processing 1 tool call(s) in stream
+.
+02:22:18.564 [info] Processing 1 tool call(s) in stream
+.
+....
+02:22:18.930 [info] Processing 1 tool call(s) in stream
+..
+.
+02:22:19.090 [info] Processing 1 tool call(s) in stream
+.
+02:22:19.145 [info] Processing 1 tool call(s) in stream
+.
+02:22:19.200 [info] Processing 1 tool call(s) in stream
+...
+.
+02:22:19.413 [info] Processing 1 tool call(s) in stream
+......
+.
+02:22:20.034 [info] Processing 1 tool call(s) in stream
+.
+02:22:20.088 [info] Processing 1 tool call(s) in stream
+..
+02:22:20.194 [info] Processing 1 tool call(s) in stream
+...........
+02:22:21.035 [info] Processing 1 tool call(s) in stream
+...
+02:22:21.249 [info] Processing 1 tool call(s) in stream
+.
+02:22:21.304 [info] Processing 1 tool call(s) in stream
+.
+02:22:21.359 [info] Processing 1 tool call(s) in stream
+........
+.
+02:22:21.961 [info] Processing 1 tool call(s) in stream
+...
+02:22:22.129 [info] Processing 1 tool call(s) in stream
+..
+02:22:22.243 [info] Processing 1 tool call(s) in stream
+.
+02:22:22.303 [info] Processing 1 tool call(s) in stream
+.
+....
+.
+02:22:22.687 [info] Processing 1 tool call(s) in stream
+.........
+02:22:23.145 [info] Processing 1 tool call(s) in stream
+..
+....
+02:22:23.544 [info] Processing 1 tool call(s) in stream
+.
+.
+02:22:23.712 [info] Processing 1 tool call(s) in stream
+..
+.
+.....
+.
+02:22:24.247 [info] Processing 1 tool call(s) in stream
+....
+02:22:24.569 [info] Processing 1 tool call(s) in stream
+.
+02:22:24.624 [info] Processing 1 tool call(s) in stream
+.
+02:22:24.678 [info] Processing 1 tool call(s) in stream
+....
+02:22:25.000 [info] Processing 1 tool call(s) in stream
+......
+02:22:25.316 [info] Processing 1 tool call(s) in stream
+......
+....
+02:22:25.997 [info] Processing 1 tool call(s) in stream
+...
+02:22:26.208 [info] Processing 1 tool call(s) in stream
+...
+02:22:26.624 [info] Processing 1 tool call(s) in stream
+.....
+02:22:26.949 [info] Processing 1 tool call(s) in stream
+.
+02:22:27.003 [info] Processing 1 tool call(s) in stream
+..
+02:22:27.113 [info] Processing 1 tool call(s) in stream
+........
+02:22:28.555 [info] Processing 1 tool call(s) in stream
+.
+02:22:28.610 [info] Processing 1 tool call(s) in stream
+..
+02:22:28.717 [info] Processing 1 tool call(s) in stream
+..
+02:22:28.875 [info] Processing 1 tool call(s) in stream
+.
+02:22:28.933 [info] Processing 1 tool call(s) in stream
+.
+02:22:28.988 [info] Processing 1 tool call(s) in stream
+......
+...
+02:22:29.514 [info] Processing 1 tool call(s) in stream
+.
+02:22:29.568 [info] Processing 1 tool call(s) in stream
+..
+02:22:29.781 [info] Processing 1 tool call(s) in stream
+..
+.
+02:22:30.099 [info] Processing 1 tool call(s) in stream
+.......
+..
+02:22:30.777 [info] Processing 1 tool call(s) in stream
+...
+02:22:30.938 [info] Processing 1 tool call(s) in stream
+.....
+...
+02:22:31.463 [info] Processing 1 tool call(s) in stream
+......
+02:22:31.835 [info] Processing 1 tool call(s) in stream
+...
+02:22:32.000 [info] Processing 1 tool call(s) in stream
+........
+..
+02:22:32.787 [info] Processing 1 tool call(s) in stream
+...
+02:22:33.008 [info] Processing 1 tool call(s) in stream
+..
+02:22:33.167 [info] Processing 1 tool call(s) in stream
+.....
+..
+.
+02:22:33.698 [info] Processing 1 tool call(s) in stream
+....
+02:22:33.914 [info] Processing 1 tool call(s) in stream
+.....
+02:22:34.182 [info] Processing 1 tool call(s) in stream
+....
+02:22:34.549 [info] Processing 1 tool call(s) in stream
+..
+02:22:34.657 [info] Processing 1 tool call(s) in stream
+.
+02:22:34.712 [info] Processing 1 tool call(s) in stream
+.
+02:22:34.766 [info] Processing 1 tool call(s) in stream
+...
+02:22:34.928 [info] Processing 1 tool call(s) in stream
+..
+02:22:35.035 [info] Processing 1 tool call(s) in stream
+
+02:22:35.039 [error] Max tool iterations exceeded in streaming path
+..
+02:22:35.196 [info] Processing 1 tool call(s) in stream
+......
+02:22:35.668 [info] Processing 1 tool call(s) in stream
+.
+.
+02:22:35.826 [info] Processing 1 tool call(s) in stream
+..
+02:22:35.932 [info] Processing 1 tool call(s) in stream
+.
+.
+02:22:36.091 [info] Processing 1 tool call(s) in stream
+
+02:22:36.094 [error] Max tool iterations exceeded in streaming path
+.
+02:22:36.197 [info] Processing 1 tool call(s) in stream
+.
+...................
+.......
+.
+..
+........
+....
+02:22:40.198 [info] Processing 1 tool call(s)
+.............
+..........
+.
+...........
+.............
+02:22:44.732 [info] Processing 1 tool call(s)
+.
+02:22:44.788 [info] Processing 1 tool call(s)
+............................................
+...............
+................
+........................
+........
+.........
+....
+............
+..
+....
+.....................
+02:22:59.227 [warning] Model gpt-4o is not a reasoning model, ignoring reasoning_effort parameter
+
+02:22:59.228 [warning] OpenAI completion parameter adaptation warning
+..............
+.............
+02:23:01.987 [info] Processing 1 tool call(s)
+
+02:23:01.992 [error] Max tool iterations exceeded
+....
+.
+.....
+....................
+.....
+02:23:04.425 [info] Processing 1 tool call(s)
+.....
+..........................
+..............
+..............................
+..
+...
+02:23:10.904 [info] Processing 1 tool call(s)
+................
+.............
+....................
+.............................................
+....................
+........
+...
+....
+.......
+.................
+.....
+.............
+02:23:26.031 [warning] Model gpt-4o is not a reasoning model, ignoring reasoning_effort parameter
+
+02:23:26.033 [warning] OpenAI completion parameter adaptation warning
+..
+..
+........................
+............
+...
+..............................
+02:23:32.163 [info] Processing 1 tool call(s)
+.
+Finished in 312.1 seconds (98.3s async, 213.7s sync)
+22 doctests, 3149 tests, 0 failures, 19 excluded
+
+Generating cover results ...
+
+Percentage | Module
+-----------|--------------------------
+     0.00% | Mojentic.LLM.Gateways.TokenizerGateway
+     0.00% | Mojentic.Tracer.TracerEvents.ToolBatchTracerEvent
+    32.14% | Mojentic.Tracer
+    66.67% | Mojentic.LLM.Tools.Runner
+    68.09% | Mojentic.Realtime.Session
+    75.00% | Mojentic.LLM.Tools.FindFilesByGlobTool
+    77.78% | Mojentic.LLM.Tools.AskUser
+    80.00% | Mojentic.LLM.Tools.RunContext
+    80.00% | Mojentic.Realtime.Broker
+    80.00% | Mojentic.TestSupport.StubTokenizer
+    80.85% | Mojentic.Agents.AsyncAggregatorAgent
+    81.82% | Mojentic.LLM.Tools.FindLinesMatchingTool
+    83.33% | Mojentic.LLM.CompletionError
+    83.33% | Mojentic.LLM.Tools.EphemeralTaskManager.AppendTask
+    83.33% | Mojentic.LLM.Tools.EphemeralTaskManager.PrependTask
+    83.33% | Mojentic.LLM.Tools.ListAllFilesTool
+    83.33% | Mojentic.LLM.Tools.ToolWrapper
+    86.36% | Mojentic.LLM.Gateways.OpenAILegacyStream
+    86.36% | Mojentic.LLM.Tools.EphemeralTaskManager.CompleteTask
+    86.36% | Mojentic.LLM.Tools.EphemeralTaskManager.StartTask
+    86.67% | Mojentic.Realtime.Schemas
+    86.96% | Mojentic.LLM.Tools.EphemeralTaskManager.InsertTaskAfter
+    87.32% | Mojentic.Tracer.TracerSystem
+    87.50% | Mojentic.LLM.Tools.CreateDirectoryTool
+    88.71% | Mojentic.LLM.Tools.FilesystemGateway
+    88.89% | Mojentic.AsyncDispatcher
+    90.00% | Mojentic.Context.SharedWorkingMemory
+    90.00% | Mojentic.LLM.Tools.Tool
+    90.52% | Mojentic.LLM.Recovery
+    90.74% | Mojentic.TestSupport.ScriptedCompletionServer
+    90.98% | Mojentic.LLM.StreamRecovery
+    91.09% | Mojentic.HTTP.ReqClient
+    91.67% | Mojentic.LLM.Tools.WebSearchTool
+    91.67% | Mojentic.Tracer.NullTracer
+    91.91% | Mojentic.LLM.CompletionRequest
+    92.68% | Mojentic.LLM.Tools.ToolInvocation
+    92.86% | Mojentic.LLM.Tools.ParallelToolRunner
+    93.10% | Mojentic.LLM.Gateways.Ollama
+    93.33% | Mojentic.Agents.AsyncLLMAgent
+    93.75% | Mojentic.HTTP.ReceivedEvidence
+    94.20% | Mojentic.Agents.SimpleRecursiveAgent
+    94.55% | Mojentic.LLM.Gateways.OllamaStream
+    94.59% | Mojentic.Agents.IterativeProblemSolver
+    95.45% | Mojentic.HTTP.WireTrace
+    95.65% | Mojentic.Tracer.TracerEvents.ToolCallTracerEvent
+    96.25% | Mojentic.LLM.ChatSession
+    96.34% | Mojentic.LLM.Broker
+    96.88% | Mojentic.LLM.Gateways.OpenAIStream
+    96.92% | Mojentic.LLM.Tools.DateResolver
+    97.14% | Mojentic.Examples.React.Formatters
+    97.89% | Mojentic.LLM.Gateways.OpenAIModelRegistry
+    98.97% | Mojentic.LLM.Gateways.OMLX
+   100.00% | Inspect.Mojentic.LLM.CompletionError
+   100.00% | Jason.Encoder.Mojentic.LLM.CompletionError
+   100.00% | Mojentic
+   100.00% | Mojentic.Agents.BaseAgent
+   100.00% | Mojentic.Agents.BaseAsyncAgent
+   100.00% | Mojentic.Agents.BaseLLMAgent
+   100.00% | Mojentic.Agents.BaseLLMAgentWithMemory
+   100.00% | Mojentic.Agents.SimpleRecursiveAgent.EventEmitter
+   100.00% | Mojentic.Agents.SimpleRecursiveAgent.GoalAchievedEvent
+   100.00% | Mojentic.Agents.SimpleRecursiveAgent.GoalFailedEvent
+   100.00% | Mojentic.Agents.SimpleRecursiveAgent.GoalState
+   100.00% | Mojentic.Agents.SimpleRecursiveAgent.GoalSubmittedEvent
+   100.00% | Mojentic.Agents.SimpleRecursiveAgent.HandlerErrorEvent
+   100.00% | Mojentic.Agents.SimpleRecursiveAgent.IterationCompletedEvent
+   100.00% | Mojentic.Agents.SimpleRecursiveAgent.TimeoutEvent
+   100.00% | Mojentic.Error
+   100.00% | Mojentic.Event
+   100.00% | Mojentic.Events.TerminateEvent
+   100.00% | Mojentic.HTTP
+   100.00% | Mojentic.HTTP.WireTrace.CaptureError
+   100.00% | Mojentic.LLM.CompletionConfig
+   100.00% | Mojentic.LLM.Gateway
+   100.00% | Mojentic.LLM.GatewayResponse
+   100.00% | Mojentic.LLM.Gateways.TerminalEventStream
+   100.00% | Mojentic.LLM.Message
+   100.00% | Mojentic.LLM.Tokenizer
+   100.00% | Mojentic.LLM.ToolCall
+   100.00% | Mojentic.LLM.Tools.CurrentDatetime
+   100.00% | Mojentic.LLM.Tools.EphemeralTaskManager
+   100.00% | Mojentic.LLM.Tools.EphemeralTaskManager.ClearTasks
+   100.00% | Mojentic.LLM.Tools.EphemeralTaskManager.ListTasks
+   100.00% | Mojentic.LLM.Tools.EphemeralTaskManager.Task
+   100.00% | Mojentic.LLM.Tools.EphemeralTaskManager.TaskList
+   100.00% | Mojentic.LLM.Tools.FindFilesContainingTool
+   100.00% | Mojentic.LLM.Tools.ListFilesTool
+   100.00% | Mojentic.LLM.Tools.ReadFileTool
+   100.00% | Mojentic.LLM.Tools.SerialToolRunner
+   100.00% | Mojentic.LLM.Tools.TellUser
+   100.00% | Mojentic.LLM.Tools.ToolCallExecution
+   100.00% | Mojentic.LLM.Tools.ToolCallOutcome
+   100.00% | Mojentic.LLM.Tools.WriteFileTool
+   100.00% | Mojentic.Realtime.Codec
+   100.00% | Mojentic.Realtime.Config
+   100.00% | Mojentic.Realtime.Event
+   100.00% | Mojentic.Realtime.Gateway
+   100.00% | Mojentic.Realtime.SemanticVadConfig
+   100.00% | Mojentic.Realtime.ServerVadConfig
+   100.00% | Mojentic.Realtime.Transport
+   100.00% | Mojentic.Router
+   100.00% | Mojentic.TestSupport.ChunkedHTTPServer
+   100.00% | Mojentic.TestSupport.CountingTool
+   100.00% | Mojentic.TestSupport.DecodingEvidence
+   100.00% | Mojentic.Tracer.EventStore
+   100.00% | Mojentic.Tracer.EventStore.State
+   100.00% | Mojentic.Tracer.TracerEvents
+   100.00% | Mojentic.Tracer.TracerEvents.AgentInteractionTracerEvent
+   100.00% | Mojentic.Tracer.TracerEvents.LLMCallTracerEvent
+   100.00% | Mojentic.Tracer.TracerEvents.LLMResponseTracerEvent
+   100.00% | Mojentic.Tracer.TracerEvents.TracerEvent
+   100.00% | Mojentic.Tracer.TracerSystem.State
+-----------|--------------------------
+    90.13% | Total
+
+Generated HTML coverage results in "cover" directory

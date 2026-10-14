@@ -1,0 +1,3 @@
+** (EXIT from #PID<0.95.0>) exited in: GenServer.call(ExUnit.Server, {:take_async_modules, 1}, :infinity)
+    ** (EXIT) shutdown
+

@@ -1,0 +1,169 @@
+Cover compiling modules ...
+Running ExUnit with seed: 622813, max_cases: 16
+Excluding tags: [:integration]
+
+............................
+03:19:02.020 [debug] OutputAgent received: Mojentic.Examples.React.Events.InvokeThinking
+.
+03:19:02.062 [debug] OutputAgent received: SomeEvent
+...............................
+03:19:02.264 user_request=Task result=DONE reason=done [info] Task completed
+.
+03:19:02.264 user_request=Test problem result=I solved it. DONE reason=done [info] Task completed
+.
+03:19:02.265 user_request=Task result=DONE reason=done [info] Task completed
+..
+03:19:02.266 user_request=Impossible task result=I cannot do this. FAIL reason=fail [info] Task failed
+.
+03:19:02.266 max_iterations=5 user_request=Long task result=Working [info] Max iterations reached
+
+03:19:02.267 [info] Processing 1 tool call(s)
+......
+03:19:02.352 user_request=Use a tool result=Used tool. DONE reason=done [info] Task completed
+.
+03:19:02.353 max_iterations=1 user_request=Quick task result=Single attempt [info] Max iterations reached
+.
+03:19:02.353 user_request=Task result=done reason=done [info] Task completed
+.
+03:19:02.353 user_request=Math problem result=DONE reason=done [info] Task completed
+.
+03:19:02.354 user_request=Task result=I will fail at this. reason=fail [info] Task failed
+.
+03:19:02.354 user_request=Test result=Task is done! reason=done [info] Task completed
+.
+03:19:02.354 user_request=Task result=This will fail eventually. reason=fail [info] Task failed
+.
+03:19:02.354 user_request=Complex problem result=DONE! Finished. reason=done [info] Task completed
+.
+03:19:02.355 user_request=Task result=I'm done with this task. reason=done [info] Task completed
+.
+03:19:02.355 max_iterations=3 user_request=Never ending task result=Iteration 3 [info] Max iterations reached
+....................................................................................
+03:19:02.567 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [error] Tool execution failed: Unknown error: {:tool_not_found, "unknown_tool"}
+..
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.
+03:19:02.568 [info] Processing 1 tool call(s)
+.................
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.731 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.732 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.732 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.732 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.732 [info] Processing 1 tool call(s) in stream
+
+03:19:02.732 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.732 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.732 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.732 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.732 [info] Processing 1 tool call(s) in stream
+.
+03:19:02.732 [info] Processing 1 tool call(s)
+
+03:19:02.732 [info] Processing 1 tool call(s)
+
+03:19:02.732 [info] Processing 1 tool call(s)
+
+03:19:02.732 [error] Max tool iterations exceeded
+
+03:19:02.732 [error] Streaming error: :stream_error
+............
+03:19:02.849 [info] Processing 1 tool call(s)
+..................
+03:19:02.956 [info] Processing 1 tool call(s)
+...
+03:19:02.959 [info] Processing 1 tool call(s) in stream
+
+03:19:02.960 [info] Processing 1 tool call(s) in stream
+...............................................................
+03:19:03.322 [error] Failed to process events: :processing_failed
+..........................
+03:19:03.514 [notice] SIGTERM received - shutting down
+
