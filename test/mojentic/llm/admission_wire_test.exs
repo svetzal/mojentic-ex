@@ -57,6 +57,222 @@ defmodule Mojentic.LLM.AdmissionWireTest do
     end
   end
 
+  for gateway <- [OpenAI, Ollama, OMLX],
+      entrypoint <- [
+        :complete,
+        :object,
+        :events,
+        :legacy,
+        :broker,
+        :broker_object,
+        :broker_events,
+        :broker_legacy,
+        :session,
+        :session_stream
+      ],
+      scenario <- [:eligible, :ineligible, :single_attempt, :nonacceptance] do
+    @gateway gateway
+    @entrypoint entrypoint
+    @scenario scenario
+    @tag :no_hook
+    test "#{gateway} #{entrypoint} no hook #{@scenario} preserves wire and lifecycle contract" do
+      assert_no_hook(@gateway, @entrypoint, @scenario)
+    end
+  end
+
+  defp assert_no_hook(gateway, entrypoint, scenario) do
+    owner = self()
+    status = if scenario == :ineligible, do: 400, else: 503
+    body = "provider-sentinel"
+
+    response =
+      "HTTP/1.1 #{status} Result\r\nContent-Length: #{byte_size(body)}\r\nConnection: close\r\n\r\n#{body}"
+
+    prior = [Message.user("earlier-input"), Message.assistant("earlier-output")]
+    messages = prior ++ [Message.user("input-sentinel")]
+    session = ChatSession.new(Broker.new("fixture-model", gateway))
+
+    session = %{
+      session
+      | messages: session.messages ++ Enum.map(prior, &%{message: &1, token_length: 1})
+    }
+
+    original_history = session.messages
+    attempts = if scenario == :single_attempt, do: 1, else: 2
+
+    recovery = [
+      max_attempts: attempts,
+      base_delay: 0,
+      trace_observer: fn event ->
+        if event.type == :request, do: send(owner, {:no_hook_request, event})
+        :ok
+      end,
+      observer: &send(owner, {:lifecycle, &1}),
+      sleeper: fn _ -> :ok end
+    ]
+
+    recovery =
+      if scenario == :single_attempt, do: Keyword.delete(recovery, :max_attempts), else: recovery
+
+    {server, error} =
+      if scenario == :nonacceptance do
+        refused_then_observed(gateway, entrypoint, recovery, messages, session, response)
+      else
+        server = start_supervised!({ScriptedCompletionServer, {owner, [response, response]}})
+        assert_receive {:server_port, port}
+        configure_no_hook(gateway, port)
+        config = CompletionConfig.new(recovery: recovery)
+
+        assert {:error, %CompletionError{} = error} =
+                 invoke(gateway, entrypoint, config, messages, session)
+
+        {server, error}
+      end
+
+    retried = scenario == :nonacceptance or (scenario == :eligible and gateway == OpenAI)
+    wire_count = if scenario == :eligible and gateway == OpenAI, do: 2, else: 1
+    assert_wire(server, gateway, entrypoint, wire_count)
+    assert session.messages == original_history
+    assert error.http_status == status
+    assert error.category == :http
+    assert error.acceptance == :unknown
+    assert error.retry_eligible == (status == 503)
+    assert error.provider == provider(gateway)
+    assert error.operation == operation(entrypoint)
+    assert_no_hook_history(error, retried)
+    assert_no_hook_requests(server, error)
+
+    required = gateway != OpenAI and scenario == :eligible
+    assert error.resend_permission == if(required, do: :admission_required, else: :not_granted)
+    assert_no_hook_events(error, retried, required, scenario)
+  end
+
+  defp assert_no_hook_history(error, retried) do
+    expected_attempts = if retried, do: 2, else: 1
+    assert error.wire_attempt == expected_attempts
+    assert length(error.history) == expected_attempts
+    assert Enum.map(error.history, & &1.wire_attempt) == Enum.to_list(1..expected_attempts)
+    assert length(Enum.uniq_by(error.history, & &1.attempt_id)) == expected_attempts
+
+    assert Enum.uniq(Enum.map(error.history, & &1.logical_request_id)) == [
+             error.logical_request_id
+           ]
+
+    assert List.last(error.history).attempt_id == error.attempt_id
+  end
+
+  defp assert_no_hook_requests(server, error) do
+    requests =
+      for history <- error.history do
+        assert_receive {:no_hook_request, request}
+        assert request.ids == Map.take(history, [:logical_request_id, :attempt_id, :wire_attempt])
+        request
+      end
+
+    [first | rest] = requests
+    assert Enum.all?(rest, &(Map.delete(&1, :ids) == Map.delete(first, :ids)))
+    [wire | _] = GenServer.call(server, :requests)
+    [_, body] = String.split(wire, "\r\n\r\n", parts: 2)
+    assert first.body == body
+    refute_received {:no_hook_request, _}
+  end
+
+  defp refused_then_observed(gateway, entrypoint, recovery, messages, session, response) do
+    # Reserve a real non-listening socket. Req must observe ECONNREFUSED before
+    # the test installs the scripted provider at that exact endpoint.
+    {:ok, socket} = :socket.open(:inet, :stream, :tcp)
+    :ok = :socket.bind(socket, %{family: :inet, addr: {127, 0, 0, 1}, port: 0})
+    on_exit(fn -> :socket.close(socket) end)
+    {:ok, %{port: port}} = :socket.sockname(socket)
+    configure_no_hook(gateway, port)
+    owner = self()
+
+    recovery =
+      Keyword.put(recovery, :sleeper, fn _ ->
+        send(owner, {:install_provider, self()})
+
+        receive do
+          :provider_ready -> :ok
+        after
+          2000 -> :not_ready
+        end
+      end)
+
+    config = CompletionConfig.new(recovery: recovery)
+    supervisor = start_supervised!(Task.Supervisor)
+
+    task =
+      Task.Supervisor.async_nolink(supervisor, fn ->
+        invoke(gateway, entrypoint, config, messages, session)
+      end)
+
+    assert_receive {:install_provider, worker}, 2000
+    :ok = :socket.close(socket)
+    server = start_supervised!({ScriptedCompletionServer, {owner, [response], port}})
+    assert_receive {:server_port, ^port}
+    send(worker, :provider_ready)
+    assert {:error, %CompletionError{} = error} = Task.await(task, 2000)
+    assert [refused, _] = error.history
+    assert refused.category == :transport
+    assert refused.reason == :connection_refused
+    assert refused.phase == :connecting
+    assert refused.acceptance == :no
+    assert refused.retry_eligible
+    assert refused.http_status == nil
+    assert refused.progress.raw_bytes == 0
+    {server, error}
+  end
+
+  defp configure_no_hook(gateway, port) do
+    host = "http://127.0.0.1:#{port}"
+
+    case gateway do
+      OpenAI -> System.put_env("OPENAI_API_ENDPOINT", host <> "/v1")
+      Ollama -> System.put_env("OLLAMA_HOST", host)
+      OMLX -> System.put_env("OMLX_HOST", host)
+    end
+  end
+
+  defp assert_no_hook_events(error, retried, required, scenario) do
+    types =
+      cond do
+        retried ->
+          [
+            :attempt_started,
+            :attempt_failed,
+            :admission_allowed,
+            :backoff_started,
+            :retry_started,
+            :attempt_started,
+            :attempt_failed,
+            :exhausted
+          ]
+
+        required ->
+          [:attempt_started, :attempt_failed, :admission_required, :exhausted]
+
+        true ->
+          [:attempt_started, :attempt_failed, :exhausted]
+      end
+
+    events =
+      for _ <- types do
+        assert_receive {:lifecycle, event}
+        event
+      end
+
+    assert Enum.map(events, & &1.type) == types
+    assert List.last(events).metadata == CompletionError.safe_metadata(error)
+    failures = Enum.filter(events, &(&1.type == :attempt_failed))
+    assert Enum.map(failures, &Map.delete(&1.metadata, :history)) == error.history
+
+    if scenario == :nonacceptance do
+      assert Enum.at(events, 2).metadata.acceptance == :no
+    end
+
+    refute_received {:lifecycle, _}
+  end
+
   defp assert_admission(gateway, entrypoint, outcome) do
     reason = if outcome == :reject, do: :rejected, else: :admission_no_decision
     decision_event = if outcome == :reject, do: :admission_rejected, else: :admission_no_decision
@@ -109,6 +325,7 @@ defmodule Mojentic.LLM.AdmissionWireTest do
 
         assert_failure(error, gateway, entrypoint, reason, body)
         assert_lifecycle(error, reason, decision_event)
+        refute_received {:lifecycle, _}
         assert_wire(server, gateway, entrypoint)
       end)
 
@@ -175,7 +392,7 @@ defmodule Mojentic.LLM.AdmissionWireTest do
     end
   end
 
-  defp assert_wire(server, gateway, entrypoint) do
+  defp assert_wire(server, gateway, entrypoint, attempts \\ 1) do
     assert_receive {:wire_request, wire}
     path = if gateway == Ollama, do: "/api/chat", else: "/v1/chat/completions"
     assert wire =~ path
@@ -207,9 +424,13 @@ defmodule Mojentic.LLM.AdmissionWireTest do
       end
 
     assert payload["stream"] == expected_stream
-    assert GenServer.call(server, :requests) == [wire]
+
+    if attempts == 2 do
+      assert_receive {:wire_request, ^wire}
+    end
+
+    assert GenServer.call(server, :requests) == List.duplicate(wire, attempts)
     refute_receive {:wire_request, _}
-    refute_received {:lifecycle, _}
   end
 
   defp provider(OpenAI), do: :openai

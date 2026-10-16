@@ -4,10 +4,15 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
 
   def start_link({owner, responses}), do: GenServer.start_link(__MODULE__, {owner, responses})
 
+  def start_link({owner, responses, port}),
+    do: GenServer.start_link(__MODULE__, {owner, responses, port})
+
   @impl true
-  def init({owner, responses}) do
+  def init({owner, responses}), do: init({owner, responses, 0})
+
+  def init({owner, responses, port}) do
     {:ok, listener} =
-      :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true, ip: {127, 0, 0, 1}])
+      :gen_tcp.listen(port, [:binary, active: false, reuseaddr: true, ip: {127, 0, 0, 1}])
 
     {:ok, {_, port}} = :inet.sockname(listener)
     send(owner, {:server_port, port})

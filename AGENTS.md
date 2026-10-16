@@ -4,8 +4,11 @@
 
 The coordinated implementation scope is defined in [../RELEASE-3.0.0.md](../RELEASE-3.0.0.md).
 For this correction, implement only the October 12 transient-recovery amendment's
-"Admission without a decision" guarantee, its tests, documentation and conformance
-record. Other recovery amendments, reasoning, metadata work, dependency/runtime
+"Admission without a hook" guarantee across supported public completion boundaries,
+its tests, documentation and partial conformance record. Preserve the landed
+"Admission without a decision" behavior and explicit decisions. Characterize the
+real Req boundary first and correct only demonstrated policy gaps. Other recovery
+amendments, reasoning, metadata work, dependency/runtime
 upgrades and version changes are outside this task.
 
 The coordinated release hold remains in force until all six ports are ready and

@@ -485,6 +485,13 @@ Broker.generate(broker, messages)
 
 Set `CompletionConfig.new(recovery: [max_attempts: 3, budget: 60_000])` to
 recover eligible non-streaming completions. The default remains disabled.
+Without a hook, eligible OpenAI failures may retry. Ollama and oMLX stop with
+`:admission_required` unless transport evidence establishes `acceptance: :no`,
+such as connection refusal. An HTTP failure or a closed local socket does not
+prove nonacceptance. `recovery: []` uses one attempt; `max_attempts` opts into
+bounded resends. The same policy covers structured and both streaming APIs,
+including ChatSession, subject to eligibility, cancellation, deadlines and
+semantic replay restrictions.
 For Ollama and oMLX, ambiguous failures require explicit admission; for example,
 `admission: fn context -> admission_service.check(context) end`. The service must
 return `:allow`, `:reject`, or `:pending`. Resolve pending decisions by sending

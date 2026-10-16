@@ -2,6 +2,16 @@ defmodule Mojentic.LLM.Recovery do
   @moduledoc """
   Bounded, opt-in recovery of a single immutable provider completion.
 
+  Without an admission hook, eligible OpenAI failures may retry. Ollama and oMLX
+  require admission unless transport evidence establishes `acceptance: :no`
+  (for example, connection refusal). Otherwise recovery stops with
+  `resend_permission: :admission_required` and an `:admission_required` event.
+  HTTP errors and local socket closure do not establish nonacceptance.
+  This policy applies to ordinary, structured, event and legacy streams,
+  including Broker and ChatSession. Eligibility, semantic replay restrictions,
+  cancellation, deadlines and the attempt limit still apply. `recovery: []`
+  keeps the default single attempt; `max_attempts` must opt into resends.
+
   Admission receives safe failure metadata, correlation IDs, progress, and a
   `reply_to` PID and `ref`. Return `:allow`, `:reject`, or `:pending`; resolve
   pending decisions with `{:recovery_admission, ref, :allow | :reject}`.

@@ -171,6 +171,13 @@ legacy adapter API delivers completed calls, and opt-in reasoning as
 
 OpenAI permits eligible pre-output recovery under its remote-provider policy.
 Ollama and oMLX require explicit admission when prior acceptance is unknown.
+With no hook, they stop with `resend_permission: :admission_required` and an
+`:admission_required` lifecycle event, unless real transport evidence proves
+`acceptance: :no` (such as connection refusal). Eligible OpenAI failures may
+retry without a hook. These rules apply to ordinary and structured completion,
+event and legacy streams, Broker and ChatSession. Recovery still defaults to
+one attempt; opt into resends with `max_attempts`. Admission never overrides
+eligibility, semantic replay restrictions, cancellation or deadlines.
 An asynchronous `admission` callback returns `:allow`, `:reject` or `:pending`;
 resolve pending decisions with
 `send(context.reply_to, {:recovery_admission, context.ref, :allow})` only after

@@ -166,8 +166,12 @@ consumer-halted stream returns an error and cannot append an assistant response
 to successful history. The original immutable session remains available. Tool
 effects already completed are not rolled back or replayed, so retrying the whole
 session send is an application decision. Recovery applies to the failed provider
-request only; local providers require an admission policy as described in the
-streaming guide.
+request only. Without a hook, eligible OpenAI failures may retry; Ollama and oMLX
+require admission unless real transport evidence proves `acceptance: :no`, such
+as connection refusal. Ambiguous local acceptance stops with
+`:admission_required`. The same rule covers `send/3`, `send_stream/3` and stream
+finalization. Recovery defaults to one attempt; opt into resends explicitly with
+`max_attempts`, as described in the streaming guide.
 
 
 Cancellation errors forwarded by `send/3` and `send_stream/3` preserve received

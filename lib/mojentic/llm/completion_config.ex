@@ -8,7 +8,10 @@ defmodule Mojentic.LLM.CompletionConfig do
 
   `recovery: []` opts ordinary and structured completions into safe errors with
   one wire attempt. Set `max_attempts` to opt into bounded resends. Local providers
-  with ambiguous acceptance require explicit admission. See `Mojentic.LLM.Recovery`
+  require explicit admission unless acceptance is `:no` from transport evidence.
+  Eligible OpenAI failures may retry without a hook. No-hook local failures with
+  ambiguous acceptance stop with `:admission_required`; this differs from a hook
+  that ends without a decision (`:admission_no_decision`). See `Mojentic.LLM.Recovery`
   and RECOVERY-CONFORMANCE.md for admission, cancellation and policy options.
   Recovery limits govern resends; they never time out active generation.
   Streaming recovery covers both completion stream APIs. Add

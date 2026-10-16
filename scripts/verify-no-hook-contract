@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Local executable set only; paired external verification remains required.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+echo 'admission-without-hook-v1'
+sha256sum test/mojentic/llm/admission_wire_test.exs \
+  test/mojentic/llm/no_hook_wire_test.exs \
+  test/support/scripted_completion_server.ex
+exec scripts/recovery-mix test test/mojentic/llm/admission_wire_test.exs \
+  test/mojentic/llm/no_hook_wire_test.exs --only no_hook "$@"

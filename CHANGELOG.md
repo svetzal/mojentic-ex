@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Verified
+
+- Established the October 12 admission-without-a-hook guarantee through the real
+  Req boundary across OpenAI, Ollama and oMLX ordinary, structured, event and
+  legacy streaming APIs, Broker and ChatSession. Eligible OpenAI failures may
+  retry; local failures require admission unless transport evidence proves
+  nonacceptance. Tests exercise real connection refusal, exact request replay,
+  forbidden resends, lifecycle identities and default single-attempt behavior.
+  Existing production policy already conformed; no policy change was needed.
+
 ### Fixed
 
 - Recovery admission hooks that finish without allow/reject, including abnormal
