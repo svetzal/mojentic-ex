@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Correct RFC 850 Retry-After century rollover by comparing the complete timestamp
+  against the recovery wall clock's 50-year cutoff, including month, day and time.
+  Dates exactly at the cutoff retain their century; later dates roll back before
+  weekday validation. Deterministic production-Req regressions cover December 1976
+  and one-second cutoff boundaries across gateways, Broker and ChatSession.
 - Completion recovery now accepts RFC 850 and asctime Retry-After dates alongside
   IMF-fixdate and delay seconds. Dates normalize to UTC ISO 8601 in safe metadata;
   their observed wall-clock minimum applies to ordinary, structured and both

@@ -209,7 +209,10 @@ budget starts after the first failure; it does not truncate active generation.
 Retry-After accepts delay seconds and IMF-fixdate (`Thu, 01 Jan 2026 00:00:03 GMT`),
 RFC 850 (`Thursday, 01-Jan-26 00:00:03 GMT`) and asctime
 (`Thu Jan  1 00:00:03 2026`). All date forms normalize to UTC ISO 8601 in safe
-metadata. Recovery calculates the remaining date delay against its observed wall
+metadata. RFC 850 selects the previous century only when the complete candidate
+timestamp is more than 50 years after the recovery wall clock; exactly at the
+cutoff remains in the future century. Weekdays are validated after that selection.
+Recovery calculates the remaining date delay against its observed wall
 clock; past dates contribute zero. Invalid or absent headers keep the jittered
 policy delay. A valid header is a minimum, so recovery schedules the greater of
 that minimum and its policy delay. It refuses a resend when the minimum exceeds

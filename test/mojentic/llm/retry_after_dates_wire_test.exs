@@ -83,7 +83,63 @@ defmodule Mojentic.LLM.RetryAfterDatesWireTest do
     refute_receive {:wire_request, _}
   end
 
-  # Local executable set retry-after-dates-v1. Scripted provider observations
+  @tag :rfc850_rollover
+  test "RFC 850 December 2076 rolls back to 1976 through real Req" do
+    assert_date_boundary(
+      OpenAI,
+      :object,
+      "Friday, 31-Dec-76 00:00:03 GMT",
+      :future,
+      {:http_date, "1976-12-31T00:00:03Z"},
+      ~U[2026-10-16 00:00:03Z]
+    )
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX],
+      entrypoint <- [
+        :complete,
+        :object,
+        :events,
+        :legacy,
+        :broker,
+        :broker_object,
+        :broker_events,
+        :broker_legacy,
+        :session,
+        :session_stream
+      ],
+      {label, header, expected, scenarios} <- [
+        {:december_rollover, "Friday, 31-Dec-76 00:00:03 GMT",
+         {:http_date, "1976-12-31T00:00:03Z"}, [:future]},
+        {:before_cutoff, "Friday, 16-Oct-76 00:00:02 GMT", {:http_date, "2076-10-16T00:00:02Z"},
+         [:ceiling, :cutoff_budget]},
+        {:at_cutoff, "Friday, 16-Oct-76 00:00:03 GMT", {:http_date, "2076-10-16T00:00:03Z"},
+         [:ceiling, :cutoff_budget]},
+        {:after_cutoff, "Saturday, 16-Oct-76 00:00:04 GMT", {:http_date, "1976-10-16T00:00:04Z"},
+         [:future]},
+        {:wrong_selected_weekday, "Friday, 16-Oct-76 00:00:04 GMT", :invalid, [:future]}
+      ],
+      scenario <- scenarios do
+    @gateway gateway
+    @entrypoint entrypoint
+    @header header
+    @expected expected
+    @scenario scenario
+    @tag :rfc850_rollover
+    @tag :retry_after_dates
+    test "#{gateway} #{entrypoint} RFC 850 #{label} #{scenario} compares the complete 50-year cutoff through Req" do
+      assert_date_boundary(
+        @gateway,
+        @entrypoint,
+        @header,
+        @scenario,
+        @expected,
+        ~U[2026-10-16 00:00:03Z]
+      )
+    end
+  end
+
+  # Local executable set retry-after-dates-v2. Scripted provider observations
   # exercise Req and the public consumers; paired provider verification is pending.
   for gateway <- [OpenAI, Ollama, OMLX],
       entrypoint <- [
@@ -152,7 +208,7 @@ defmodule Mojentic.LLM.RetryAfterDatesWireTest do
     end
   end
 
-  defp assert_date_boundary(gateway, entrypoint, header, scenario, expected) do
+  defp assert_date_boundary(gateway, entrypoint, header, scenario, expected, reference \\ nil) do
     body = "provider-sentinel"
     date_header = if header, do: "Retry-After: #{header}\r\n", else: ""
 
@@ -162,10 +218,14 @@ defmodule Mojentic.LLM.RetryAfterDatesWireTest do
     server = start_supervised!({ScriptedCompletionServer, {self(), [reply, reply]}})
     assert_receive {:server_port, port}
     configure(gateway, port)
-    wall = if scenario == :past, do: ~U[2026-01-01 00:00:04Z], else: ~U[2026-01-01 00:00:00Z]
+
+    wall =
+      reference ||
+        if scenario == :past, do: ~U[2026-01-01 00:00:04Z], else: ~U[2026-01-01 00:00:00Z]
+
     config = CompletionConfig.new(recovery: date_policy(wall, scenario))
     error = invoke_with_history(gateway, entrypoint, config)
-    attempts = if scenario in [:ceiling, :budget], do: 1, else: 2
+    attempts = if scenario in [:ceiling, :budget, :cutoff_budget], do: 1, else: 2
     assert error.retry_after == expected
     assert error.operation == operation(entrypoint)
     assert error.resend_permission == permission(scenario)
@@ -304,9 +364,11 @@ defmodule Mojentic.LLM.RetryAfterDatesWireTest do
 
   defp limits(:ceiling), do: [delay_ceiling: 2999]
   defp limits(:budget), do: [budget: 3000]
+  defp limits(:cutoff_budget), do: [budget: 3000, delay_ceiling: 2_000_000_000_000]
   defp limits(_), do: []
   defp permission(:ceiling), do: :retry_after_ceiling
   defp permission(:budget), do: :deadline
+  defp permission(:cutoff_budget), do: :deadline
   defp permission(_), do: :not_granted
 
   defp safe_retry_after({kind, value}), do: %{kind: kind, value: value}

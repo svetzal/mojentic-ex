@@ -216,22 +216,22 @@ defmodule Mojentic.LLM.CompletionRequest do
   defp finish(
          {:error, {:http_response, status, headers, body, cause}},
          _parse,
-         _opts,
+         opts,
          provider,
          operation,
          ids,
          outbound
        ) do
     response = {:ok, %{status_code: status, headers: headers, body: body, phase: :streaming}}
-    {:error, build(response, cause, provider, operation, ids, outbound)}
+    {:error, build(response, cause, provider, operation, ids, outbound, opts)}
   end
 
-  defp finish({:error, cause} = response, _parse, _opts, provider, operation, ids, outbound) do
-    {:error, build(response, cause, provider, operation, ids, outbound)}
+  defp finish({:error, cause} = response, _parse, opts, provider, operation, ids, outbound) do
+    {:error, build(response, cause, provider, operation, ids, outbound, opts)}
   end
 
-  defp finish(response, _parse, _opts, provider, operation, ids, outbound) do
-    {:error, build(response, response, provider, operation, ids, outbound)}
+  defp finish(response, _parse, opts, provider, operation, ids, outbound) do
+    {:error, build(response, response, provider, operation, ids, outbound, opts)}
   end
 
   defp finish_decoded(
@@ -265,8 +265,8 @@ defmodule Mojentic.LLM.CompletionRequest do
     success
   end
 
-  defp finish_decoded({:error, cause}, response, _opts, provider, operation, ids, outbound),
-    do: {:error, build(response, cause, provider, operation, ids, outbound)}
+  defp finish_decoded({:error, cause}, response, opts, provider, operation, ids, outbound),
+    do: {:error, build(response, cause, provider, operation, ids, outbound, opts)}
 
   defp decode(parse, response) do
     parse.(response)
@@ -282,7 +282,7 @@ defmodule Mojentic.LLM.CompletionRequest do
   end
 
   @doc false
-  def build(response, cause, provider, operation, ids, outbound \\ nil) do
+  def build(response, cause, provider, operation, ids, outbound \\ nil, opts \\ []) do
     {category, status, phase, acceptance, reason, eligible} = classify(response, cause)
     {headers, body} = evidence(response)
 
@@ -306,7 +306,7 @@ defmodule Mojentic.LLM.CompletionRequest do
           retry_eligible: eligible,
           provider_code: safe_code(body, outbound),
           provider_request_id: safe_request_id(header(headers, "x-request-id"), outbound),
-          retry_after: retry_after(header(headers, "retry-after")),
+          retry_after: retry_after(header(headers, "retry-after"), opts),
           progress: progress(response, body),
           private_cause: fn -> cause end,
           private_evidence: fn -> %{status: status, headers: headers, body: body, ids: ids} end
@@ -513,17 +513,17 @@ defmodule Mojentic.LLM.CompletionRequest do
 
   defp token_echo?(value, token), do: String.contains?(value, token)
 
-  defp retry_after(nil), do: :absent
-  defp retry_after(:invalid), do: :invalid
+  defp retry_after(nil, _opts), do: :absent
+  defp retry_after(:invalid, _opts), do: :invalid
 
-  defp retry_after(value) do
+  defp retry_after(value, opts) do
     if Regex.match?(~r/\A[0-9]+\z/, value),
       do: {:delay_seconds, String.to_integer(value)},
-      else: parse_date(value)
+      else: parse_date(value, opts)
   end
 
-  defp parse_date(value) do
-    case Req.Utils.parse_http_date(normalize_http_date(value)) do
+  defp parse_date(value, opts) do
+    case Req.Utils.parse_http_date(normalize_http_date(value, opts)) do
       {:ok, date} -> {:http_date, DateTime.to_iso8601(date)}
       _ -> :invalid
     end
@@ -531,13 +531,14 @@ defmodule Mojentic.LLM.CompletionRequest do
 
   # Req accepts IMF-fixdate only. Normalize obsolete recipient formats before
   # using its calendar, time and weekday validation.
-  defp normalize_http_date(value) do
+  defp normalize_http_date(value, opts) do
     case Regex.run(
            ~r/\A(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), ([0-9]{2})-([A-Za-z]{3})-([0-9]{2}) ([0-9:]{8}) GMT\z/,
            value
          ) do
       [_, weekday, day, month, year, time] ->
-        year = http_year(String.to_integer(year))
+        now = Keyword.get(opts, :wall_clock, &DateTime.utc_now/0).()
+        year = http_year(String.to_integer(year), month, day, time, now)
         "#{String.slice(weekday, 0, 3)}, #{day} #{month} #{year} #{time} GMT"
 
       _ ->
@@ -559,11 +560,20 @@ defmodule Mojentic.LLM.CompletionRequest do
     end
   end
 
-  # RFC 9110: a two-digit year more than 50 years ahead means the most
-  # recent past year with those final digits.
-  defp http_year(year) do
-    current = Date.utc_today().year
-    candidate = div(current + 50, 100) * 100 + year
-    if candidate > current + 50, do: candidate - 100, else: candidate
+  # RFC 9110 compares the complete timestamp with the 50-year cutoff.
+  # HTTP dates have whole-second precision; the reference's fractional second
+  # cannot make a candidate in that same second exceed the cutoff.
+  defp http_year(year, month, day, time, now) do
+    candidate = div(now.year + 50, 100) * 100 + year
+    months = ~w(Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec)
+
+    with month_index when is_integer(month_index) <- Enum.find_index(months, &(&1 == month)),
+         {:ok, parsed_time} <- Time.from_iso8601(time) do
+      timestamp = {{candidate, month_index + 1, String.to_integer(day)}, Time.to_erl(parsed_time)}
+      cutoff = {{now.year + 50, now.month, now.day}, {now.hour, now.minute, now.second}}
+      if timestamp > cutoff, do: candidate - 100, else: candidate
+    else
+      _ -> candidate
+    end
   end
 end

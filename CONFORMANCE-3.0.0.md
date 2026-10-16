@@ -3,7 +3,8 @@
 This partial record covers the October 12 **Retry-After dates** correction, the
 **Admission without a hook** guarantee and preservation of the landed
 **Admission without a decision** amendment.
-It does not establish full 3.0.0 readiness. The coordinated release hold remains.
+Admission sections below preserve earlier execution evidence; the date section
+records the current rollover correction. It does not establish full 3.0.0 readiness. The coordinated release hold remains.
 
 ## Contract identity and execution boundary
 
@@ -72,8 +73,8 @@ Existing `stream_recovery_wire_test.exs` cases include:
 The entire suite also covers shared CompletionRequest/StreamRecovery behavior,
 immutable retry payloads, tool execution and stream terminal behavior. Shared
 `Recovery.work/3`, backoff, CompletionRequest and StreamRecovery were unchanged
-during the admission corrections. The date correction below changes only
-CompletionRequest date normalization.
+during the admission corrections. The date correction below changes date normalization and the reference-clock
+configuration passed to it.
 
 ## Admission without a hook executable set
 
@@ -171,115 +172,137 @@ reasoning, model metadata/request fidelity, and the rest of the initiative's
 per-port readiness requirements. None is implemented or certified by this task.
 
 
-## Retry-After dates executable set (2026-10-16)
+## Retry-After dates executable set v2 (2026-10-16)
 
-Local executable set **`retry-after-dates-v1`** reuses the existing scripted TCP
-provider and production Req boundary. Run `scripts/verify-retry-after-dates-contract`;
-it prints the file hashes below, then executes both test files. The unchanged
-`.hone-gates.json` `test --cover` gate also executes the entire set.
+Local executable set **`retry-after-dates-v2`** extends the preserved v1 set with
+RFC 850 full-timestamp cutoff regressions. All v1 three-form, malformed-date,
+legacy and admission cases remain. Run `scripts/verify-retry-after-dates-contract`;
+it prints the three test/support hashes below and executes both test files.
+The unchanged `.hone-gates.json` `test --cover` gate executes the entire set.
 
 | Executable source | SHA-256 |
 | --- | --- |
-| `test/mojentic/llm/retry_after_dates_wire_test.exs` | `881ec59dd02a300338c48e490bc259d606a7c146d1c39a8b69baa45e75ffdfaa` |
+| `scripts/verify-retry-after-dates-contract` | `174b5b70d0ca9cedf5c8df86a0803201fd3fadc4a0aed3ac4f91622bb08273bf` |
+| `test/mojentic/llm/retry_after_dates_wire_test.exs` | `3693f94799a1425464ce217853943ec732caeafcbe0c8e30a916e71f1f9c54f4` |
 | `test/mojentic/llm/recovery_wire_test.exs` | `b707be8df4b68b4cac10c3f2de1837443947df7a4417f94b3cf425a3a77c3f00` |
 | `test/support/scripted_completion_server.ex` | `d03a3cf93eb25350bd8bf2387e70fbf7786e86e663809f55dfd7180f6e782e07` |
 
-Binding source remains the October 12 root amendment and SHA-256 identified
-above; its hash was checked again for this correction. The initiative brief hash
-also matched. Tested Elixir revision: `2829348ec1d6c5592b594141102c9574f051a9e4`
-plus this uncommitted correction. CompletionRequest source SHA-256:
-`30365303f94f1b846c408f09befbcf9083921463a801d2e76b4844568ea91171`.
+Binding source remains the October 12 root amendment and its previously recorded
+identity above. Its SHA-256 was reverified by reading the coordinating checkout
+without modifying it. The relative sibling copy is absent from this isolated
+worktree. The initiative brief's recorded hash also matched in this execution.
+Tested Elixir revision: `67ac83c3135476e3e003e0f169877252f399955f` plus the
+uncommitted rollover correction. The preserved HEAD CompletionRequest hash was
+`30365303f94f1b846c408f09befbcf9083921463a801d2e76b4844568ea91171`,
+and its v1 date-test hash was
+`881ec59dd02a300338c48e490bc259d606a7c146d1c39a8b69baa45e75ffdfaa`,
+matching the earlier conformance record. Corrected production source SHA-256:
+
+- `lib/mojentic/llm/completion_request.ex`:
+  `3b0060739208d893eff74e1a6b41cca6b73ae66782c14b3306ed936e18934869`.
+- `lib/mojentic/llm/stream_recovery.ex`:
+  `800f7612133e9506692e70f67b15988fd29284634321d82681d95d2fa23bc279`.
+
 No package, dependency or runtime version changed. Elixir 1.18.5 and OTP
 28.5.0.7 remain selected by `scripts/recovery-mix` and pinned in CI.
 
-### Real-boundary characterization and named checks
+### Production Req regression and named checks
 
-The recipient format requirement is [RFC 9110 section 5.6.7](https://www.rfc-editor.org/rfc/rfc9110.html#section-5.6.7).
-The installed Req 0.7.5 `Req.Utils.parse_http_date/1` accepts IMF-fixdate and
-rejects RFC 850 and asctime. Before expanding fixtures or documentation,
-`RFC 850 structured recovery honors the date through real Req` failed through
-OpenAI structured completion: `retry_after` was `:invalid` instead of
-`{:http_date, "2026-01-01T00:00:03Z"}` (exit **2**). After the source correction,
-the same command passed (exit **0**):
+The recipient requirement and complete 50-year rule come from
+[RFC 9110 section 5.6.7](https://www.rfc-editor.org/rfc/rfc9110.html#section-5.6.7).
+The installed Req 0.7.5 parser accepts IMF-fixdate only. The preserved v1
+normalization supplies RFC 850 and asctime support before Req's calendar/time/
+weekday validation; this execution corrects only its RFC 850 century selection.
 
-```
-scripts/recovery-mix test test/mojentic/llm/retry_after_dates_wire_test.exs
-```
+Before expanding the matrix or documentation, the new test
+`RFC 850 December 2076 rolls back to 1976 through real Req` failed against the
+preserved implementation: `:invalid` instead of
+`{:http_date, "1976-12-31T00:00:03Z"}` (ExUnit exit 2). After the source correction,
+the identical command passed (exit 0):
+`... test test/mojentic/llm/retry_after_dates_wire_test.exs --only rfc850_rollover`.
+It observes the policy's 7 ms delay, normalized error/history/lifecycle/admission
+metadata and exact identical requests, with an independent negative observation
+for an additional resend. The reference is fixed at `2026-10-16T00:00:03Z` and the
+provider header is `Friday, 31-Dec-76 00:00:03 GMT`.
 
-The probe checks a 3,000 ms scheduled delay, exact identical structured inference
-requests, distinct attempt IDs under one logical request, terminal history and
-an independently observed absence of a third request. The implementation
-normalizes RFC 850 and asctime to IMF-fixdate before using Req's existing
-calendar/time/weekday validation. Two-digit RFC 850 years more than 50 years
-ahead resolve to the most recent past year with those final digits. The policy,
-admission logic and delay-seconds parser are unchanged.
+CompletionRequest now uses the existing recovery wall clock to compare the
+candidate's complete date and time against the 50-year cutoff, before Req's
+calendar/time/weekday validation. StreamRecovery passes that same recovery
+configuration when constructing response metadata. The scheduling and admission
+policies are unchanged. No new mock or transport adapter was introduced.
 
-The new file contains that probe and 570 generated named checks:
+The 210 new generated cases are named
+`<gateway> <entrypoint> RFC 850 <case> <scenario> compares the complete 50-year cutoff through Req`.
+They use the same fixed reference and cover OpenAI, Ollama and oMLX through
+`complete`, `object`, `events`, `legacy`, `broker`, `broker_object`, `broker_events`,
+`broker_legacy`, `session` and `session_stream`:
 
-- `<gateway> <entrypoint> <form> <scenario> normalizes metadata and enforces wire recovery limits`:
-  OpenAI, Ollama and oMLX; `complete`, `object`, `events`, `legacy`, `broker`,
-  `broker_object`, `broker_events`, `broker_legacy`, `session`, `session_stream`;
-  IMF-fixdate, RFC 850 and asctime; future, past, delay-ceiling refusal and
-  recovery-budget refusal. Each date uses a deterministic observed wall clock.
-- `<gateway> <entrypoint> <case> preserves existing Retry-After behavior through Req`:
-  delay seconds, absent headers, invalid text/calendar/weekday/time and an RFC 850
-  date resolving to the previous century.
+- `december_rollover`: December 31 normalizes to 1976, retaining the 7 ms policy delay.
+- `before_cutoff`: `Friday, 16-Oct-76 00:00:02 GMT` normalizes to 2076.
+- `at_cutoff`: `Friday, 16-Oct-76 00:00:03 GMT` also normalizes to 2076.
+- `after_cutoff`: `Saturday, 16-Oct-76 00:00:04 GMT` normalizes to 1976,
+  retaining the 7 ms policy delay.
+- `wrong_selected_weekday`: the after-cutoff timestamp with Friday is rejected
+  as invalid after selecting 1976, retaining the policy delay.
 
-Every generated case observes the production scheduler's sleeper and backoff
-metadata, exact recorded request bytes and trace IDs, route/model/conversation,
-structured schema and stream flag, safe normalized metadata in errors, histories,
-admission contexts and lifecycle events. It asserts unique attempt IDs, one
-logical request, terminal history and an independent negative wire observation.
-Refusal cases observe no sleeper call and no resend. Streaming session failures
-cannot finalize successfully; prior history remains intact. Provider, credential
-and input sentinels never enter safe metadata. No Recovery results are mocked.
+Before/at cases separately prove `:retry_after_ceiling` and `:deadline` refusals:
+exactly one request, no sleeper or backoff and no unauthorized resend. The
+`cutoff_budget` fixture raises only its delay ceiling to let the budget decision
+be reached; the default ceiling would otherwise reject first. The other scenarios
+observe exactly two identical requests. Every case verifies normalized safe
+metadata, unique attempt IDs, unchanged logical identity, route/model/full prior
+conversation, structured schema and stream flag, unchanged session history and
+failed stream finalization. Sentinel content stays out of safe metadata.
 
-The existing ordinary/structured success cases
-`<gateway> <operation> real Req Retry-After <header> respects observed wall clock and policy minimum`
-now include RFC 850 and asctime alongside IMF-fixdate, delay seconds, past dates
-and invalid text. They verify successful completion, the scheduled delay and
-unchanged full payload. The entire suite preserves both admission guarantees and
-explicit decisions.
+The preserved tests still cover all three date forms, future/past dates, ceiling
+and budget refusals, seconds/absent/invalid headers, invalid calendar/time/weekday,
+previous-century dates and ordinary/structured success. The full suite also runs
+both landed admission guarantees and explicit decisions without modifying them.
 
-### Date verification results
+### Current verification results
 
-Commands use `scripts/recovery-mix` under the existing pinned runtime unless a
-different executable is named. All `.hone-gates.json` entries were executed.
-The release hold and Foundry finalization rules remain in force.
+All commands below use `scripts/recovery-mix` with Elixir 1.18.5 and OTP
+28.5.0.7 unless another executable is named. Every discovered `.hone-gates.json`
+entry was executed. The existing CI already caches `priv/plts/`, which remains
+ignored by Git; no gate, runtime, dependency or suppression configuration changed.
 
 | Command | Exit | Result |
 | --- | --- | --- |
 | `format --check-formatted` | 0 | Passed |
 | `compile --warnings-as-errors` | 0 | Passed |
-| `MIX_ENV=test ... compile --warnings-as-errors` | 0 | Passed |
-| `credo --strict` | 0 | Zero issues after splitting the oversized test helper |
-| `scripts/verify-retry-after-dates-contract` | 0 | 1,213 tests, zero failures |
-| `test` | 0 | 22 doctests, 4,183 tests, zero failures, 19 configured integration exclusions |
-| `test --cover` | 0 | 22 doctests, 4,183 tests, zero failures, 19 configured integration exclusions; 90.25% coverage against the unchanged 80% floor |
-| `dialyzer` | 0 | Zero errors and zero skipped warnings |
-| `MIX_ENV=test ... dialyzer` | 0 | Zero errors and zero skipped warnings |
-| `deps.audit` | 0 | No vulnerabilities reported; cache freshness independently checked |
-| `hex.audit` | 0 | No retired or advisory packages reported |
-| `sobelow --config` | 0 | Passed with the existing configuration |
-| `hex.outdated --all` | 1 | Informational available upgrades; dependencies unchanged |
-| `docs` | 0 | Built; existing broken-link warnings remain |
+| `MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | Passed |
+| `credo --strict` | 0 | Zero issues |
+| `test test/mojentic/llm/retry_after_dates_wire_test.exs --only rfc850_rollover` | 0 | 211 executed checks passed; 571 unrelated cases excluded |
+| `scripts/verify-retry-after-dates-contract` | 0 | Local v2 consumer-side set: 1,424 tests, zero failures |
+| `test` | 0 | 22 doctests, 4,394 tests, zero failures; 19 configured integration exclusions |
+| `test --cover` | 0 | Same totals; 90.24% coverage against the unchanged 80% floor |
+| `dialyzer` | 0 | Zero errors, skipped warnings and unnecessary skips |
+| `MIX_ENV=test scripts/recovery-mix dialyzer` | 0 | Zero errors, skipped warnings and unnecessary skips |
+| `deps.audit` | 0 | No vulnerabilities found; advisory freshness verified separately |
+| `hex.audit` | 0 | No retired or security advisory packages found |
+| `sobelow --config` | 0 | Configured scan completed; existing warnings noted below |
+| `hex.outdated --all` | 1 | Informational available upgrades; no dependency changes |
+| `docs` | 0 | Built; existing link warnings noted below |
 
-MixAudit's refresh attempt cannot write its read-only external `FETCH_HEAD`.
-The installed advisory revision `935abf7410a2bbb18e12579dee6e31267c3ed244`
-was independently verified equal to upstream `main` via `git ls-remote` in this
-execution. No advisory suppression was added. Sobelow retains the existing
-`Traversal.FileModule` exclusion. ExDoc warnings concern README `LICENSE`, the
-absent sibling `../RELEASE-3.0.0.md` in this isolated worktree and the existing
-`deps/igniter/usage-rules.md` link. No gate was weakened.
+MixAudit cannot refresh the read-only external cache (`FETCH_HEAD`). Its installed
+revision `935abf7410a2bbb18e12579dee6e31267c3ed244` matched upstream `main` via
+`git ls-remote` in this execution. No advisory suppression was added. Sobelow
+retains the existing `Traversal.FileModule` exclusion; its parser warns about
+quoted keywords in the unchanged lockfile. This certifies the configured scan,
+not an unfiltered audit. ExDoc's existing warnings concern README `LICENSE`, the
+absent relative sibling `../RELEASE-3.0.0.md`, and the
+`deps/igniter/usage-rules.md` link. No unrelated fixes or upgrades were made.
 
 ### Paired verification remains unfinished
 
-`retry-after-dates-v1` is a **local** executable-set identity, not a jointly
+`retry-after-dates-v2` is a **local** executable-set identity, not a jointly
 verified contract. Local consumer-side verification exercises gateway, Broker
 and ChatSession requirements using a scripted provider. Real provider verification
-against the same executable set is **missing**. No other repository was changed
-or tested. Paired consumer/provider commits, supported old/new version semantics,
-optional-field cases and both verification commands/results remain unavailable.
-Coordination must supply a shared versioned set, derive doubles from that verified
-set and run verification in both repositories' required gates. This task does
-not claim cross-repository compatibility, full 3.0.0 conformance or release readiness.
+against this same executable set is **missing**: no provider commit, command or
+result is available. No other repository was changed or tested. Paired
+consumer/provider revisions, supported old/new version semantics and optional-field
+cases remain a coordination gap. Coordination must supply a shared versioned set,
+derive doubles from that verified set and run verification in both repositories'
+required gates. This task does not establish cross-repository compatibility,
+full 3.0.0 conformance or release readiness. The coordinated release hold remains;
+Foundry owns finalization and these changes remain uncommitted.

@@ -44,6 +44,7 @@ defmodule Mojentic.LLM.StreamRecovery do
               ref: ref,
               ids: ids,
               outbound: {body, headers},
+              recovery: recovery,
               provider: provider,
               mode: mode,
               parser: parser(provider),
@@ -757,7 +758,8 @@ defmodule Mojentic.LLM.StreamRecovery do
         state.provider,
         operation(state.mode),
         state.ids,
-        state.outbound
+        state.outbound,
+        state.recovery
       )
 
     error = response_metadata(error, reason, state)
@@ -833,7 +835,8 @@ defmodule Mojentic.LLM.StreamRecovery do
         state.provider,
         operation(state.mode),
         state.ids,
-        state.outbound
+        state.outbound,
+        state.recovery
       )
 
     %{

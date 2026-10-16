@@ -485,8 +485,10 @@ Broker.generate(broker, messages)
 
 Retry-After dates accept IMF-fixdate, RFC 850 and asctime and normalize to UTC
 ISO 8601 in safe recovery metadata. The observed wall clock determines the
-remaining delay; past dates contribute zero. Recovery uses the greater of the
-header minimum and jittered policy delay. Invalid or absent headers preserve the
+remaining delay and the complete RFC 850 50-year cutoff; exactly at the cutoff
+retains the future century, and later timestamps select the previous century
+before weekday validation. Past dates contribute zero. Recovery uses the greater
+of the header minimum and jittered policy delay. Invalid or absent headers preserve the
 policy delay. The delay ceiling and recovery budget can refuse the resend.
 These rules also apply to structured output and session completions.
 
