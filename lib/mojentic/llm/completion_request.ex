@@ -268,8 +268,17 @@ defmodule Mojentic.LLM.CompletionRequest do
   defp finish_decoded({:error, cause}, response, opts, provider, operation, ids, outbound),
     do: {:error, build(response, cause, provider, operation, ids, outbound, opts)}
 
-  defp decode(parse, response) do
-    parse.(response)
+  defp decode(parse, {:ok, %{body: body}} = response) do
+    case Jason.decode(body) do
+      {:ok, %{"choices" => [%{"finish_reason" => "length"} | _]}} ->
+        {:error, {:incomplete_completion, "length"}}
+
+      {:ok, %{"done_reason" => "length"}} ->
+        {:error, {:incomplete_completion, "length"}}
+
+      _ ->
+        parse.(response)
+    end
   rescue
     exception -> {:error, exception}
   end
@@ -323,7 +332,10 @@ defmodule Mojentic.LLM.CompletionRequest do
     do: {:protocol, nil, :unknown, :unknown, :capture_failed, false}
 
   defp classify(_response, :unsupported_options),
-    do: {:protocol, nil, :unknown, :no, :unsupported_options, false}
+    do: {:policy, nil, :unknown, :no, :unsupported_options, false}
+
+  defp classify({:ok, %{status_code: 200}}, {:incomplete_completion, "length"}),
+    do: {:protocol, 200, :decoding, :yes, :incomplete_completion, false}
 
   # An interrupted 200 body is transport evidence, never a decoded completion.
   # Non-2xx responses retain HTTP precedence in the status clause below.

@@ -22,6 +22,12 @@ defmodule Mojentic.LLM.CompletionConfig do
   completion with `:capture_failed` and never authorizes another inference.
   See `Mojentic.LLM.Recovery` for capture limits.
 
+  Invalid non-nil recovery policies return `Mojentic.LLM.CompletionError` with
+  `category: :policy` and `reason: :unsupported_options` without dispatching HTTP.
+  Recovery-enabled completions reject provider `"length"` termination before
+  decoding structured content or executing tools. Broker and ChatSession retain
+  the completion error and its cause; see `Mojentic.LLM.CompletionError`.
+
   Provides settings for temperature, context window size, and token limits.
 
   ## Examples

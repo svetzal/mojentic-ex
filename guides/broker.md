@@ -531,3 +531,47 @@ limits. Both streaming APIs also support opt-in request recovery; see the
 [streaming guide](streaming.md) for interruption, progress and tool safety.
 Recovery-enabled streaming suppresses default payload tracing and exposes safe
 lifecycle metadata through the recovery observer.
+
+### Migrating typed policy and length failures
+
+With recovery enabled, match invalid policy errors using
+`%Mojentic.LLM.CompletionError{category: :policy, reason: :unsupported_options}`.
+Previously their category was `:protocol`. They dispatch no HTTP request and
+have zero wire attempts and empty history. `recovery: nil` disables recovery;
+it is not an invalid policy.
+
+A provider `"length"` finish now returns a non-retryable protocol completion
+error from ordinary and structured gateways before interpreting truncated JSON
+or executing tools. Recovery-enabled OpenAI and oMLX legacy streams also retain
+the length cause instead of replacing it with `:invalid_stream_event`.
+Broker and ChatSession propagate that same error. Use
+`CompletionError.cause(error)` to explicitly inspect
+`{:incomplete_completion, "length"}` or the event stream's
+`{:incomplete_completion, %{finish_reason: "length"}}` evidence map.
+Capture failures retain `:capture_failed`, without retaining sensitive callback
+exception messages. These failures never grant replay permission.
+
+```elixir
+alias Mojentic.LLM.{ChatSession, CompletionError}
+
+case ChatSession.send(session, "Explain this result", recovery: []) do
+  {:ok, text, updated_session} ->
+    {:ok, text, updated_session}
+
+  {:error, %CompletionError{category: :policy} = error} ->
+    {:error, CompletionError.safe_metadata(error)}
+
+  {:error, %CompletionError{} = error} ->
+    # Persist only safe metadata; cause/1 and received_evidence/1 are explicit
+    # sensitive inspection APIs. The caller owns any continuation decision.
+    {:error, CompletionError.safe_metadata(error)}
+
+  {:error, reason} ->
+    {:error, reason}
+end
+```
+
+Successful recovery-disabled APIs retain their existing behavior, including
+oMLX's ordinary length-limited gateway response. A failed recovery session
+stream yields an error, and `ChatSession.finalize_stream/1` returns that error;
+it cannot turn partial output into a successful assistant message.

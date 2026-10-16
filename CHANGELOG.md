@@ -30,6 +30,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Recovery policies now fail with `CompletionError` category `:policy` on every
+  gateway, Broker and ChatSession entrypoint, with zero HTTP dispatch. Capture
+  failures retain their typed completion error and `:capture_failed` cause.
+  Length-limited ordinary and structured responses now fail inside recovery
+  before parsing truncated JSON or executing tools. OpenAI and oMLX recovery
+  legacy streams retain `{:incomplete_completion, "length"}` instead of losing
+  it to `:invalid_stream_event`. Failed session streams cannot finalize as success.
+  Migration: match policy category `:policy` instead of `:protocol`; inspect
+  length/capture causes through `CompletionError.cause/1`. Recovery-disabled
+  successful behavior, including legacy oMLX length responses, is preserved.
+
 - Recovery-enabled oMLX streams now skip data frames whose model is exactly
   `keepalive` before semantic observation, parsing and fallback capture evidence.
   Their bytes remain raw progress; they cannot change provider model, usage,

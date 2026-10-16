@@ -191,3 +191,10 @@ limits; they do not expose every gateway sampling/reasoning control. The richer
 control/schema/tool-history matrix is tested through gateways and brokers.
 `Message` does not represent native reasoning history; ordinary assistant text
 must not be treated as reasoning evidence.
+
+Recovery-enabled `send/3` and `send_stream/3` preserve `CompletionError` values
+for invalid policies, capture failures and provider length termination. Invalid
+policies have category `:policy` and dispatch no request. Failed streaming handles
+return the same error from `finalize_stream/1`; the original session history
+remains available. See the [typed error migration guidance](broker.md#migrating-typed-policy-and-length-failures)
+for matching error categories and explicitly inspecting retained causes.

@@ -3,6 +3,20 @@ defmodule Mojentic.LLM.CompletionError do
   Safe completion failure with bounded attempt history. `safe_metadata/1` is the serialization
   boundary; `cause/1` explicitly reveals the original provider or parser cause.
   Retry eligibility never grants permission to resend.
+
+  Invalid recovery policies return this struct with `category: :policy`,
+  `reason: :unsupported_options`, `acceptance: :no`, zero wire attempts and empty
+  history. The retained cause is `:unsupported_options`; policy values are not
+  retained. This applies to both gateway stream APIs, Broker and ChatSession.
+
+  Capture failures retain the stable `:capture_failed` cause. Callback exceptions
+  and their sensitive messages are intentionally discarded at the capture boundary.
+  Provider length termination retains `{:incomplete_completion, "length"}` for
+  ordinary completions and compatible legacy streams; event streams may retain
+  `{:incomplete_completion, evidence}` with `evidence.finish_reason == "length"`.
+  These protocol failures never authorize automatic replay or tool execution.
+  Safe metadata excludes these causes and received payloads. Recovery-disabled
+  entrypoints keep their legacy result and error shapes.
   """
 
   defstruct [
@@ -28,7 +42,13 @@ defmodule Mojentic.LLM.CompletionError do
   ]
 
   @type category ::
-          :transport | :http | :provider_response | :protocol | :cancellation | :client_timeout
+          :transport
+          | :http
+          | :provider_response
+          | :protocol
+          | :policy
+          | :cancellation
+          | :client_timeout
   @type phase :: :connecting | :sending | :awaiting_headers | :streaming | :decoding | :unknown
   @type acceptance :: :yes | :no | :unknown
   @type semantic_progress :: %{

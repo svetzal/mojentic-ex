@@ -1,12 +1,13 @@
 # 3.0.0 recovery conformance (partial)
 
-This partial record now also covers the October 12 **Capabilities** amendment,
+This partial record now also covers the October 12 **Typed errors** guarantee
+and the **Capabilities** amendment,
 alongside the **oMLX keepalive frames** guarantee,
 the **Retry-After dates** correction, the
 **Admission without a hook** guarantee and preservation of the landed
 **Admission without a decision** amendment.
 Earlier sections preserve their execution evidence; the capabilities section
-records the current correction. This does not establish full
+records that correction; the typed-errors section records this execution. This does not establish full
 3.0.0 readiness. The coordinated release hold remains.
 
 ## Contract identity and execution boundary
@@ -567,3 +568,220 @@ No runtime or dependency upgrade, suppression, version change or release action
 was taken. Proof JSON field types, actual red/green exit codes, referenced log
 existence and executable fixture/verifier hashes were validated. Execution logs
 and proof remain Foundry-owned scratch, not project artifacts.
+
+## October 16 typed errors correction (partial)
+
+Only the October 12 **Typed errors** guarantee is addressed by this execution.
+The binding source revision `4b08dcd1d87f520a4c70928c33a2bc84c228093d` was read
+from the source repository and its file hash independently verified as
+`a53a3a4eb118fa4687dd703d6ce918dd40dd6cb4eda796abc6c429a6e932e7a3`.
+The Foundry initiative brief hash was independently verified as
+`ea6a0efa56bfb3cd74b5ce728f80cc33c6fbd853114bec94b8aabe79f5d28e6e`.
+Tested Elixir source is base commit
+`b85a27ab37bd16e6ee82950ea08f00c5356c5075` plus the uncommitted changes in this
+execution. No refs, versions, runtime pins or dependencies were changed.
+
+### Characterization and corrections
+
+The production-Req probe `session retains typed length failure through the real
+Req boundary` rejected the original implementation (exit 2): ChatSession returned
+`{:error, {:incomplete_completion, "length"}}` outside the typed completion error.
+After correction the same probe passed (exit 0), retaining the exact received
+body and the `{:incomplete_completion, "length"}` cause inside `CompletionError`.
+This rejecting case was an assertion failure after an actual HTTP request, not
+the earlier dependency-restoration failure. Fixture expansion followed this
+red/green check.
+
+The policy probe `invalid session stream policy is a typed policy failure` also
+rejected the original category (exit 2). The expanded matrix exposed compatible
+legacy streams losing length to `:invalid_stream_event` (exit 2). Corrections:
+
+- Invalid policies use the idiomatic discriminated type
+  `%CompletionError{category: :policy, reason: :unsupported_options}` everywhere.
+  The existing stable reason and retained cause remain `:unsupported_options`;
+  policy values are never retained. Acceptance is `:no`, wire attempts are zero,
+  and history is empty. No new wrapper can be swallowed by Broker streaming.
+- Ordinary recovery rejects provider length termination before parsing structured
+  content or tools, including invalid truncated object JSON. Its category is
+  `:protocol`, reason `:incomplete_completion`, and retained cause
+  `{:incomplete_completion, "length"}`. This prevents Broker's otherwise untyped
+  tuple and prevents a structured parse error from replacing the length cause.
+- Recovery-enabled OpenAI/oMLX legacy streams retain the same length cause before
+  `[DONE]` can replace it. A rejected terminal frame does not complete tools.
+  Event streams retain their existing typed incomplete-completion evidence map;
+  semantic output may still set safe reason `:stream_interrupted`.
+- Capture failures already propagated as `CompletionError` through these public
+  boundaries, retaining `:capture_failed`. The capture boundary intentionally
+  discards callback exception messages; no original callback exception is claimed
+  as retained. No capture production change was justified by characterization.
+
+The correction does not change recovery-disabled APIs, including successful
+legacy oMLX ordinary length responses. Existing admission, capability, Retry-After,
+keepalive, cancellation and bounded-history suites remain required preservation
+checks. Reasoning, metadata and other amendments remain outside this objective.
+
+### Executable boundary contract and verification limits
+
+Local executable set: **typed-errors-v1**, implemented in
+`test/mojentic/llm/typed_errors_wire_test.exs`. It reuses the existing
+`ScriptedCompletionServer` and production `ReqClient` mechanism, actual gateway
+parsers, Broker and ChatSession. ExUnit discovery runs it in the normal required
+`test --cover` gate. The file hash and final command results are recorded below.
+
+Named cases include:
+
+- `<gateway> <entrypoint> <policy|capture|length> retains typed cause and forbids replay`:
+  99 cases over OpenAI, Ollama and oMLX; ordinary, object, event and legacy gateway
+  calls; ordinary, native response, object, event and legacy Broker calls; session send and stream.
+  Each policy case exercises eight malformed policies, callback arity, unknown
+  options, invalid statuses and invalid categories, asserting the concrete typed
+  discriminator and retained cause, zero dispatch and safe metadata.
+- `<gateway> <object|broker_object> truncated JSON retains length rather than a parser error`:
+  six cases preserve the concrete incomplete-completion cause and exact body.
+- `<gateway> legacy ordinary length response remains successful without recovery`:
+  three cases preserve the successful response and reported finish reason.
+- The two named red/green probes above remain executable regression cases.
+
+Failure cases assert concrete `CompletionError` values and original causes,
+non-retryability, admission never invoked, no second request and no tool execution
+(including completed ordinary tool calls and legacy terminal tool fragments).
+They compare exact recorded request bodies with opt-in trace bodies, assert the
+full ordered prior conversation and query, model, bounded one-attempt history,
+logical and attempt identity, safe lifecycle terminal metadata and privacy.
+Streams have exactly one terminal error, no successful completion, and failed
+session finalization returns that same error. Raw received stream frames are
+verified through opt-in trace data; protocol stream errors do not promise raw
+frames in `received_evidence/1`. Ordinary received bodies are checked exactly.
+
+This is a **local executable contract**, not a jointly verified cross-repository
+contract. No external wire schema or provider endpoint was changed. The public
+Elixir error category and recovery length behavior changed; external consumers
+must coordinate matching and cause handling against this same executable set.
+No shared paired verifier currently exists for this boundary. Provider
+implementation commits tested for OpenAI/Ollama/oMLX: **none**. Their verification
+commands/results against typed-errors-v1: **unavailable / not run**. External
+consumer commits, commands and verification results: **unavailable / not run**.
+Local scripted responses are not doubles derived from jointly verified provider
+contracts, and independent mocks are not compatibility evidence. Missing paired
+verification remains unfinished coordination work in separately authorized
+repositories. No other repository was edited. The six-port release hold remains;
+this partial result does not establish full 3.0.0 readiness.
+
+Executable set SHA-256 (fixture, invocation and assertions together):
+`0f8deb376a9382012431320f1b26361cb0cc898863443e3bcea8ed587b3f3af9`.
+The focused verifier command
+`scripts/recovery-mix test test/mojentic/llm/typed_errors_wire_test.exs`
+passed with **110 tests, zero failures**. Its captured stdout was separately
+checked for `capture-secret`, `input-sentinel` and `tool-secret`, with none found.
+
+The idiomatic policy representation is a discriminated `CompletionError`, rather
+than a separate exception class; callers can match the struct and `:policy`
+category directly. This preserves the existing reason atom and streaming error
+propagation. No contract ambiguity requiring a root amendment was identified;
+the genuine outstanding gap is paired external verification.
+
+An additional baseline comparison ran the **same final 110-case set** after
+loading `CompletionRequest` and `StreamRecovery` directly from `git show
+b85a27ab37bd16e6ee82950ea08f00c5356c5075:<module path>` into a separate VM.
+It used `MIX_ENV=test scripts/recovery-mix run --no-compile --no-start` with
+`-r` for the temporary original-module source and
+`-e 'Mix.Task.run("test", ["--no-compile", "test/mojentic/llm/typed_errors_wire_test.exs"])'`.
+No source or compiled artifact in the working tree was replaced. That comparison
+returned **exit 2: 110 tests, 65 failures**: 34 policy cases/probe and 31 length
+cases/probe, including truncated structured content. All 33 capture cases,
+nine already-conforming length stream cases and three recovery-disabled legacy
+checks passed against original code. Expected module-redefinition warnings were
+confined to this diagnostic VM; they were not suppressed. The corrected final
+set returned **exit 0: 110 tests, zero failures** under its normal test command.
+This additional comparison supplements, rather than replaces, the initial
+before-correction red/green proof.
+
+### Fresh execution quality results
+
+All Mix commands below use `scripts/recovery-mix`, which verifies the existing
+CI pins: Elixir **1.18.5**, Erlang/OTP **28.5.0.7**. CI already caches project
+PLTs in `priv/plts/`, and that path is already ignored. This run built a fresh
+PLT without changing those settings. No precommit alias exists.
+
+The first strict Credo run found one oversized test helper; it was split into
+wire and lifecycle assertions, and strict Credo then passed with zero warnings.
+A full-suite run loaded an earlier lifecycle assertion that incorrectly expected
+`:yes` acceptance for length-terminated streams. It produced 15 assertion
+failures; the model deliberately retains `:unknown` there. The assertion was
+corrected without changing production acceptance behavior. The corrected focused
+suite passed all 101 tests before the final full-suite runs.
+
+Additional completed checks:
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `scripts/recovery-mix dialyzer` | 0 | Zero errors, skips or unnecessary skips |
+| `scripts/recovery-mix deps.audit` | 0 | No vulnerabilities found; freshness qualified below |
+| `scripts/recovery-mix hex.audit` | 0 | No retired or security-advisory packages |
+| `scripts/recovery-mix sobelow --config` | 0 | Existing configured scan; qualifications below |
+| `scripts/recovery-mix hex.outdated --all` | 1 | Informational available updates; no dependencies changed |
+| `scripts/recovery-mix docs` | 0 | Built with existing unresolved-link warnings |
+
+MixAudit's attempted advisory refresh could not open the external read-only
+`.git/FETCH_HEAD`. The installed advisory repository revision
+`935abf7410a2bbb18e12579dee6e31267c3ed244` was independently compared with
+`git ls-remote https://github.com/mirego/elixir-security-advisories.git refs/heads/main`
+(exit 0) and matched upstream during this execution. Its successful audit is
+qualified by that refresh failure and independent freshness check. No advisory
+suppression or allowlist was added or modified.
+
+Sobelow retains the pre-existing `Traversal.FileModule` exclusion. It warns
+about the absence of a Phoenix router (this library is not a Phoenix project)
+and emits quoted-keyword parser warnings for the unchanged lockfile. Its exit 0
+describes that configured scan, not an expanded audit scope. ExDoc retains its
+existing unresolved links to `LICENSE`, `../RELEASE-3.0.0.md` and
+`deps/igniter/usage-rules.md`; no new unresolved links were reported. The outdated
+check is informational, not a vulnerability finding. No threshold or exclusion
+was lowered to obtain a passing result.
+
+The final public-API review added `Broker.generate_response/4` to the matrix,
+including policy, capture and length checks across all three adapters. No further
+production change was needed. Strict Credo was rerun and again passed with zero
+warnings. The full plain test run before this final nine-case addition passed
+with **22 doctests, 4,588 tests, zero failures and 19 existing integration
+exclusions**. The first passing coverage run also loaded the earlier set: 4,588 tests,
+90.33% coverage (exit 0). Because the final nine cases had not been loaded in
+that run, fresh full plain and coverage runs were started against the final
+110-case fixture. Their results are recorded below.
+
+Both local sides execute the same typed-errors-v1 verifier command and hash above,
+against base `b85a27ab37bd16e6ee82950ea08f00c5356c5075` plus these working changes:
+
+| Local side | Verification result |
+| --- | --- |
+| Actual public gateway adapters (OpenAI, Ollama, oMLX) | 42 gateway cases pass within the same 110-case verifier |
+| Actual Broker and ChatSession consumers | 68 consumer cases pass within that verifier |
+| External provider implementations / external repository consumers | Not run; commits unavailable; paired cross-repository verification unfinished |
+
+The script provides received HTTP observations for exercising local adapters;
+it remains unverified against real external providers. This table does not
+convert scripted observations into an external provider compatibility claim.
+
+Final required checks against the complete final fixture:
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `scripts/recovery-mix format --check-formatted` | 0 | Final source formatted |
+| `scripts/recovery-mix compile --warnings-as-errors` | 0 | Final development compilation |
+| `MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | Final test compilation |
+| `scripts/recovery-mix credo --strict` | 0 | Zero warnings on final source and fixture |
+| `scripts/recovery-mix test` | 0 | 22 doctests, 4,597 tests, zero failures, 19 existing integration exclusions; 551.3 seconds |
+| `scripts/recovery-mix test --cover` | 0 | 22 doctests, 4,597 tests, zero failures, 19 existing exclusions; 551.4 seconds; **90.33%** coverage above the unchanged **80%** threshold |
+
+Both final full runs include all 110 typed-errors-v1 cases, including the native
+Broker response entrypoint. The focused verifier and original-code comparison
+use the same final executable set hash recorded above. The real-boundary
+behavioral proof JSON was validated for exact field names and types, nonempty
+source-change description, actual rejecting exit 2 and corrected exit 0,
+matching preserved source logs and existence of both referenced log files.
+Final validation also checks the executable-set hash against this record, focused
+privacy sentinels, all quality outcomes, unchanged runtime/dependency/release
+configuration, a clean whitespace diff and nonempty uncommitted source changes.
+Execution logs and proof are Foundry-owned scratch, not committed project
+artifacts. Foundry owns Git finalization; no commit, push, ref change, version
+bump, publication or release was performed.

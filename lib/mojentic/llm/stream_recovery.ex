@@ -630,6 +630,10 @@ defmodule Mojentic.LLM.StreamRecovery do
     end)
   end
 
+  defp parse_frame(%{"choices" => [%{"finish_reason" => "length"} | _]}, events, state) do
+    {:ok, events ++ [{:error, {:incomplete_completion, "length"}}], state}
+  end
+
   defp parse_frame(frame, events, state) do
     delta = message(frame)
     content = if present?(delta["content"]), do: [{:content, delta["content"]}], else: []
