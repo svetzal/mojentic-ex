@@ -523,9 +523,47 @@ defmodule Mojentic.LLM.CompletionRequest do
   end
 
   defp parse_date(value) do
-    case Req.Utils.parse_http_date(value) do
+    case Req.Utils.parse_http_date(normalize_http_date(value)) do
       {:ok, date} -> {:http_date, DateTime.to_iso8601(date)}
       _ -> :invalid
     end
+  end
+
+  # Req accepts IMF-fixdate only. Normalize obsolete recipient formats before
+  # using its calendar, time and weekday validation.
+  defp normalize_http_date(value) do
+    case Regex.run(
+           ~r/\A(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday), ([0-9]{2})-([A-Za-z]{3})-([0-9]{2}) ([0-9:]{8}) GMT\z/,
+           value
+         ) do
+      [_, weekday, day, month, year, time] ->
+        year = http_year(String.to_integer(year))
+        "#{String.slice(weekday, 0, 3)}, #{day} #{month} #{year} #{time} GMT"
+
+      _ ->
+        normalize_asctime(value)
+    end
+  end
+
+  defp normalize_asctime(value) do
+    case Regex.run(
+           ~r/\A([A-Za-z]{3}) ([A-Za-z]{3}) ([ 0-9][0-9]) ([0-9:]{8}) ([0-9]{4})\z/,
+           value
+         ) do
+      [_, weekday, month, day, time, year] ->
+        day = day |> String.trim_leading() |> String.pad_leading(2, "0")
+        "#{weekday}, #{day} #{month} #{year} #{time} GMT"
+
+      _ ->
+        value
+    end
+  end
+
+  # RFC 9110: a two-digit year more than 50 years ahead means the most
+  # recent past year with those final digits.
+  defp http_year(year) do
+    current = Date.utc_today().year
+    candidate = div(current + 50, 100) * 100 + year
+    if candidate > current + 50, do: candidate - 100, else: candidate
   end
 end

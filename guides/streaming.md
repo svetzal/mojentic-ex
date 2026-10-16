@@ -206,7 +206,16 @@ admission and backoff. Consumer halt and consumer process termination close the
 locally owned request and recovery work. The production transport applies timeouts
 to connection setup and idle waits, without a total generation timeout. A recovery
 budget starts after the first failure; it does not truncate active generation.
-Retry-After cannot bypass the delay ceiling or recovery deadline.
+Retry-After accepts delay seconds and IMF-fixdate (`Thu, 01 Jan 2026 00:00:03 GMT`),
+RFC 850 (`Thursday, 01-Jan-26 00:00:03 GMT`) and asctime
+(`Thu Jan  1 00:00:03 2026`). All date forms normalize to UTC ISO 8601 in safe
+metadata. Recovery calculates the remaining date delay against its observed wall
+clock; past dates contribute zero. Invalid or absent headers keep the jittered
+policy delay. A valid header is a minimum, so recovery schedules the greater of
+that minimum and its policy delay. It refuses a resend when the minimum exceeds
+the delay ceiling or the scheduled delay reaches the remaining recovery budget.
+The same rules apply to ordinary and structured completions, Broker and
+ChatSession. Admission still governs permission to resend.
 
 ### Permanent HTTP status policy migration (October 10)
 

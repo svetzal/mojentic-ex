@@ -483,6 +483,13 @@ Broker.generate(broker, messages)
 
 ## Opt-in completion recovery
 
+Retry-After dates accept IMF-fixdate, RFC 850 and asctime and normalize to UTC
+ISO 8601 in safe recovery metadata. The observed wall clock determines the
+remaining delay; past dates contribute zero. Recovery uses the greater of the
+header minimum and jittered policy delay. Invalid or absent headers preserve the
+policy delay. The delay ceiling and recovery budget can refuse the resend.
+These rules also apply to structured output and session completions.
+
 Set `CompletionConfig.new(recovery: [max_attempts: 3, budget: 60_000])` to
 recover eligible non-streaming completions. The default remains disabled.
 Without a hook, eligible OpenAI failures may retry. Ollama and oMLX stop with

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Local executable set; paired cross-repository verification remains pending.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+echo 'retry-after-dates-v1'
+sha256sum test/mojentic/llm/retry_after_dates_wire_test.exs \
+  test/mojentic/llm/recovery_wire_test.exs \
+  test/support/scripted_completion_server.ex
+exec scripts/recovery-mix test test/mojentic/llm/retry_after_dates_wire_test.exs \
+  test/mojentic/llm/recovery_wire_test.exs "$@"

@@ -1749,6 +1749,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
   for {header, minimum} <- [
         {"2", 2000},
         {"Thu, 01 Jan 2026 00:00:03 GMT", 3000},
+        {"Thursday, 01-Jan-26 00:00:03 GMT", 3000},
+        {"Thu Jan  1 00:00:03 2026", 3000},
         {"Wed, 31 Dec 2025 23:59:00 GMT", 0},
         {"garbage", 0}
       ],
@@ -2388,6 +2390,12 @@ defmodule Mojentic.LLM.RecoveryWireTest do
   defp tool_requests([initial, failed, recovered], :broker), do: [initial, failed, recovered]
 
   defp expected_retry_after("2"), do: %{kind: :delay_seconds, value: 2}
+
+  defp expected_retry_after("Thu Jan  1 00:00:03 2026"),
+    do: %{kind: :http_date, value: "2026-01-01T00:00:03Z"}
+
+  defp expected_retry_after("Thursday, 01-Jan-26 00:00:03 GMT"),
+    do: %{kind: :http_date, value: "2026-01-01T00:00:03Z"}
 
   defp expected_retry_after("Thu, 01 Jan 2026 00:00:03 GMT"),
     do: %{kind: :http_date, value: "2026-01-01T00:00:03Z"}

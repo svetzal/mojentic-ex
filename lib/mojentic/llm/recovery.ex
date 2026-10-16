@@ -24,6 +24,13 @@ defmodule Mojentic.LLM.Recovery do
   Send `{:cancel, cancel_ref}` to the completion caller to cancel locally.
   Local HTTP cancellation never proves remote inference termination.
 
+  Retry-After accepts delay seconds and all HTTP-date forms: IMF-fixdate,
+  RFC 850 and asctime. Dates are normalized to UTC ISO 8601 in safe metadata.
+  The remaining delay uses the observed wall clock; past dates contribute zero.
+  Invalid or absent headers retain the jittered policy delay. A valid value is
+  a minimum: recovery uses the greater of it and the policy delay, and refuses
+  resends that exceed the delay ceiling or reach the remaining recovery budget.
+
   ## Exact wire evidence
 
   `trace_observer: callback` explicitly opts into sensitive evidence at ReqClient.

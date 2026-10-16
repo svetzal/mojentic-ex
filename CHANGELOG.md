@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Completion recovery now accepts RFC 850 and asctime Retry-After dates alongside
+  IMF-fixdate and delay seconds. Dates normalize to UTC ISO 8601 in safe metadata;
+  their observed wall-clock minimum applies to ordinary, structured and both
+  streaming APIs, Broker and ChatSession across OpenAI, Ollama and oMLX. Past,
+  invalid and absent values preserve the policy delay; delay ceilings and recovery
+  budgets still refuse resends. Admission behavior is unchanged.
+
 - Recovery admission hooks that finish without allow/reject, including abnormal
   completion, now stop with the payload-free `:admission_no_decision` resend
   permission and lifecycle event. The original provider failure, identities and
