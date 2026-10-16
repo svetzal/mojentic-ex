@@ -1,0 +1,142 @@
+WARNING: Sobelow cannot find the router. If this is a Phoenix application
+please use the `--router` flag to specify the router's location.
+
+##############################################
+#                                            #
+#          Running Sobelow - v0.16.0         #
+#  Created by Griffin Byatt - @griffinbyatt  #
+#     NCC Group - https://nccgroup.trust     #
+#                                            #
+##############################################
+
+warning: found quoted keyword "bunt" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:2:3
+
+warning: found quoted keyword "castore" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:3:3
+
+warning: found quoted keyword "credo" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:4:3
+
+warning: found quoted keyword "dialyxir" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:5:3
+
+warning: found quoted keyword "earmark_parser" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:6:3
+
+warning: found quoted keyword "elixir_uuid" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:7:3
+
+warning: found quoted keyword "erlex" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:8:3
+
+warning: found quoted keyword "ex_ast" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:9:3
+
+warning: found quoted keyword "ex_doc" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:10:3
+
+warning: found quoted keyword "file_system" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:11:3
+
+warning: found quoted keyword "finch" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:12:3
+
+warning: found quoted keyword "glob_ex" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:13:3
+
+warning: found quoted keyword "hpax" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:14:3
+
+warning: found quoted keyword "igniter" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:15:3
+
+warning: found quoted keyword "jason" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:16:3
+
+warning: found quoted keyword "makeup" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:17:3
+
+warning: found quoted keyword "makeup_elixir" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:18:3
+
+warning: found quoted keyword "makeup_erlang" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:19:3
+
+warning: found quoted keyword "mime" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:20:3
+
+warning: found quoted keyword "mint" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:21:3
+
+warning: found quoted keyword "mint_web_socket" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:22:3
+
+warning: found quoted keyword "mix_audit" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:23:3
+
+warning: found quoted keyword "mox" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:24:3
+
+warning: found quoted keyword "nimble_options" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:25:3
+
+warning: found quoted keyword "nimble_ownership" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:26:3
+
+warning: found quoted keyword "nimble_parsec" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:27:3
+
+warning: found quoted keyword "nimble_pool" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:28:3
+
+warning: found quoted keyword "owl" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:29:3
+
+warning: found quoted keyword "req" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:30:3
+
+warning: found quoted keyword "rewrite" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:31:3
+
+warning: found quoted keyword "rustler" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:32:3
+
+warning: found quoted keyword "rustler_precompiled" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:33:3
+
+warning: found quoted keyword "sobelow" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:34:3
+
+warning: found quoted keyword "sourceror" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:35:3
+
+warning: found quoted keyword "spitfire" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:36:3
+
+warning: found quoted keyword "telemetry" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:37:3
+
+warning: found quoted keyword "text_diff" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:38:3
+
+warning: found quoted keyword "tiktoken" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:39:3
+
+warning: found quoted keyword "tokenizers" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:40:3
+
+warning: found quoted keyword "toml" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:41:3
+
+warning: found quoted keyword "usage_rules" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:42:3
+
+warning: found quoted keyword "yamerl" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:43:3
+
+warning: found quoted keyword "yaml_elixir" but the quotes are not required. Note that keywords are always atoms, even when quoted. Similar to atoms, keywords made exclusively of ASCII letters, numbers, and underscores and not beginning with a number do not require quotes
+└─ nofile:44:3
+
+... SCAN COMPLETE ...
+
