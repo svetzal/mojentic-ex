@@ -5,6 +5,12 @@ defmodule Mojentic.LLM.Recovery do
   Admission receives safe failure metadata, correlation IDs, progress, and a
   `reply_to` PID and `ref`. Return `:allow`, `:reject`, or `:pending`; resolve
   pending decisions with `{:recovery_admission, ref, :allow | :reject}`.
+  A hook that returns anything else, raises, throws, exits, or dies before
+  deciding ends recovery with `resend_permission: :admission_no_decision` and
+  an `:admission_no_decision` lifecycle event. Explicit `:reject` retains
+  `:rejected` and `:admission_rejected`. Neither authorizes a resend. Callback
+  failures are payload-free; the original provider failure and history remain.
+  `:pending` continues waiting for an explicit decision, cancellation or deadline.
   Send `{:cancel, cancel_ref}` to the completion caller to cancel locally.
   Local HTTP cancellation never proves remote inference termination.
 
@@ -232,18 +238,40 @@ defmodule Mojentic.LLM.Recovery do
         }
 
         emit(opts, :admission_pending, context.failure)
-        decision = work(opts, state.deadline, fn -> callback.(context) end)
+
+        decision =
+          opts
+          |> work(state.deadline, fn -> {:admission_decision, callback.(context)} end)
+          |> admission_decision()
 
         decision =
           if decision == :pending,
             do: await_decision(opts, state.deadline, context.ref),
             else: decision
 
-        type = if decision == :allow, do: :admission_allowed, else: :admission_rejected
+        type =
+          case decision do
+            :allow -> :admission_allowed
+            :admission_no_decision -> :admission_no_decision
+            _ -> :admission_rejected
+          end
+
         emit(opts, type, context.failure)
-        if decision in [:allow, :cancelled, :deadline], do: decision, else: :rejected
+
+        if decision in [:allow, :cancelled, :deadline, :admission_no_decision],
+          do: decision,
+          else: :rejected
     end
   end
+
+  # Tag callback returns so they cannot impersonate worker cancellation or deadline.
+  # Keep shared work/3 semantics unchanged for backoff.
+  defp admission_decision({:admission_decision, decision})
+       when decision in [:allow, :reject, :pending],
+       do: decision
+
+  defp admission_decision(reason) when reason in [:cancelled, :deadline], do: reason
+  defp admission_decision(_), do: :admission_no_decision
 
   defp await_decision(opts, deadline, ref) do
     cancel = opts[:cancel_ref]

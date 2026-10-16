@@ -178,6 +178,21 @@ the application has established that resending is acceptable. Local socket
 closure is not evidence that remote inference stopped. Admission is not a wire
 attempt, and a recovery retry never replenishes broker tool depth.
 
+If the hook finishes without a decision (including an unexpected return, raise,
+throw, exit or worker death), recovery terminates with
+`resend_permission: :admission_no_decision` and an `:admission_no_decision`
+lifecycle event, followed by `:exhausted`. The provider failure, request and
+attempt IDs, progress and history remain intact; callback payloads are excluded.
+Explicit `:reject` keeps `:rejected` and `:admission_rejected`. Neither outcome
+permits another wire request. A `:pending` return still waits for a later explicit
+allow/reject, cancellation or deadline. No-hook remote/local policy is unchanged.
+
+Migration: callers that treated every non-allow result as caller rejection must
+handle `:admission_no_decision` separately. Hooks must return `:reject` to express
+a deliberate refusal, or `:pending` when a decision will arrive asynchronously.
+Returning `:cancelled` or `:deadline` from the hook is also an undecided result;
+use the cancellation message or configured deadline to stop recovery that way.
+
 Send `{:cancel, cancel_ref}` to the process enumerating the stream after supplying
 that reference in recovery options. Cancellation works during the active request,
 admission and backoff. Consumer halt and consumer process termination close the

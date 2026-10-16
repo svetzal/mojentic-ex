@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Recovery admission hooks that finish without allow/reject, including abnormal
+  completion, now stop with the payload-free `:admission_no_decision` resend
+  permission and lifecycle event. The original provider failure, identities and
+  history remain unchanged; no retry is authorized. Explicit rejection, pending
+  asynchronous decisions, cancellation, deadlines and no-hook policy retain their
+  behavior across ordinary, structured and both streaming APIs, Broker and ChatSession.
+
+### Breaking changes and migration
+
+- Callers matching only `:rejected` / `:admission_rejected` must also handle
+  `:admission_no_decision`. Return `:reject` for deliberate refusal and `:pending`
+  for an asynchronous decision. Unexpected returns (including `:cancelled` and
+  `:deadline`) and callback failures are undecided, not caller rejection. Use the
+  existing cancellation message and deadline options for authoritative stops.
+
 ### Security
 
 - Prevent FileManager sandbox escapes into sibling directories whose names share
