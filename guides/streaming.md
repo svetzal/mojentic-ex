@@ -365,6 +365,61 @@ The deterministic production-HTTP cases and gate results are recorded in
 [RECOVERY-CONFORMANCE.md](https://github.com/svetzal/mojentic-ex/blob/main/RECOVERY-CONFORMANCE.md).
 
 
+## Completion recovery capability evidence
+
+`Recovery.capabilities/1` preserves its five atom keys and atom values. Use
+`Recovery.capability_evidence/1` to inspect each value's provider documentation,
+exact default completion endpoint, inspection date and interpretation. The two
+maps have identical keys; the evidence entry's `value` matches the atom map.
+These declarations do not authorize a resend or change local cancellation.
+Realtime voice, embeddings and model management are outside this table.
+Custom compatible hosts require their own verification.
+
+All references below were inspected **2026-10-16**. Supported means the inspected
+documentation describes the facility for this endpoint. Unsupported means the
+inspected reference describes no such facility. Unknown means documentation is
+absent or ambiguous; it is not a negative provider guarantee. Exact termination
+of one attempt remains unknown even when local cancellation is supported.
+
+| Adapter and default endpoint | Local request cancellation | Remote request cancellation | Request status | Idempotency | Exact-attempt termination |
+| --- | --- | --- | --- | --- | --- |
+| OpenAI `POST https://api.openai.com/v1/chat/completions` | supported [O1] | unsupported [O2] | unsupported [O2] | unsupported [O2] | unknown [O2] |
+| Ollama `POST http://localhost:11434/api/chat` | supported [L1] | unsupported [L2] | unsupported [L2] | unsupported [L2] | unknown [L2] |
+| oMLX `POST http://localhost:8000/v1/chat/completions` | unknown [M1] | unsupported [M1] | unsupported [M1] | unknown [M1] | unknown [M1] |
+
+- **O1:** [OpenAI Chat Completions streaming events](https://developers.openai.com/api/reference/resources/chat/subresources/completions/streaming-events)
+  describes cancelled/interrupted streams and potentially missing final usage.
+  This supports local cancellation, without proving remote termination.
+- **O2:** [OpenAI Chat Completions operation reference](https://developers.openai.com/api/reference/resources/chat/subresources/completions)
+  lists no remote cancel operation or idempotency facility. Retrieving a stored
+  result requires `store=true` and its completion ID; it is not in-flight request
+  status after ambiguous acceptance. Deleting stored data does not cancel inference.
+  Responses, Batch and realtime facilities do not establish Chat Completions support.
+- **L1:** [Ollama SDK abort documentation](https://github.com/ollama/ollama-js#abort)
+  documents chat streams and aborting streamed generations with local `AbortError`.
+  Its client-wide abort is not evidence of exact-attempt termination.
+- **L2:** [Ollama chat endpoint](https://docs.ollama.com/api/chat) documents no
+  remote request cancellation, request-status lookup or idempotency facility.
+  `done` is a flag in the current response; `keep_alive` controls model residency.
+  Neither establishes termination of a particular request.
+- **M1:** [oMLX API endpoint inventory, revision 53ab0e6](https://github.com/jundot/omlx/blob/53ab0e66d75fe46e3cfa7ed7a7762d3bbcf21e9c/README.md#api-compatibility)
+  lists streaming chat completion and no per-request remote cancellation/status
+  endpoints. It does not describe local cancellation or idempotency headers and
+  deduplication semantics, so those remain unknown. Protocol compatibility alone
+  cannot establish them. There is no evidence of exact-attempt termination.
+
+Migration: existing callers can keep reading atom values. Callers that assumed
+all local cancellation and idempotency declarations were definitive must handle
+oMLX's unknown values. The adapter's local cancellation code still works; this
+correction limits what the inspected provider documentation establishes.
+
+The executable declaration set is `recovery-capabilities-v1` in
+`test/contracts/recovery_capabilities_v1.json`, verified by
+`test/mojentic/llm/recovery_capabilities_test.exs` in the normal test gate.
+This is a local public-API contract; provider and external consumer verification
+of the same set is still unavailable. Passing these assertions does not establish
+live-provider compatibility. See [the partial conformance record](https://github.com/svetzal/mojentic-ex/blob/main/CONFORMANCE-3.0.0.md).
+
 ## Opt-in exact HTTP evidence
 
 Add the callback inside the existing recovery configuration; ordinary and

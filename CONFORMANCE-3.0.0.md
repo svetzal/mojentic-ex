@@ -1,11 +1,12 @@
 # 3.0.0 recovery conformance (partial)
 
-This partial record now covers the October 12 **oMLX keepalive frames** guarantee,
+This partial record now also covers the October 12 **Capabilities** amendment,
+alongside the **oMLX keepalive frames** guarantee,
 the **Retry-After dates** correction, the
 **Admission without a hook** guarantee and preservation of the landed
 **Admission without a decision** amendment.
-Earlier admission and date sections preserve their execution evidence; the
-keepalive section records the current correction. This does not establish full
+Earlier sections preserve their execution evidence; the capabilities section
+records the current correction. This does not establish full
 3.0.0 readiness. The coordinated release hold remains.
 
 ## Contract identity and execution boundary
@@ -433,3 +434,136 @@ Supported provider-version coverage is therefore unverified; neither schema
 matching nor these local passing cases establishes compatibility. Paired
 verification remains unfinished initiative work. Full 3.0.0 readiness and release
 remain on hold.
+
+
+## October 16 capabilities correction (partial)
+
+### Scope and inspected evidence
+
+Binding amendment and initiative brief hashes remain those recorded above; both
+were freshly checked against their supplied SHA-256 values. Tested source starts
+at Elixir revision `663fc25a6ffca3d7a0f11d02e2ab11b26d672be4` plus this
+uncommitted correction. Foundry owns finalization. No dependencies, runtime pins,
+versions, HTTP adapters, recovery policies or sibling repositories were changed.
+CI remains pinned to Elixir **1.18.5**, OTP **28.5.0.7**, with cached project PLTs.
+
+The changed boundary is the pure public declaration API, not an inference HTTP
+request. The initial public `Recovery.capabilities/1` characterization passed
+three exact-map assertions: all adapters returned local cancellation supported,
+remote cancellation/status/idempotency unsupported, exact-attempt termination
+unknown. There was no evidence accessor. Unsupported providers raised
+`FunctionClauseError`. No provider-specific distinction or cited evidence existed.
+
+The correction preserves the five names and atom-valued map and adds
+`Recovery.capability_evidence/1`. Each of its 15 entries supplies value, exact
+method/default URL, inspected provider documentation URL, ISO inspection date
+and a facility-specific interpretation. Each atom value is projected from that
+same production declaration to prevent drift. Tests assert the full evidence
+record against an explicit versioned expected set, including every field, every
+value and every named capability for every adapter, plus the unsupported-provider
+error boundary. No mocks or additional HTTP facilities are introduced.
+
+The October 16 inspection and provider capability table are in
+[the streaming guide](guides/streaming.md#completion-recovery-capability-evidence).
+Sources: OpenAI Chat Completions operation and streaming-event references,
+Ollama chat endpoint and provider SDK abort documentation, and oMLX README API
+inventory at provider source revision
+`53ab0e66d75fe46e3cfa7ed7a7762d3bbcf21e9c` (documentation inspection only).
+Stored OpenAI result retrieval/deletion is not in-flight status/cancellation;
+Ollama keep_alive is not a per-request cancellation facility. oMLX protocol
+compatibility does not establish cancellation or idempotency semantics.
+
+Migration: oMLX local cancellation and idempotency declarations now read
+`:unknown`, reflecting ambiguous documentation. The adapter still cancels locally.
+All three exact-attempt termination values remain unknown. Admission, Retry-After,
+keepalive, local cancellation implementation, legacy APIs and OpenAI/Ollama
+recovery behavior are preserved. Other amendments, reasoning and metadata are
+outside this execution. Earlier capability assessments describe historical
+observations; the current cited declarations supersede them.
+
+### Executable identity and proof
+
+Local executable set: **recovery-capabilities-v1**.
+
+- Expected declarations: `test/contracts/recovery_capabilities_v1.json`, SHA-256
+  `40e8da683ce4bfcfebf9892ca51a53a701488d463977f021922cd6317203aa76`.
+- ExUnit verifier: `test/mojentic/llm/recovery_capabilities_test.exs`, SHA-256
+  `5d703fff9aede786d4ef9388dce2b2ef2b2ec01a77f6a1a93fa68bdf5024468a`.
+- Command: `scripts/recovery-mix test test/mojentic/llm/recovery_capabilities_test.exs`.
+  Original-source verification: exit **2**, 20 tests, 16 failures, demonstrating
+  missing evidence rather than an artificial marker. Corrected source: exit
+  **0**, 20 tests, no failures. The earlier minimal original-source probe also
+  rejected the unsupported claim of documented oMLX local cancellation (exit 2)
+  and passed after correcting that declaration (exit 0), before expanding the set.
+- Existing ExUnit discovery runs this same verifier in the required test gate;
+  no separate schema-only check or independently authored provider mock is used.
+
+The original five-key atom representation remains supported. No earlier
+versioned capability-evidence protocol exists in this repository; v1 adds evidence
+without replacing the old representation. Unknown facilities never establish
+resend permission or exact remote termination. Wire integration tests still cover
+the user's completion journey separately from these declaration assertions.
+
+### Paired verification remains unfinished
+
+This is a **local declaration contract**, not jointly verified provider/consumer
+compatibility. For OpenAI, Ollama and oMLX, provider implementation revision tested:
+**none**; provider verification command/result against recovery-capabilities-v1:
+**unavailable / not run**. The oMLX documentation revision above is not a tested
+provider implementation revision. External consumer revisions and their verifier
+commands/results are likewise **unavailable / not run**. Elixir verified the
+public declaration API at the source revision and working changes identified
+above; it did not establish live-provider behavior from documentation or mocks.
+
+Coordination finding: each affected provider/consumer side must verify the same
+identified executable set and report its tested revision, command and result
+before paired conformance can be claimed. Such verification or required adapters
+must be coordinated as separate authorized work; no sibling repository was edited.
+This missing verification is unfinished coordination work. The six-port release
+hold remains; this correction does not establish complete 3.0.0 readiness.
+
+### Current quality checks
+
+All commands use `scripts/recovery-mix` and the existing pinned runtime.
+Fresh command results (zero means pass):
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `format --check-formatted` | 0 | Final source formatted |
+| `compile --warnings-as-errors` | 0 | Final development compilation |
+| `MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | Final test compilation |
+| `credo --strict` | 0 | Zero warnings on final source |
+| `test` | 0 | 22 doctests, 4,487 tests, zero failures; 19 existing integration exclusions |
+| `test --cover` | 0 | Final source: 22 doctests, 4,487 tests, zero failures, 19 existing exclusions; 90.32% coverage above unchanged 80% threshold |
+| `dialyzer` | 0 | Zero errors, skips or unnecessary skips; project PLT reused |
+| `deps.audit` | 0 | No vulnerabilities found; advisory freshness qualified below |
+| `hex.audit` | 0 | No retired or security-advisory packages |
+| `sobelow --config` | 0 | Configured non-Phoenix scan; qualifications below |
+| `hex.outdated --all` | 1 | Informational available upgrades; no dependencies changed |
+| `docs` | 0 | Built with existing unresolved-link warnings |
+
+Initial strict Credo exposed two alias-placement issues, which were corrected;
+the final strict run and both compilation environments passed. The exact final
+citation set was also checked against original source (exit 2, 16 failed checks)
+and corrected source (exit 0, all 20 checks passed). The final fixture uses the
+inspected README's actual `api-compatibility` anchor. No thresholds or exclusions
+were changed to obtain a passing result. There is no precommit alias.
+
+MixAudit's attempted cache refresh was denied by the read-only external
+`FETCH_HEAD`. The clean installed advisory repository revision
+`935abf7410a2bbb18e12579dee6e31267c3ed244` was independently compared with
+`git ls-remote https://github.com/mirego/elixir-security-advisories.git refs/heads/main`
+(exit 0) and matched upstream in this execution. No advisory suppression or
+allowlist was added or modified. Sobelow retains its pre-existing configured
+`Traversal.FileModule` exclusion, warns about a missing Phoenix router (this is
+not a Phoenix project), and emits parser warnings for the unchanged lockfile's
+quoted keywords. Its successful exit describes the configured scan only.
+
+ExDoc retains existing unresolved links to `LICENSE`, the unavailable relative
+sibling `../RELEASE-3.0.0.md`, and `deps/igniter/usage-rules.md`. The outdated check
+reports updates for ex_ast, finch, makeup, rustler, rustler_precompiled, sourceror
+and spitfire; this informational result does not identify a security advisory.
+No runtime or dependency upgrade, suppression, version change or release action
+was taken. Proof JSON field types, actual red/green exit codes, referenced log
+existence and executable fixture/verifier hashes were validated. Execution logs
+and proof remain Foundry-owned scratch, not project artifacts.

@@ -74,6 +74,7 @@ defmodule Mojentic.LLM.Recovery do
   these guarantees apply to the default ReqClient boundary.
   """
   alias Mojentic.LLM.{CompletionError, CompletionRequest}
+  alias Mojentic.LLM.Recovery.Capabilities
 
   @max_timer_delay 4_294_967_295
 
@@ -85,16 +86,46 @@ defmodule Mojentic.LLM.Recovery do
     retryable_statuses: [429, 500, 502, 503, 504]
   ]
 
-  @doc "Capabilities implemented by the adapter completion boundaries."
-  @spec capabilities(:openai | :ollama | :omlx) :: map()
+  @doc """
+  Documentation-based declarations for this adapter's completion endpoint.
+
+  Preserves the five-key atom map. `:supported` requires documentation describing
+  the facility for that endpoint; `:unsupported` means the inspected reference
+  describes no such facility; `:unknown` means absent or ambiguous documentation.
+  See `capability_evidence/1` for the source, endpoint, inspection date and basis
+  of every value. These are declarations, not live probes or resend permission.
+
+  oMLX local cancellation and idempotency are `:unknown` because its endpoint
+  inventory does not establish those facilities. Local cancellation still works
+  in the adapter. Exact-attempt termination remains `:unknown` for all providers.
+  Custom compatible hosts need their own verification. Realtime and embeddings
+  are outside this declaration.
+  """
+  @spec capabilities(:openai | :ollama | :omlx) :: %{atom() => capability_value()}
   def capabilities(provider) when provider in [:openai, :ollama, :omlx] do
-    %{
-      local_request_cancellation: :supported,
-      remote_request_cancellation: :unsupported,
-      request_status: :unsupported,
-      idempotency: :unsupported,
-      exact_attempt_termination: :unknown
-    }
+    Capabilities.values(provider)
+  end
+
+  @type capability_value :: :supported | :unsupported | :unknown
+  @type capability_evidence :: %{
+          value: capability_value(),
+          endpoint: String.t(),
+          documentation: String.t(),
+          inspected_on: String.t(),
+          basis: String.t()
+        }
+
+  @doc """
+  Returns evidence keyed by the same five names as `capabilities/1`.
+
+  Each entry includes its declared `:value`, exact default `:endpoint` (method
+  and URL), provider `:documentation` URL, ISO `:inspected_on` date and `:basis`.
+  Inspection dates describe a documentation review, not provider verification.
+  No credentials, request data, network calls or model metadata are involved.
+  """
+  @spec capability_evidence(:openai | :ollama | :omlx) :: %{atom() => capability_evidence()}
+  def capability_evidence(provider) when provider in [:openai, :ollama, :omlx] do
+    Capabilities.evidence(provider)
   end
 
   @doc false

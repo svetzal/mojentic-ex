@@ -17,6 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   forbidden resends, lifecycle identities and default single-attempt behavior.
   Existing production policy already conformed; no policy change was needed.
 
+### Changed
+
+- Completion recovery capabilities now cite inspected provider documentation,
+  exact endpoints and inspection dates through `Recovery.capability_evidence/1`.
+  Migration: `Recovery.capabilities/1` retains its five atom keys and atom values;
+  oMLX local request cancellation and idempotency change to `:unknown` because
+  its documented endpoint inventory leaves those facilities ambiguous. Treat
+  unknown as unproven, never as permission to resend. Local cancellation behavior
+  and all other recovery policies remain unchanged. Exact-attempt termination
+  remains unknown for every maintained adapter.
+
 ### Fixed
 
 - Recovery-enabled oMLX streams now skip data frames whose model is exactly
