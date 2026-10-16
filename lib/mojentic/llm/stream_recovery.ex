@@ -427,13 +427,22 @@ defmodule Mojentic.LLM.StreamRecovery do
     end)
   end
 
-  defp parse_frames(chunk, frames, %{mode: :events} = state) do
+  # Raw bytes have already been counted. oMLX's complete data lines are filtered
+  # before either observation or parsing, while partial lines remain buffered.
+  defp parse_frames(chunk, frames, %{provider: :omlx} = state) do
+    filtered = if is_nil(chunk), do: nil, else: state.filtered_chunk
+    parse_compatible_frames(filtered, frames, state)
+  end
+
+  defp parse_frames(chunk, frames, state), do: parse_compatible_frames(chunk, frames, state)
+
+  defp parse_compatible_frames(chunk, frames, %{mode: :events} = state) do
     with {:ok, state} <- observe_frames(frames, state) do
       if is_nil(chunk), do: finish_events(frames, state), else: parse(chunk, frames, state)
     end
   end
 
-  defp parse_frames(chunk, frames, state), do: parse(chunk, frames, state)
+  defp parse_compatible_frames(chunk, frames, state), do: parse(chunk, frames, state)
 
   defp valid_terminal_tools?(%{"done" => false}, _state), do: true
 
@@ -537,26 +546,39 @@ defmodule Mojentic.LLM.StreamRecovery do
     exception -> {:parser_error, exception, state}
   end
 
+  defp frames(chunk, %{provider: :omlx} = state) do
+    {lines, [buffer]} = String.split(state.buffer <> chunk, "\n") |> Enum.split(-1)
+    lines = Enum.reject(lines, &omlx_keepalive_line?/1)
+    filtered_chunk = Enum.map_join(lines, &(&1 <> "\n"))
+    state = Map.put(%{state | buffer: buffer}, :filtered_chunk, filtered_chunk)
+    {decode_frames(lines), state}
+  end
+
   defp frames(chunk, state) do
     {lines, [buffer]} = String.split(state.buffer <> chunk, "\n") |> Enum.split(-1)
-
-    frames =
-      Enum.flat_map(lines, fn line ->
-        line = String.trim(line)
-
-        data =
-          if String.starts_with?(line, "data: "),
-            do: String.replace_prefix(line, "data: ", ""),
-            else: line
-
-        case Jason.decode(data) do
-          {:ok, object} when is_map(object) -> [object]
-          _ -> invalid_frame(data)
-        end
-      end)
-
-    {frames, %{state | buffer: buffer}}
+    {decode_frames(lines), %{state | buffer: buffer}}
   end
+
+  defp decode_frames(lines) do
+    Enum.flat_map(lines, fn line ->
+      line = String.trim(line)
+
+      data =
+        if String.starts_with?(line, "data: "),
+          do: String.replace_prefix(line, "data: ", ""),
+          else: line
+
+      case Jason.decode(data) do
+        {:ok, object} when is_map(object) -> [object]
+        _ -> invalid_frame(data)
+      end
+    end)
+  end
+
+  defp omlx_keepalive_line?("data:" <> data),
+    do: match?({:ok, %{"model" => "keepalive"}}, Jason.decode(data))
+
+  defp omlx_keepalive_line?(_line), do: false
 
   defp invalid_frame("[DONE]"), do: [%{"_done" => true}]
   defp invalid_frame(""), do: []

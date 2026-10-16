@@ -59,23 +59,32 @@ defmodule Mojentic.HTTP.ReceivedEvidence do
     body |> String.split("\n") |> Enum.flat_map(&decode_line/1)
   end
 
-  defp messages(%{body: body}) do
+  defp messages(%{body: body, mode: mode}) do
+    provider =
+      case mode do
+        {provider, _} -> provider
+        :ordinary -> nil
+      end
+
     body
     |> String.split("\n")
     |> Enum.drop(-1)
     |> Enum.flat_map(fn line ->
-      decode_line(line)
+      decode_line(line, provider)
     end)
   end
 
-  defp decode_line(line) do
-    line |> String.trim() |> String.replace_prefix("data: ", "") |> decode_message()
+  defp decode_line(line, provider \\ nil) do
+    line |> String.trim() |> String.replace_prefix("data: ", "") |> decode_message(provider)
   rescue
     _ -> []
   end
 
-  defp decode_message(body) do
+  defp decode_message(body, provider \\ nil) do
     case Jason.decode(body) do
+      {:ok, %{"model" => "keepalive"}} when provider == :omlx ->
+        []
+
       {:ok, %{"message" => message} = frame} when is_map(message) ->
         [{message, frame["done"] == true and frame["done_reason"] == "stop"}]
 

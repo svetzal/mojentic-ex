@@ -4,12 +4,16 @@
 
 The coordinated implementation scope is defined in [../RELEASE-3.0.0.md](../RELEASE-3.0.0.md).
 The owner authorizes the coordinated 3.0.0 scope in that release plan. This
-execution implements only the October 12 transient-recovery amendment's
-**Retry-After dates** correction, with tests, documentation and a partial
-conformance record. Characterize the production Req boundary first and correct
-only demonstrated gaps. Preserve both landed admission guarantees and explicit
-decisions. Other recovery amendments, reasoning, metadata, dependency/runtime
-upgrades and version changes are outside this execution.
+execution is authorized by the owner's current Foundry objective to implement
+only the October 12 transient-recovery amendment's **oMLX keepalive frames**
+guarantee, with production-Req characterization, tests, documentation and a
+partial conformance record. The binding amendment is
+`mojentic-unify/TRANSIENT-RECOVERY-2026-10.md` (source revision and hash are recorded
+in `CONFORMANCE-3.0.0.md`). Characterize the real boundary first and correct only
+demonstrated gaps. Preserve landed admission guarantees, explicit decisions,
+Retry-After corrections, OpenAI/Ollama behavior and legacy oMLX semantics. Other
+recovery amendments, reasoning, metadata, dependency/runtime upgrades and version
+changes are outside this execution.
 
 The coordinated release hold remains in force until all six ports are ready and
 the release coordinator authorizes release. Do not tag, publish or bump versions.

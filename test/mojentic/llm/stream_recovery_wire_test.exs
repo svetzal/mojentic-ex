@@ -23,6 +23,56 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     :ok
   end
 
+  @tag :omlx_keepalive_contract
+  @tag :omlx_keepalive_proof
+  test "oMLX recovery ignores coalesced keepalives around real provider completion" do
+    owner = self()
+
+    keepalive =
+      sse(%{
+        model: "keepalive",
+        choices: [
+          %{
+            delta: %{content: "ghost", reasoning_content: "ghost", tool_calls: [%{index: 0}]},
+            finish_reason: "length"
+          }
+        ],
+        usage: %{total_tokens: 999}
+      })
+
+    content =
+      sse(%{model: "real-model", choices: [%{delta: %{content: "answer"}, finish_reason: nil}]})
+
+    stop =
+      sse(%{
+        model: "real-model",
+        choices: [%{delta: %{}, finish_reason: "stop"}],
+        usage: %{total_tokens: 7}
+      })
+
+    wire = keepalive <> content <> keepalive <> stop <> keepalive <> "data: [DONE]\n\n"
+    server = server(OMLX, [http(200, wire)])
+
+    assert [{:content, "answer"}, {:completed, evidence}] =
+             invoke(OMLX, :events, config(observer: &send(owner, {:event, &1}))) |> Enum.to_list()
+
+    assert evidence == %{
+             finish_reason: "stop",
+             provider_model: "real-model",
+             usage: %{"total_tokens" => 7},
+             metadata: nil
+           }
+
+    lifecycle = collect_events()
+    assert Enum.map(lifecycle, & &1.type) == [:attempt_started, :attempt_succeeded]
+    assert_ids(lifecycle, 1)
+    [request] = GenServer.call(server, :requests)
+    assert body(request)["messages"] == [%{"role" => "user", "content" => "sentinel-input"}]
+    assert body(request)["stream_options"] == %{"include_usage" => true}
+    assert_receive {:wire_request, ^request}
+    refute_receive {:wire_request, _}
+  end
+
   for mode <- [:events, :legacy] do
     @mode mode
     @tag :telemetry_proof

@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Recovery-enabled oMLX streams now skip data frames whose model is exactly
+  `keepalive` before semantic observation, parsing and fallback capture evidence.
+  Their bytes remain raw progress; they cannot change provider model, usage,
+  completion, reasoning or tools. Real semantic output still prevents replay,
+  and keepalive-only truncation still requires the existing admission decision.
+  Production Req regressions cover both gateway APIs, Broker and ChatSession.
+
 - Correct RFC 850 Retry-After century rollover by comparing the complete timestamp
   against the recovery wall clock's 50-year cutoff, including month, day and time.
   Dates exactly at the cutoff retain their century; later dates roll back before

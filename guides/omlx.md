@@ -153,3 +153,26 @@ that retries without executing the tool again. Mutable image-file changes during
 admission cannot change that follow-up's encoded body. Native reasoning history
 is not representable by the current `Message` struct; `reasoning_effort` and
 received `thinking` keep their existing behavior.
+
+
+## oMLX keepalives during recovery
+
+With recovery enabled, both oMLX stream APIs ignore complete SSE data frames whose
+`model` equals `keepalive`, including frames split across received chunks or
+coalesced with real frames. Their received bytes count as raw progress only:
+they produce no content, reasoning, tools, frame indexes or provider metadata.
+Completion evidence retains the real provider's model and usage.
+
+A keepalive-only truncated stream is not successful completion. The existing
+attempt limit and admission policy still apply: ambiguous local oMLX failures
+require explicit admission; a missing or undecided hook cannot authorize replay.
+Once real content, reasoning or a tool fragment is observed, interruption ends
+the logical request without a resend. A failed ChatSession stream cannot finalize
+as a completed assistant response. Recovery-disabled streaming retains its
+existing behavior.
+
+The local `omlx-keepalive-v1` executable set runs with
+`scripts/verify-omlx-keepalive-contract`, using the scripted loopback HTTP server
+and production Req through gateways, Broker and ChatSession. See
+`CONFORMANCE-3.0.0.md` for identities, named tests and the outstanding paired
+provider-verification gap.

@@ -494,3 +494,14 @@ OpenAI drops `top_k` and non-reasoning-model `reasoning_effort`; o3 uses
 in preference to `max_tokens`, and reasoning effort enables a boolean `think`
 rather than transmitting the effort level. Recovery does not add unsupported
 history or controls.
+
+
+## oMLX keepalives during recovery
+
+Recovery-enabled oMLX streams count `model: "keepalive"` data frames as raw bytes
+only, including fragmented and coalesced frames. They cannot contribute semantic
+progress, frame indexes or provider metadata. Keepalive-only truncation still
+obeys admission; real semantic output still prevents replay. See the
+[oMLX guide](omlx.md#omlx-keepalives-during-recovery) for behavior and the local
+`scripts/verify-omlx-keepalive-contract` executable checks through Broker and
+ChatSession.

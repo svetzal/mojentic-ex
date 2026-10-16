@@ -1,10 +1,12 @@
 # 3.0.0 recovery conformance (partial)
 
-This partial record covers the October 12 **Retry-After dates** correction, the
+This partial record now covers the October 12 **oMLX keepalive frames** guarantee,
+the **Retry-After dates** correction, the
 **Admission without a hook** guarantee and preservation of the landed
 **Admission without a decision** amendment.
-Admission sections below preserve earlier execution evidence; the date section
-records the current rollover correction. It does not establish full 3.0.0 readiness. The coordinated release hold remains.
+Earlier admission and date sections preserve their execution evidence; the
+keepalive section records the current correction. This does not establish full
+3.0.0 readiness. The coordinated release hold remains.
 
 ## Contract identity and execution boundary
 
@@ -306,3 +308,128 @@ derive doubles from that verified set and run verification in both repositories'
 required gates. This task does not establish cross-repository compatibility,
 full 3.0.0 conformance or release readiness. The coordinated release hold remains;
 Foundry owns finalization and these changes remain uncommitted.
+
+## oMLX keepalive frames: current execution
+
+The owner-authorized objective supersedes the earlier date-only execution
+restriction. Only demonstrated keepalive gaps were corrected. The binding source
+and initiative hashes above were rechecked on 2026-10-16. The source checkout is
+still `4b08dcd1d87f520a4c70928c33a2bc84c228093d`.
+
+Local executable set **`omlx-keepalive-v1`** reuses ExUnit,
+`ScriptedCompletionServer` and production `Mojentic.HTTP.ReqClient` (Req 0.7.5).
+Run `scripts/verify-omlx-keepalive-contract`. The required project
+`scripts/recovery-mix test --cover` gate includes these same cases without a tag
+filter. The verifier prints each member's SHA-256. The SHA-256 of the ordered
+`sha256sum` output for the following four files is
+`ab812c4c020d34ebda8918763ae5378c7f97892fc81f99e252a0111b888a3a45`:
+
+| Executable member | SHA-256 |
+| --- | --- |
+| `scripts/verify-omlx-keepalive-contract` | `e494f4519b099bb7a0cd9a931c097b1e92cce69186f32b379a988f8d1da501fa` |
+| `test/mojentic/llm/omlx_keepalive_wire_test.exs` | `78fb3c96afb3fa7ec8b1b521a11730163e288ceeecabcf2d67a96af47f27a15f` |
+| `test/mojentic/llm/stream_recovery_wire_test.exs` | `4e39ab504375ac1ab0456c8fb6731c1ce82651aa8cfa0f7601738752d5db6ab9` |
+| `test/support/scripted_completion_server.ex` | `d03a3cf93eb25350bd8bf2387e70fbf7786e86e663809f55dfd7180f6e782e07` |
+
+Consumer implementation tested: mojentic-ex base revision
+`3c08290deef6c3fada9a726a8253b58a6ed886d9` plus this uncommitted correction.
+Production source SHA-256:
+
+- `lib/mojentic/llm/stream_recovery.ex`:
+  `34b44c3fbbe86877d1149675818614f16b1b6e497499ebb7a0c4df0268361946`.
+- `lib/mojentic/http/received_evidence.ex`:
+  `0f303b19585e9e02813cf751b9e95fd858d3faf6841c525bb5c11aa3b56cb025`.
+
+Named checks in `OMLXKeepaliveWireTest` (72 cases):
+
+- `<entrypoint> <layout> keepalives preserve exact output metadata and progress`:
+  both gateway stream APIs, both Broker stream APIs and ChatSession; coalesced
+  frames and a keepalive split before, between or after real frames. The scripted
+  server holds the remainder until the production Req trace confirms receipt of
+  the first fragment. Assertions compare complete ordered outputs, real provider
+  model and usage, exact raw bytes, observed/delivered semantic maps, lifecycle
+  order and attempt identities. Exact output also excludes invented progress,
+  metrics or frame-index events. oMLX exposes no public frame-index counter.
+- `<entrypoint> keepalive-only truncation obeys <decision> admission without ghost
+  progress`: allow, reject, undecided, raising hook, no hook and single-attempt
+  policy. The keepalive deliberately includes content, reasoning, a complete
+  tool and finish/usage fields; none counts as semantic evidence. Only explicit
+  allow resends the identical recorded request. Errors preserve the transport
+  failure, acceptance, operation, provider request ID, history and progress;
+  lifecycle distinguishes rejection, no decision and required admission.
+- `<entrypoint> real <semantic> before keepalive truncation forbids replay`:
+  content, reasoning and tool fragments preserve exact ordered delivery and
+  observed/delivered progress, interrupt without admission or another request,
+  and prevent successful session finalization.
+- `<mode> capture failure on keepalive retains raw bytes without semantic
+  progress`: exercises actual wire-capture failure and fallback evidence in both
+  gateway modes, without mocking a recovery result.
+- `<mode> recovery-disabled oMLX keeps legacy keepalive semantics` and
+  `<mode> minimal keepalive cannot supply completion evidence`: preserve the
+  old API behavior and prove that a keepalive without optional fields cannot
+  satisfy the real completion contract.
+
+- `event stream preserves non-data SSE fields around keepalives`: confirms the
+  filter preserves `event:`, `id:` and comment lines. The final implementation
+  retains original complete wire lines instead of re-encoding provider frames.
+
+Every case checks the recorded route and entire decoded request payload (model,
+prior system message, user message, controls, stream flag and optional usage
+request), exact replay bytes where allowed, and a negative observation for an
+unauthorized request. Successful sessions retain exact final assistant history;
+failed sessions retain the original history and return the stream error.
+
+The 73rd case is the proof-first regression in `StreamRecoveryWireTest`:
+`oMLX recovery ignores coalesced keepalives around real provider completion`.
+Before source changes it exited **2**: keepalives polluted observed content,
+reasoning and tool progress and caused a protocol failure. After the correction
+the identical command exited **0**, yielding exactly content `answer` and a
+completed event with real provider model and usage. Fixture and documentation
+expansion followed this rejecting/passing production-boundary probe. A second
+probe demonstrated ghost semantic progress on capture failure, corrected in
+fallback evidence reconstruction. Keepalive bytes are counted before filtering;
+OpenAI/Ollama parsing, admission and Retry-After code were not changed.
+
+### Current verification results
+
+`Elixir 1.18.5`, `OTP 28.5.0.7`, selected by the existing
+`scripts/recovery-mix`; CI pins and runtime requirements are unchanged.
+
+- `scripts/verify-omlx-keepalive-contract`: **pass**, 73 selected cases,
+  343 excluded; both streaming APIs and public journeys exercise production Req.
+- `scripts/recovery-mix format --check-formatted`: **pass**.
+- `scripts/recovery-mix compile --warnings-as-errors` and
+  `MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors`: **pass**.
+- `scripts/recovery-mix credo --strict`: **pass**, zero issues.
+- `scripts/recovery-mix dialyzer`: **pass**, zero errors/skips.
+- `MIX_ENV=test scripts/recovery-mix dialyzer`: **pass**, zero errors/skips.
+- `scripts/recovery-mix test --cover`: **pass**, 22 doctests and 4,467 tests,
+  zero failures, 19 integration cases excluded by existing project configuration.
+  Coverage **90.28%**, above the unchanged **80%** threshold; elapsed 548.3 seconds.
+  This final-source run includes the SSE preservation regression and all existing
+  OpenAI/Ollama, legacy oMLX, admission and Retry-After regression cases.
+- `scripts/recovery-mix deps.audit`: **pass**, no vulnerabilities found.
+- `scripts/recovery-mix sobelow --config`: **pass**.
+- `scripts/recovery-mix hex.audit`: **pass**, no retired/advisory packages.
+- `scripts/recovery-mix hex.outdated --all`: exit **1**, informational updates
+  available for ex_ast, finch, makeup and rustler_precompiled; no dependency
+  changes or advisory suppressions were made.
+- `scripts/recovery-mix docs`: **pass** (exit 0), retaining existing unresolved
+  links to `../RELEASE-3.0.0.md`, `LICENSE` and `deps/igniter/usage-rules.md`.
+  These are documentation warnings, not a claim of a warning-free docs build.
+- No `precommit` alias is defined. CI already pins the runtime and caches
+  `priv/plts/`, which is already ignored.
+
+### Paired provider verification: coordination gap
+
+This is a versioned **local consumer executable set**, not a jointly verified
+cross-repository contract. oMLX provider revision: **not verified**. Provider-side
+command/result against this same set: **not available / not run**. No external
+consumer repository was changed or verified. The script responses are local
+boundary observations, not doubles derived from a mutually verified provider
+contract. Coordination must supply a provider verifier for these same identified
+cases and record its tested revision and result before claiming compatibility.
+Supported provider-version coverage is therefore unverified; neither schema
+matching nor these local passing cases establishes compatibility. Paired
+verification remains unfinished initiative work. Full 3.0.0 readiness and release
+remain on hold.

@@ -180,7 +180,10 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   Follows the OpenAI-compatible completion rules: success requires a
   `finish_reason` of `"stop"` and the `data: [DONE]` marker. Keep-alive frames
   are dropped before parsing, so they never report `"keepalive"` as the
-  provider model. Reasoning deltas yield no events. Use it through
+  provider model. With recovery enabled, their bytes count only as raw progress;
+  they cannot change semantic progress, frame indexes, usage or completion.
+  Keepalive-only failures still obey the configured recovery admission policy.
+  Reasoning deltas yield no events. Use it through
   `Mojentic.LLM.Broker.generate_stream_events/3`.
   """
   @impl Gateway
