@@ -158,3 +158,17 @@ registry2 = OpenAIModelRegistry.register_model(registry1, "custom-model", capabi
 # registry1 remains unchanged
 # registry2 contains the new model
 ```
+
+## Context-window discovery
+
+`Mojentic.LLM.Gateways.OpenAI.get_model_context_window(model)` returns an exact
+registry entry's positive capacity as
+`{:ok, %{max_context_tokens: n, field: "registry"}}` without HTTP. Unknown models
+return `{:ok, nil}`, including model names that match capability patterns.
+`OpenAIModelRegistry.get_model_context_window(registry, model)` also supports
+caller-managed registries. Missing capacities return `{:ok, nil}`; invalid
+non-nil capacities return `{:error, :invalid_response}`.
+
+The existing capability and parameter-selection pattern fallbacks remain in
+place for completions. They never establish a discovered capacity. Registry
+metadata is static knowledge, not a measurement of a server's loaded context.

@@ -162,6 +162,12 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
     end
   end
 
+  @doc "Returns only exact registry capacity; performs no HTTP request or pattern inference."
+  @impl Gateway
+  def get_model_context_window(model) do
+    OpenAIModelRegistry.get_model_context_window(OpenAIModelRegistry.new(), model)
+  end
+
   @impl Gateway
   def get_available_models do
     endpoint = get_endpoint()

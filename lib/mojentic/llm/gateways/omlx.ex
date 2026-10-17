@@ -109,6 +109,24 @@ defmodule Mojentic.LLM.Gateways.OMLX do
     end
   end
 
+  @doc "Queries the configured models endpoint for an exact model's advertised capacity."
+  @impl Gateway
+  def get_model_context_window(model) do
+    case http_client().get(url("/models"), auth_headers(), timeout_opts(get_timeout())) do
+      {:ok, %{status_code: status, body: body}} when status in 200..299 ->
+        Mojentic.LLM.ModelContextWindow.decode(
+          body,
+          &Mojentic.LLM.ModelContextWindow.omlx(&1, model)
+        )
+
+      {:ok, %{status_code: status}} ->
+        {:error, {:http_error, status}}
+
+      {:error, reason} ->
+        {:error, {:request_failed, reason}}
+    end
+  end
+
   @impl Gateway
   def get_available_models do
     case http_client().get(url("/models"), auth_headers(), timeout_opts(get_timeout())) do

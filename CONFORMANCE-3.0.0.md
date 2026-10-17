@@ -956,7 +956,7 @@ consumer follow-up retains its separate assignment.
 
 ## Request fidelity — partial part 3 evidence
 
-The current correction implements only MODEL-METADATA-2026-10 sections 3–3.6
+The request-fidelity correction implemented only MODEL-METADATA-2026-10 sections 3–3.6
 (SHA-256 `a085da1c0d110f9d587a24ace6ac2854b653e1ac28905b3829d94d665b2c906e`).
 `temperature`, `num_ctx` and `max_tokens` are optional without defaults;
 `CompletionConfig.num_predict` is removed. See
@@ -968,5 +968,137 @@ changed-default migration profile and external verification gaps.
 Local adapter and Broker/ChatSession verification use the same versioned
 contract-derived responses through production Req. External provider/consumer
 paired verification remains unfinished. Context-window discovery and first-token
-timing are not implemented by this correction. This mapping does not assert
+timing were not implemented by that correction. Context discovery is recorded below.
+This mapping does not assert
 complete part 3 or coordinated release readiness.
+
+## Context-window discovery — partial part 3 evidence
+
+This correction implements only MODEL-METADATA-2026-10 section 1 (SHA-256
+`a085da1c0d110f9d587a24ace6ac2854b653e1ac28905b3829d94d665b2c906e`).
+The Foundry initiative brief was read and verified at SHA-256
+`ea6a0efa56bfb3cd74b5ce728f80cc33c6fbd853114bec94b8aabe79f5d28e6e`.
+Landed request fidelity, recovery and reasoning remain intact. First-token timing
+is outside this correction; complete part 3 and coordinated release readiness
+remain **partial**, including external contract verification below.
+
+### Characterized boundary and executable identity
+
+Before implementation, `Gateway` exposed model listing but no context discovery.
+Ollama used configured `OLLAMA_HOST` for `/api/tags` and `/api/chat`; oMLX used
+configured `OMLX_HOST` plus `/v1` and optional bearer authentication; OpenAI used
+configured API routing/authentication for listing and completions. The registry's
+exact entries and pattern fallback both served completion parameter selection.
+The new metadata lookup uses exact entries only, preserving that fallback.
+
+The first real-HTTP probe failed after reading Ollama's architecture capacity
+because the result omitted model `num_ctx`. Adding separate `model_num_ctx` and
+the pure clamping helper made the same probe pass. It asserts the exact
+`POST /api/show` body, capacity/provenance, model limit and clamped caller limit.
+The named probe is `Ollama discovery separates advertised and effective windows
+through production Req` in
+[test/mojentic/llm/context_window_wire_test.exs](test/mojentic/llm/context_window_wire_test.exs).
+
+- Versioned executable set: **context-window-v1**;
+  [contract](test/contracts/context_window_v1.json) SHA-256
+  `cfeee4702c0dd3b18e02fbd0c8bad82ae58ee1ca7eadcfd21683479ba24f3dc4`.
+- Tested base commit: `4ca97881bfe5249a3b4ebe0e3a640ec25e28cb1c` plus the
+  uncommitted source/test snapshot identified by
+  [manifest](test/contracts/context_window_v1.manifest.sha256), SHA-256
+  `1c25185664b06c07e0d105a69e17ced6b5d238af615c2d3ff35ce2f58d138b76`.
+  `sha256sum --check test/contracts/context_window_v1.manifest.sha256` passed.
+- Verification: `scripts/verify-context-window-contract` prints the base revision
+  and source/fixture hashes, then runs both
+  [wire tests](test/mojentic/llm/context_window_wire_test.exs) and
+  [consumer/helper tests](test/mojentic/llm/model_context_window_test.exs).
+  **Exit 0: 194 tests, zero failures.** All cases run automatically in the
+  existing `mix test --cover` gate and pinned CI test job.
+- The scripted server's responses and Mox gateway doubles derive from this same
+  contract through `Mojentic.TestSupport.ContextWindowContract`. The existing
+  production `Mojentic.HTTP.ReqClient` is exercised, without mocking Req internals.
+  The server now accepts bodyless GET requests as well as completion POSTs.
+  Completion success frames reuse `request-fidelity-v1` rather than introducing
+  independent completion doubles.
+
+### Named conformance cases
+
+| Requirement | Executable test names / declared cases |
+| --- | --- |
+| Exact authenticated oMLX selection and positive capacity | `context-window-v1 {adapter,consumer} omlx exact-selection exact wire and result`; also `exact-selection-without-api-key` |
+| No model/field is not advertised | Same matrix: `omlx no-model`, `omlx no-field`, `ollama missing-info`, `ollama no-matching-key`, `ollama no-architecture-from-num-ctx` |
+| Architecture-specific provenance and optional model limit | Same matrix: `ollama qwen3_5`, `ollama qwen4_exp`, `ollama model-num-ctx`, `ollama whitespace-num-ctx` |
+| Reject invalid capacity and malformed bodies | Same matrix: `invalid-window-*`, `invalid-num-ctx-*`, `info-list`, `parameters-list`, `missing-data`, `data-object`, `bad-entry`, `missing-id`, `malformed-*` |
+| Non-2xx status and transport causes | Same matrix: `http-401`, `http-404`, `http-418`; `context-window-v1 {Ollama,OMLX} {adapter,consumer} transport failure retains cause`; `non-200-success` verifies 201 acceptance |
+| OpenAI exact registry, no HTTP or invented pattern capacity | `context-window-v1 registry {gpt-5.4,gpt-5.4-unknown,o1-custom,completely-unknown} performs no HTTP`; `registry metadata does not alter capability or pattern fallback`; `registry entries without a positive known capacity never invent a window` |
+| Compatible old custom gateways | `legacy gateway without optional callback returns not advertised without dispatch`; the Mox gateway omits optional callbacks entirely |
+| Pure effective-window precedence, clamping and unknowns | `context-window-v1 effective precedence and clamping 0` through `7`: caller overrides model, larger/smaller limits clamp, no limit uses capacity, unknown capacity remains nil even with caller limit; inputs remain unchanged |
+| Contract-derived consumer doubles | `context-window-v1 consumer double {provider} {case} derives verified result` uses the same 53 provider rows, including errors |
+| Existing configured lookup unchanged | `context-window-v1 {ollama,omlx,openai} preserves configured model lookup before and after discovery` asserts routes, authentication, empty GET bodies and returned names |
+| Later completions unchanged | `context-window-v1 {Ollama,OMLX,OpenAI} discovery leaves subsequent {complete,object,legacy,events} request unchanged`: same model for discovery and completion, exact full JSON bodies and identical request bytes before/after discovery; config remains unchanged |
+
+Legacy streaming in the last matrix consumes the first content event and closes
+the stream. The terminal-event API is fully drained and its semantic terminal
+result is compared. Existing request-fidelity/recovery suites continue to verify
+fully drained maintained streams, continuations and admitted retries. This
+correction does not change those paths or rebuild their contracts.
+
+The helper reports an upper bound when neither caller nor model supplies
+`num_ctx`: the server's `OLLAMA_CONTEXT_LENGTH` is not visible. Unknown advertised
+capacity stays `nil`; discovery does not inject caller defaults, resize loaded
+models, or alter ChatSession history trimming. Malformed discovery returns
+`:invalid_response`; non-2xx returns `{:http_error, status}`; transport failures
+retain the native cause under `{:request_failed, cause}`.
+
+### Counterpart status and initiative finding
+
+| Verification side | Tested identity | Command / result |
+| --- | --- | --- |
+| Local provider adapters | Base commit and manifest snapshot above | `scripts/verify-context-window-contract`: exit 0; production Req verifies all 53 provider rows, plus transport/registry/journey cases |
+| Local metadata consumers | Same base and snapshot, same executable set | Same command: exit 0; compatible dispatch verifies the same rows, with contract-derived Mox doubles and old-callback compatibility |
+| Actual oMLX/Ollama server producers | No tested external commit or server version | **Not run; missing paired verification** |
+| Consumers in other repositories | No tested external commit | **Not run; missing paired verification** |
+
+Initiative finding **mojentic-ex-context-window-v1-final-evidence-4ca97881**
+records the contract/source hashes, both local sides' commands/results, and the
+missing external verification for separate authorized coordination. It was
+submitted with `foundry finding add` (exit 0), superseding the earlier snapshot
+identities in `mojentic-ex-context-window-v1-counterpart-gap-4ca97881` and
+`mojentic-ex-context-window-v1-same-model-counterpart-gap-4ca97881`.
+No sibling repository was edited.
+Actual providers and external consumers must verify this same versioned set;
+schema agreement or independently authored mocks cannot close the gap. The
+supplied TypeScript first-token regression finding and post-release typed-error
+consumer assignments retain their separate scope. No release, Git finalization,
+dependency change or runtime upgrade is authorized here.
+
+### Context discovery quality results
+
+Pinned Elixir **1.18.5**, Erlang/OTP **28.5.0.7**, selected by
+`scripts/recovery-mix`; CI pins and PLT caching remain unchanged.
+
+| Command | Result |
+| --- | --- |
+| `scripts/recovery-mix format --check-formatted` | Exit 0 |
+| `scripts/recovery-mix compile --warnings-as-errors` | Exit 0, no project warnings |
+| `MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | Exit 0, no project warnings |
+| `scripts/recovery-mix credo --strict` | Exit 0, zero issues |
+| `scripts/recovery-mix dialyzer` | Exit 0, zero errors/skips |
+| `MIX_ENV=test scripts/recovery-mix dialyzer` | Exit 0, zero errors/skips |
+| `scripts/recovery-mix test` | Exit 0; 22 doctests, 5,234 tests, zero failures, 19 existing integration exclusions |
+| `scripts/recovery-mix test --cover` | Exit 0; 22 doctests, 5,234 tests, zero failures, 19 existing integration exclusions; **90.80%** coverage against 80% threshold; 616.4 seconds, below the 900-second gate limit |
+| `scripts/recovery-mix deps.audit` | Exit 0, no vulnerabilities |
+| `scripts/recovery-mix hex.audit` | Exit 0, no retired or security advisory packages |
+| `scripts/recovery-mix sobelow --config` | Exit 0, no findings |
+| `scripts/recovery-mix hex.outdated --all` | Exit 1, available upgrades; informational, nonblocking |
+| `scripts/recovery-mix docs` | Exit 0; existing missing links to sibling release plan, README LICENSE and dependency usage-rules remain |
+| `scripts/recovery-mix test test/mojentic/llm/context_window_wire_test.exs --only context_proof` | Exit 0; one selected proof, 129 excluded |
+
+No `precommit` alias is defined. The existing CI pins and `priv/plts` caching
+were preserved. Dependencies, versions, advisory suppressions and Git refs
+remain unchanged; all source changes are uncommitted for Foundry review.
+
+The standalone full suite passed before the test-only same-model assertion was
+strengthened. The final focused contract and full coverage run include that
+assertion; production code is identical across these runs. The full coverage
+gate also passed before that strengthening (650.1 seconds, 90.80%). No new
+integration exclusions or coverage suppressions were introduced.

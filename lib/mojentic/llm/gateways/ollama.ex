@@ -29,6 +29,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
   @behaviour Mojentic.LLM.Gateway
 
+  alias Mojentic.LLM.CompletionConfig
   alias Mojentic.LLM.Gateway
   alias Mojentic.LLM.GatewayResponse
   alias Mojentic.LLM.Gateways.OllamaStream
@@ -133,6 +134,47 @@ defmodule Mojentic.LLM.Gateways.Ollama do
         end
       )
     end
+  end
+
+  @doc "Returns the model's advertised architecture context window without changing requests."
+  @impl Gateway
+  def get_model_context_window(model) do
+    timeout = get_timeout()
+    body = Jason.encode!(%{model: model})
+
+    case http_client().post(
+           "#{get_host()}/api/show",
+           body,
+           [{"Content-Type", "application/json"}],
+           recv_timeout: timeout,
+           timeout: timeout
+         ) do
+      {:ok, %{status_code: status, body: body}} when status in 200..299 ->
+        Mojentic.LLM.ModelContextWindow.decode(body, &Mojentic.LLM.ModelContextWindow.ollama/1)
+
+      {:ok, %{status_code: status}} ->
+        {:error, {:http_error, status}}
+
+      {:error, %Jason.DecodeError{}} ->
+        {:error, :invalid_response}
+
+      {:error, reason} ->
+        {:error, {:request_failed, reason}}
+    end
+  end
+
+  @doc """
+  Returns the advertised upper bound clamped by caller `num_ctx`, then model `num_ctx`.
+  Unknown advertised windows return `nil`. Does not modify configuration or send HTTP.
+  Without either limit, the advertised window is an upper bound: the server default is unknown.
+  """
+  @spec effective_context_window(Mojentic.LLM.ModelContextWindow.t() | nil, CompletionConfig.t()) ::
+          pos_integer() | nil
+  def effective_context_window(nil, _config), do: nil
+
+  def effective_context_window(window, config) do
+    limit = config.num_ctx || Map.get(window, :model_num_ctx) || window.max_context_tokens
+    min(window.max_context_tokens, limit)
   end
 
   @impl Gateway

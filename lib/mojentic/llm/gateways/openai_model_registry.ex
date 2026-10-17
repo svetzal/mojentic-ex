@@ -87,6 +87,30 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
   end
 
   @doc """
+  Returns an explicitly registered context capacity, without capability pattern fallback.
+  Unknown models and entries without a capacity return `{:ok, nil}`.
+  """
+  @spec get_model_context_window(t(), String.t()) ::
+          {:ok, Mojentic.LLM.ModelContextWindow.t() | nil} | {:error, :invalid_response}
+  def get_model_context_window(%__MODULE__{models: models}, model_name) do
+    case Map.get(models, model_name) do
+      nil ->
+        {:ok, nil}
+
+      %{max_context_tokens: nil} ->
+        {:ok, nil}
+
+      %{max_context_tokens: tokens} when is_integer(tokens) and tokens > 0 ->
+        {:ok, %{max_context_tokens: tokens, field: "registry"}}
+
+      capabilities when is_map(capabilities) ->
+        if Map.has_key?(capabilities, :max_context_tokens),
+          do: {:error, :invalid_response},
+          else: {:ok, nil}
+    end
+  end
+
+  @doc """
   Gets the correct parameter name for token limits based on model type.
   """
   @spec get_token_limit_param(t(), String.t()) :: String.t()

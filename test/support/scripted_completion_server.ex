@@ -124,9 +124,13 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
 
     case String.split(request, "\r\n\r\n", parts: 2) do
       [headers, body] ->
-        [_, length] = Regex.run(~r/content-length: (\d+)/i, headers)
+        length =
+          case Regex.run(~r/content-length: (\d+)/i, headers) do
+            [_, value] -> String.to_integer(value)
+            nil -> 0
+          end
 
-        if byte_size(body) >= String.to_integer(length),
+        if byte_size(body) >= length,
           do: request,
           else: read_request(socket, request)
 

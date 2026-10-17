@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Local production adapters and metadata consumers verify the same versioned set.
+# External producers/consumers require separately authorized paired verification.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+echo 'context-window-v1'
+git rev-parse HEAD
+sha256sum lib/mojentic/llm/{gateway,model_context_window,completion_config}.ex \
+  lib/mojentic/llm/gateways/{openai,openai_model_registry,ollama,omlx}.ex \
+  lib/mojentic/http/req_client.ex mix.lock
+sha256sum test/contracts/context_window_v1.json test/contracts/request_fidelity_v1.json \
+  test/mojentic/llm/{context_window_wire,model_context_window}_test.exs \
+  test/support/{context_window_contract,scripted_completion_server}.ex test/test_helper.exs
+exec scripts/recovery-mix test test/mojentic/llm/context_window_wire_test.exs \
+  test/mojentic/llm/model_context_window_test.exs "$@"

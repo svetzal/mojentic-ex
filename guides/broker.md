@@ -344,6 +344,34 @@ end
 
 ### 3. Manage Context Windows
 
+Provider-advertised capacity is available without changing completion settings:
+
+```elixir
+alias Mojentic.LLM.{CompletionConfig, Gateway}
+alias Mojentic.LLM.Gateways.Ollama
+
+case Gateway.get_model_context_window(Ollama, "qwen3:32b") do
+  {:ok, nil} -> :not_advertised
+  {:ok, window} ->
+    config = CompletionConfig.new(num_ctx: 8192)
+    Ollama.effective_context_window(window, config)
+  {:error, reason} -> {:error, reason}
+end
+```
+
+The optional callback returns `{:ok, %{max_context_tokens: positive_integer,
+field: provider_field}}`, optionally with `model_num_ctx` for Ollama. Compatible
+dispatch returns `{:ok, nil}` for custom gateways without the callback. Provider
+failures remain errors, distinct from missing metadata.
+
+Ollama's helper uses caller `config.num_ctx` before model `model_num_ctx`, clamps
+either to advertised capacity, and otherwise returns the advertised upper bound.
+An unknown advertised window returns `nil`, even with a caller setting. The
+server's `OLLAMA_CONTEXT_LENGTH` is unknown to the client; discovery does not
+query loaded-model state or mutate config. Budgeting and ChatSession's local
+`max_context` trimming remain application choices. The helper neither sets
+`num_ctx` nor changes subsequent completion bodies.
+
 Long conversations need truncation:
 
 ```elixir

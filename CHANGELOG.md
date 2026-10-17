@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — context-window discovery
+
+- Optional `Gateway.get_model_context_window/1` callback and compatible
+  `Gateway.get_model_context_window(gateway, model)` dispatch; older gateways
+  return `{:ok, nil}` without implementing the callback.
+- oMLX queries the configured authenticated `/v1/models` endpoint for an exact
+  model's positive `max_model_len`. Ollama queries `/api/show` for architecture
+  context capacity and optional model `num_ctx`, retaining field provenance.
+  OpenAI uses exact registry entries without HTTP or capability fallback guesses.
+- Pure `Ollama.effective_context_window/2` clamps advertised capacity by caller
+  `num_ctx`, then model `num_ctx`. Discovery does not set request parameters or
+  change ChatSession trimming. Unknown advertised capacity remains `nil`.
+- `context-window-v1` executable contracts verify local adapters and metadata
+  consumers through production Req. External counterpart verification and
+  first-token timing remain pending; the coordinated release hold still applies.
+
 ### Breaking changes — request fidelity
 
 - `CompletionConfig.temperature`, `num_ctx` and `max_tokens` now default to `nil`.

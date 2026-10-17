@@ -106,6 +106,24 @@ defmodule Mojentic.LLM.Gateway do
   @callback get_available_models() :: {:ok, [String.t()]} | error()
 
   @doc """
+  Returns the advertised context window and field provenance, or `{:ok, nil}`.
+  Optional for custom gateways. Use `get_model_context_window/2` for compatible dispatch.
+  Discovery never changes later completion requests.
+  """
+  @callback get_model_context_window(String.t()) ::
+              {:ok, Mojentic.LLM.ModelContextWindow.t() | nil} | error()
+  @optional_callbacks get_model_context_window: 1
+
+  @doc "Queries a gateway, treating implementations without metadata support as not advertised."
+  @spec get_model_context_window(module(), String.t()) ::
+          {:ok, Mojentic.LLM.ModelContextWindow.t() | nil} | error()
+  def get_model_context_window(gateway, model) do
+    if Code.ensure_loaded?(gateway) and function_exported?(gateway, :get_model_context_window, 1),
+      do: gateway.get_model_context_window(model),
+      else: {:ok, nil}
+  end
+
+  @doc """
   Calculates embeddings for the given text.
 
   ## Parameters

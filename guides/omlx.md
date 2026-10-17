@@ -182,3 +182,13 @@ The local `omlx-keepalive-v1` executable set runs with
 and production Req through gateways, Broker and ChatSession. See
 `CONFORMANCE-3.0.0.md` for identities, named tests and the outstanding paired
 provider-verification gap.
+
+## Advertised context capacity
+
+`Mojentic.LLM.Gateways.OMLX.get_model_context_window(model)` uses the configured
+`OMLX_HOST` and `OMLX_API_KEY` for `GET /v1/models`. It selects the exact `id`
+and returns `{:ok, %{max_context_tokens: n, field: "max_model_len"}}` for a
+positive integer. Missing model/field returns `{:ok, nil}`; invalid capacity or
+malformed responses return `{:error, :invalid_response}`. Non-2xx status returns
+`{:error, {:http_error, status}}`; transport errors retain their cause under
+`{:request_failed, cause}`. Discovery never changes later completion parameters.
