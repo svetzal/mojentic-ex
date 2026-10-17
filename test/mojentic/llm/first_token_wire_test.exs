@@ -44,6 +44,19 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
     %{clock: clock}
   end
 
+  for provider <- [:openai, :ollama, :omlx],
+      route <- [:events, :legacy, :broker_events, :broker_legacy, :session],
+      outcome <- [:release, :reject, :raise, :cancel] do
+    @provider provider
+    @route route
+    @outcome outcome
+    @tag :dispatch_clock_proof
+    test "#{provider} #{route} blocked request capture #{outcome} excludes pre-dispatch time and evidence",
+         %{clock: clock} do
+      dispatch_capture_probe(@provider, @route, @outcome, clock)
+    end
+  end
+
   @tag :first_token_proof
   test "split-frame observation survives rejected capture without output or resend", %{
     clock: clock
@@ -68,7 +81,7 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
     System.put_env("OMLX_HOST", "http://127.0.0.1:#{port}")
 
     trace = fn
-      %{type: :request} ->
+      %{type: :response_headers} ->
         Agent.update(clock, fn _ -> @milestones["prefix"] end)
 
       %{type: :response_data, body: ^prefix} ->
@@ -185,10 +198,10 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
         send(owner, {:trace, event})
 
         case event do
-          %{type: :request, ids: %{wire_attempt: 1}} ->
+          %{type: :response_headers, ids: %{wire_attempt: 1}} ->
             Agent.update(clock, fn _ -> @milestones["prefix"] end)
 
-          %{type: :request, ids: %{wire_attempt: 2}} ->
+          %{type: :response_headers, ids: %{wire_attempt: 2}} ->
             Agent.update(clock, fn _ -> @milestones["frame"] end)
 
           %{type: :response_data, ids: %{wire_attempt: 2}} ->
@@ -261,8 +274,12 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
 
       trace = fn
         %{type: :request} = event ->
-          attempt = Agent.get_and_update(counter, fn n -> {n + 1, n + 1} end)
+          Agent.update(counter, &(&1 + 1))
           send(owner, {:request_trace, event})
+          :ok
+
+        %{type: :response_headers} ->
+          attempt = Agent.get(counter, & &1)
 
           Agent.update(clock, fn _ ->
             if attempt == 1, do: @milestones["frame"], else: @milestones["continuation_frame"]
@@ -281,7 +298,9 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
           :ok
       end
 
-      config = CompletionConfig.new(recovery: [trace_observer: trace])
+      config =
+        CompletionConfig.new(temperature: 0, max_tokens: 17, recovery: [trace_observer: trace])
+
       tool = %Mojentic.TestSupport.CountingTool{owner: owner}
       broker = Broker.new("gpt-4o", gateway(provider))
 
@@ -294,7 +313,11 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
             session = ChatSession.new(broker, system_prompt: "system", tools: [tool])
 
             {:ok, stream, handle} =
-              ChatSession.send_stream(session, "hello", recovery: config.recovery)
+              ChatSession.send_stream(session, "hello",
+                temperature: 0,
+                max_tokens: 17,
+                recovery: config.recovery
+              )
 
             {stream, handle}
         end
@@ -307,17 +330,7 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
       assert_receive {:tool_executed, %{}}
       refute_receive {:tool_executed, _}, 0
       assert [one, two] = GenServer.call(server, :requests)
-      [_, first_body] = String.split(one, "\r\n\r\n", parts: 2)
-      [_, second_body] = String.split(two, "\r\n\r\n", parts: 2)
-      initial = Jason.decode!(first_body)
-      followup = Jason.decode!(second_body)
-      assert Map.drop(initial, ["messages"]) == Map.drop(followup, ["messages"])
-      assert Enum.take(followup["messages"], length(initial["messages"])) == initial["messages"]
-
-      assert [
-               %{"role" => "assistant", "tool_calls" => [_]},
-               %{"role" => "tool", "content" => "\"tool-result-secret\""}
-             ] = Enum.drop(followup["messages"], length(initial["messages"]))
+      assert_continuation_requests(one, two, provider, @route)
 
       assert_receive {:request_trace, first_trace}
       assert_receive {:request_trace, second_trace}
@@ -604,7 +617,7 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
 
   defp eof_trace(owner, prefix, clock) do
     fn
-      %{type: :request} ->
+      %{type: :response_headers} ->
         Agent.update(clock, fn _ -> @milestones["prefix"] end)
 
       %{type: :response_data, body: ^prefix} ->
@@ -689,7 +702,7 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
 
   defp capture_trace(owner, prefix, clock) do
     fn
-      %{type: :request} ->
+      %{type: :response_headers} ->
         Agent.update(clock, fn _ -> @milestones["prefix"] end)
 
       %{type: :response_data, body: ^prefix} ->
@@ -759,6 +772,74 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
     assert_request(server, provider, route)
   end
 
+  defp dispatch_capture_probe(provider, route, outcome, clock) do
+    owner = self()
+    cancel = make_ref()
+    wire = Contract.frame(provider, %{"content" => "answer"}) <> Contract.terminal(provider)
+    server = start_server(provider, [Contract.headers() <> chunk(wire) <> "0\r\n\r\n"])
+
+    stub(Mojentic.MonotonicClockMock, :now, fn ->
+      value = Agent.get(clock, & &1)
+      send(owner, {:clock_read, value})
+      value
+    end)
+
+    trace = fn
+      %{type: :request} ->
+        send(owner, {:request_capture_blocked, self()})
+
+        receive do
+          :release -> :ok
+          :reject -> {:error, :rejected}
+          :raise -> raise "request capture failed"
+        end
+
+      %{type: :response_headers} ->
+        Agent.update(clock, fn _ -> 125 end)
+
+      %{type: :response_data} ->
+        Agent.update(clock, fn _ -> 180 end)
+
+      _ ->
+        :ok
+    end
+
+    config = CompletionConfig.new(recovery: [cancel_ref: cancel, trace_observer: trace])
+    task = collect_async(invoke(provider, route, config, owner))
+    assert_receive {:request_capture_blocked, worker}, 3000
+    assert GenServer.call(server, :requests) == []
+    # Capture can spend arbitrary time here; none is dispatch evidence.
+    pre_dispatch_read =
+      receive do
+        {:clock_read, value} -> value
+      after
+        0 -> nil
+      end
+
+    Agent.update(clock, fn _ -> 100 end)
+
+    if outcome == :cancel,
+      do: send(task.pid, {:cancel, cancel}),
+      else: send(worker, outcome)
+
+    events = Task.await(task, 5000)
+    assert pre_dispatch_read == nil
+    assert [terminal] = Enum.filter(events, &terminal?/1)
+
+    if outcome == :release do
+      assert metrics(terminal) == expected_metrics("content", 80)
+      assert_request(server, provider, route)
+      assert_receive {:clock_read, 100}
+    else
+      assert {:error, %CompletionError{} = error} = terminal
+      assert error.reason == if(outcome == :cancel, do: :cancelled, else: :capture_failed)
+      assert metrics(terminal) == %{}
+      assert GenServer.call(server, :requests) == []
+      refute_receive {:wire_request, _}, 0
+      refute_receive {:clock_read, _}, 0
+    end
+  end
+
   defp start_server(provider, responses) do
     server = start_supervised!({ScriptedCompletionServer, {self(), responses, 0, 1}})
     assert_receive {:server_port, port}
@@ -826,6 +907,95 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
 
   defp later_frame(provider, _row),
     do: Contract.frame(provider, %{"content" => "later", "thinking" => "later thought"})
+
+  defp assert_continuation_requests(one, two, provider, route) do
+    messages =
+      if route == :session,
+        do: [
+          %{"role" => "system", "content" => "system"},
+          %{"role" => "user", "content" => "hello"}
+        ],
+        else: [%{"role" => "user", "content" => "hello"}]
+
+    descriptor = %{
+      "type" => "function",
+      "function" => %{
+        "name" => "count",
+        "description" => "count",
+        "parameters" => %{"type" => "object"}
+      }
+    }
+
+    base = %{"model" => "gpt-4o", "stream" => true, "tools" => [descriptor]}
+
+    base =
+      if provider == :ollama,
+        do: Map.put(base, "options", %{"temperature" => 0, "num_predict" => 17}),
+        else: Map.merge(base, %{"temperature" => 0, "max_tokens" => 17})
+
+    call = %{"type" => "function", "function" => %{"name" => "count", "arguments" => %{}}}
+
+    assistant =
+      if provider == :ollama,
+        do: %{"role" => "assistant", "content" => "", "tool_calls" => [call]},
+        else: %{
+          "role" => "assistant",
+          "content" => "",
+          "tool_calls" => [put_in(Map.put(call, "id", "t1"), ["function", "arguments"], "{}")]
+        }
+
+    result = %{"role" => "tool", "content" => "\"tool-result-secret\""}
+
+    result =
+      if provider == :ollama,
+        do: Map.put(result, "tool_calls", [call]),
+        else: Map.put(result, "tool_call_id", "t1")
+
+    assert_complete_request(one, provider, Map.put(base, "messages", messages))
+
+    assert_complete_request(
+      two,
+      provider,
+      Map.put(base, "messages", messages ++ [assistant, result])
+    )
+  end
+
+  defp assert_complete_request(request, provider, expected) do
+    [head, body] = String.split(request, "\r\n\r\n", parts: 2)
+    [method_path | headers] = String.split(head, "\r\n")
+    path = if provider == :ollama, do: "/api/chat", else: "/v1/chat/completions"
+    assert method_path == "POST #{path} HTTP/1.1"
+
+    headers =
+      Map.new(headers, fn header ->
+        [name, value] = String.split(header, ": ", parts: 2)
+        {String.downcase(name), value}
+      end)
+
+    endpoint_key =
+      case provider do
+        :openai -> "OPENAI_API_ENDPOINT"
+        :ollama -> "OLLAMA_HOST"
+        :omlx -> "OMLX_HOST"
+      end
+
+    endpoint = URI.parse(System.fetch_env!(endpoint_key))
+
+    expected_headers = %{
+      "host" => "#{endpoint.host}:#{endpoint.port}",
+      "content-type" => "application/json",
+      "content-length" => Integer.to_string(byte_size(Jason.encode!(expected))),
+      "user-agent" => "req/0.7.5"
+    }
+
+    expected_headers =
+      if provider == :ollama,
+        do: expected_headers,
+        else: Map.put(expected_headers, "authorization", "Bearer contract-key")
+
+    assert Jason.decode!(body) == expected
+    assert headers == expected_headers
+  end
 
   defp assert_provider_metrics({:completed, evidence}, :ollama) do
     assert evidence.metadata["total_duration"] == 900

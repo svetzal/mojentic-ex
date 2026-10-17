@@ -30,6 +30,18 @@
       "name": "sobelow",
       "command": "scripts/recovery-mix sobelow --config",
       "required": false
+    },
+    {
+      "name": "first-token-contract",
+      "command": "scripts/verify-first-token-contract",
+      "required": true,
+      "timeout": 900
+    },
+    {
+      "name": "packaged-first-token",
+      "command": "scripts/verify-packaged-first-token",
+      "required": true,
+      "timeout": 900
     }
   ]
 }

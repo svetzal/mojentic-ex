@@ -104,22 +104,10 @@ defmodule Mojentic.HTTP.ReqClient do
   """
   @impl true
   def post_stream(url, body, headers, opts) do
-    timeout = Keyword.get(opts, :recv_timeout, 30_000)
-
     stream =
       Stream.resource(
         fn ->
-          start_stream(
-            url,
-            body,
-            headers,
-            timeout,
-            Keyword.get(opts, :stream_timeout, :absolute),
-            Keyword.get(opts, :stream_metadata, false),
-            Keyword.get(opts, :cancel_ref),
-            not is_nil(Keyword.get(opts, :wire_trace)) or
-              Keyword.get(opts, :recovery_metadata, false)
-          )
+          start_stream(url, body, headers, opts)
         end,
         &next_stream/1,
         &close_stream/1
@@ -138,7 +126,15 @@ defmodule Mojentic.HTTP.ReqClient do
     {:ok, stream}
   end
 
-  defp start_stream(url, body, headers, timeout, mode, metadata, cancel, trace) do
+  defp start_stream(url, body, headers, opts) do
+    timeout = Keyword.get(opts, :recv_timeout, 30_000)
+    mode = Keyword.get(opts, :stream_timeout, :absolute)
+    metadata = Keyword.get(opts, :stream_metadata, false)
+    cancel = Keyword.get(opts, :cancel_ref)
+
+    trace =
+      not is_nil(Keyword.get(opts, :wire_trace)) or Keyword.get(opts, :recovery_metadata, false)
+
     deadline =
       if mode == :idle, do: {:idle, timeout}, else: System.monotonic_time(:millisecond) + timeout
 
@@ -160,15 +156,29 @@ defmodule Mojentic.HTTP.ReqClient do
 
     result =
       try do
-        Req.post(url,
-          body: body,
-          headers: headers,
-          receive_timeout: timeout,
-          finch: [name: Req.Finch, pool_tag: pool.tag],
-          retry: false,
-          redirect: false,
-          into: :self
+        request =
+          Req.new(
+            url: url,
+            method: :post,
+            body: body,
+            headers: headers,
+            receive_timeout: timeout,
+            finch: [name: Req.Finch, pool_tag: pool.tag],
+            retry: false,
+            redirect: false,
+            into: :self
+          )
+
+        # The last request step runs after preparation, immediately before the
+        # production adapter sends. Capture and pool setup are outside this clock.
+        request
+        |> Req.Request.append_request_steps(
+          mojentic_dispatch: fn request ->
+            Mojentic.LLM.StreamTiming.dispatch(Keyword.get(opts, :stream_timing))
+            request
+          end
         )
+        |> Req.request()
       rescue
         exception ->
           stop_stream_pool(pool_supervisor)

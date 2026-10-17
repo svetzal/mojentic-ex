@@ -17,9 +17,17 @@ context-window discovery, registry fallback, request fidelity, native reasoning,
 recovery decisions, typed errors, privacy, cancellation, admission, failure identity,
 bounded history and terminal behavior. Dependency/runtime changes, unrelated recovery
 changes and rebuilding completed metadata/request-fidelity work are outside this run.
-Write only in this worktree; record missing external counterpart verification for
-initiative coordination. Run `scripts/verify-first-token-contract` with the project
-gates; local case mapping does not establish external paired verification.
+Write only in this worktree. Correct the preserved cycle-13 dispatch defect:
+request capture and preparation precede the production Req dispatch clock;
+rejection or cancellation before dispatch must create neither HTTP traffic nor
+timing evidence. Preserve response observation before capture and stream cleanup.
+Run `scripts/verify-first-token-contract` and `scripts/verify-packaged-first-token`
+with the project gates. Under the October 17 library self-validation policy,
+public-API consumer tests and a fresh consumer of the locally built Hex payload
+establish the declared library cases. TypeScript snapshots are provenance, not a
+required external executable pairing. Dependents verify upon adopting a published
+version; no unreleased dependent adoption is required. Running service boundaries
+still require shared versioned producer/consumer verification in authorized work.
 
 The coordinated release hold remains in force until all six ports are ready and
 the release coordinator authorizes release. Do not tag, publish or bump versions.

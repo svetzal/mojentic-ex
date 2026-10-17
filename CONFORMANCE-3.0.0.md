@@ -1,6 +1,13 @@
 # 3.0.0 conformance (partial)
 
-The final section records client first-token timing and its external verification gaps.
+The final section records the cycle-14 dispatch-clock correction and current
+library self-validation results. The October 17 owner policy supersedes historical
+external-pairing and cross-library reference-snapshot readiness prerequisites
+throughout this record. Library readiness uses public-API consumer tests and a
+fresh consumer of the locally packaged artifact; dependent adoption waits for
+publication. References to absent external runs below are historical observations,
+not current library release prerequisites. Real running-service boundaries retain
+shared executable producer/consumer contract requirements.
 This partial recovery record also covers the October 12 **Typed errors** guarantee
 and the **Capabilities** amendment,
 alongside the **oMLX keepalive frames** guarantee,
@@ -161,13 +168,14 @@ certifies the configured scan, not an unfiltered audit. ExDoc retains existing
 warnings for the absent sibling `../RELEASE-3.0.0.md`, README `LICENSE`, and
 `deps/igniter/usage-rules.md` links. No runtime or dependency versions changed.
 
-**Missing paired verification:** no shared versioned executable producer/consumer
+**Historical pairing prerequisite (superseded by the October 17 library policy):**
+no shared versioned executable producer/consumer
 contract set was found for this amendment. No other repository was changed or
 verified. Consumer commits, supported old/new version cases, and both sides'
-verification commands/results are therefore unavailable. Coordination must provide
-that set (including errors, optional fields and semantic behavior), derive doubles
-from it, and run it in both repositories' required gates before compatibility is
-claimed. The local suite is not a substitute for that work or a full user journey.
+verification commands/results are therefore unavailable. This does not block
+library self-validation; consumers verify upon published adoption. Compatibility
+between changed running services still requires shared executable verification,
+and local library checks do not certify live vendor deployments.
 
 The Anthropic adapter is absent from mojentic-ex; its remote-provider branch
 cannot be exercised here and remains a coordination gap. No adapter was added.
@@ -298,7 +306,7 @@ not an unfiltered audit. ExDoc's existing warnings concern README `LICENSE`, the
 absent relative sibling `../RELEASE-3.0.0.md`, and the
 `deps/igniter/usage-rules.md` link. No unrelated fixes or upgrades were made.
 
-### Paired verification remains unfinished
+### Historical external verification status (policy superseded)
 
 `retry-after-dates-v2` is a **local** executable-set identity, not a jointly
 verified contract. Local consumer-side verification exercises gateway, Broker
@@ -506,7 +514,7 @@ without replacing the old representation. Unknown facilities never establish
 resend permission or exact remote termination. Wire integration tests still cover
 the user's completion journey separately from these declaration assertions.
 
-### Paired verification remains unfinished
+### Historical external verification status (policy superseded)
 
 This is a **local declaration contract**, not jointly verified provider/consumer
 compatibility. For OpenAI, Ollama and oMLX, provider implementation revision tested:
@@ -521,7 +529,8 @@ Coordination finding: each affected provider/consumer side must verify the same
 identified executable set and report its tested revision, command and result
 before paired conformance can be claimed. Such verification or required adapters
 must be coordinated as separate authorized work; no sibling repository was edited.
-This missing verification is unfinished coordination work. The six-port release
+This historical prerequisite is superseded for library readiness by the
+October 17 policy; live-service compatibility remains unclaimed. The six-port release
 hold remains; this correction does not establish complete 3.0.0 readiness.
 
 ### Current quality checks
@@ -657,15 +666,16 @@ frames in `received_evidence/1`. Ordinary received bodies are checked exactly.
 This is a **local executable contract**, not a jointly verified cross-repository
 contract. No external wire schema or provider endpoint was changed. The public
 Elixir error category and recovery length behavior changed; external consumers
-must coordinate matching and cause handling against this same executable set.
+verify matching and cause handling when adopting the published library.
 No shared paired verifier currently exists for this boundary. Provider
 implementation commits tested for OpenAI/Ollama/oMLX: **none**. Their verification
 commands/results against typed-errors-v1: **unavailable / not run**. External
 consumer commits, commands and verification results: **unavailable / not run**.
 Local scripted responses are not doubles derived from jointly verified provider
-contracts, and independent mocks are not compatibility evidence. Missing paired
-verification remains unfinished coordination work in separately authorized
-repositories. No other repository was edited. The six-port release hold remains;
+contracts, and independent mocks are not compatibility evidence. The October 17 policy
+supersedes this historical pairing prerequisite for library readiness; dependent
+adoption is verified after publication in separately authorized repositories.
+No other repository was edited. The six-port release hold remains;
 this partial result does not establish full 3.0.0 readiness.
 
 Executable set SHA-256 (fixture, invocation and assertions together):
@@ -679,7 +689,8 @@ The idiomatic policy representation is a discriminated `CompletionError`, rather
 than a separate exception class; callers can match the struct and `:policy`
 category directly. This preserves the existing reason atom and streaming error
 propagation. No contract ambiguity requiring a root amendment was identified;
-the genuine outstanding gap is paired external verification.
+the historical external-verification gap is superseded for library readiness by
+the October 17 self-validation policy; dependent adoption follows publication.
 
 An additional baseline comparison ran the **same final 110-case set** after
 loading `CompletionRequest` and `StreamRecovery` directly from `git show
@@ -757,7 +768,7 @@ against base `b85a27ab37bd16e6ee82950ea08f00c5356c5075` plus these working chang
 | --- | --- |
 | Actual public gateway adapters (OpenAI, Ollama, oMLX) | 42 gateway cases pass within the same 110-case verifier |
 | Actual Broker and ChatSession consumers | 68 consumer cases pass within that verifier |
-| External provider implementations / external repository consumers | Not run; commits unavailable; paired cross-repository verification unfinished |
+| External provider implementations / external repository consumers | Not run; commits unavailable; dependent adoption follows publication |
 
 The script provides received HTTP observations for exercising local adapters;
 it remains unverified against real external providers. This table does not
@@ -787,7 +798,7 @@ Execution logs and proof are Foundry-owned scratch, not committed project
 artifacts. Foundry owns Git finalization; no commit, push, ref change, version
 bump, publication or release was performed.
 
-## Part 2: native reasoning (local implementation; external verification pending)
+## Part 2: native reasoning (local implementation; historical external status)
 
 Binding source: `mojentic-unify/REASONING-PROTOTYPE-2026-10.md`, source revision
 `4b08dcd1d87f520a4c70928c33a2bc84c228093d`, SHA-256
@@ -950,8 +961,9 @@ Git refs were changed. Changes remain uncommitted for Foundry review.
 The final minimal acceptance command,
 `scripts/recovery-mix test test/mojentic/llm/reasoning_wire_test.exs --only reasoning_proof`,
 also passed (exit 0) on this final snapshot: one selected case, 181 excluded.
-These results establish the declared local adapter/consumer cases only; paired
-external verification remains unfinished. The independent `typed-errors-v1`
+These results establish the declared local adapter/consumer cases. External
+dependent verification follows published adoption under the October 17 policy.
+The independent `typed-errors-v1`
 consumer follow-up retains its separate assignment.
 
 ## Request fidelity — partial part 3 evidence
@@ -966,8 +978,9 @@ exact-body and replay cases, local adapter/consumer identities and results,
 changed-default migration profile and external verification gaps.
 
 Local adapter and Broker/ChatSession verification use the same versioned
-contract-derived responses through production Req. External provider/consumer
-paired verification remains unfinished. Context-window discovery and first-token
+contract-derived responses through production Req. The October 17 library
+self-validation policy supersedes the historical external-pairing prerequisite.
+Context-window discovery and first-token
 timing were not implemented by that correction. Context discovery is recorded below.
 This mapping does not assert
 complete part 3 or coordinated release readiness.
@@ -1055,8 +1068,8 @@ retain the native cause under `{:request_failed, cause}`.
 | --- | --- | --- |
 | Local provider adapters | Base commit and manifest snapshot above | `scripts/verify-context-window-contract`: exit 0; production Req verifies all 53 provider rows, plus transport/registry/journey cases |
 | Local metadata consumers | Same base and snapshot, same executable set | Same command: exit 0; compatible dispatch verifies the same rows, with contract-derived Mox doubles and old-callback compatibility |
-| Actual oMLX/Ollama server producers | No tested external commit or server version | **Not run; missing paired verification** |
-| Consumers in other repositories | No tested external commit | **Not run; missing paired verification** |
+| Actual oMLX/Ollama server producers | No tested external commit or server version | **Not run; historical external status, not a library readiness prerequisite** |
+| Consumers in other repositories | No tested external commit | **Not run; historical external status, not a library readiness prerequisite** |
 
 Initiative finding **mojentic-ex-context-window-v1-final-evidence-4ca97881**
 records the contract/source hashes, both local sides' commands/results, and the
@@ -1150,17 +1163,17 @@ local sides. Consumer doubles derive the new rejection from this same contract.
 | Local production adapters and HTTP boundary | Base commit plus manifest above | `scripts/verify-context-window-contract`: exit 0, 233 tests, zero failures |
 | Local metadata consumers and pure helper | Same source identity and executable set | Same command: exit 0; direct and dispatch cases, contract-derived Mox doubles and compatible old callbacks |
 | Actual Ollama/oMLX server producers | No external tested commit/version | Not run; missing verification of the updated shared executable set |
-| External application consumers | No external tested commit | Not run; missing paired verification, retained for initiative coordination |
+| External application consumers | No external tested commit | Not run; dependent adoption follows publication under the October 17 policy |
 
 The verification script now includes shared POST byte conformance. Existing
 same-model journeys compare identical completion requests before/after discovery
 for ordinary/structured completion and both stream APIs; request-fidelity,
 recovery, typed errors, native reasoning and cancellation remain in the full
 repository suite. Schema checks and local doubles do not establish compatibility
-with unverified external counterparts. Initiative coordination must assign and
-run this exact updated set on both external sides and record their commits,
-versions and results; that work remains unfinished. The prior cycle-11 finding
-identifies an older executable snapshot and cannot certify this candidate.
+with unverified external counterparts. Under the October 17 policy, external dependents
+verify adoption of a published version in their own work; this library does not
+require those repositories to execute its unreleased snapshot. The prior
+cycle-11 finding retains its historical identity and does not certify this candidate.
 
 Only the demonstrated response-decoding defect is corrected. No first-token,
 recovery, dependency, runtime, version or release changes were made. Git
@@ -1316,22 +1329,20 @@ older fixtures retain their existing 50 ms default. This removes idle test-contr
 waits without changing response bytes, virtual clock milestones, or production
 HTTP dispatch/capture paths.
 
-### External paired verification: unfinished
+### Reference provenance and current library validation policy
 
-The local matrix maps the same identified v1/v2 behaviors into Elixir’s existing
-executable mechanism. Frozen source hashes and local real-HTTP checks establish
-traceability and local behavior; they do not establish cross-repository paired
-verification. There are no independently authored completion mocks presented as
-paired evidence.
+The local matrix maps the identified v1/v2 behaviors into Elixir’s existing
+executable mechanism. Frozen source hashes provide provenance; production Req
+checks establish the declared local behavior. The current library readiness
+policy additionally requires a fresh consumer of the packaged artifact, recorded
+in cycle 14 below. Independently authored mocks are not cross-service evidence.
 
 The TypeScript record at `54171796a2b02c0f0170d0758d2e3c693ad027c9` reports
 `npm test -- --runInBand src/llm/first-token-http.test.ts` passing 218/218 for v2.
-That is inspected historical evidence, not a fresh verification run by this
-correction. TypeScript and any other producer/consumer must verify the same
-identified shared cases against this Elixir source before initiative coordination
-can mark the cross-repository work complete. No external repository was changed
-or finalized. Bedrock and bedrock-workshop consumer verification remains pending
-publication and coordinator authorization, as recorded in the initiative brief.
+That remains historical evidence. The October 17 policy does not require a fresh
+TypeScript run against an Elixir executable snapshot or unreleased dependent
+adoption. Bedrock and bedrock-workshop verify when adopting the published library
+in separately authorized work. No external repository was changed or finalized.
 
 ### Final local verification
 
@@ -1357,7 +1368,7 @@ Runtime: Elixir **1.18.5**, OTP **28.5.0.7**, selected and asserted by the uncha
 
 The final source passed both plain and coverage suites. Earlier full runs exposed old terminal-shape expectations and the characterized Ollama duplicate-request expectation; those assertions now retain their original content, wire, timeout, privacy and policy checks while checking the new evidence. An unrelated pre-existing realtime test using a fixed 200 ms sleep failed once during the initial PLT build; final sequential gate runs passed without changing that test.
 
-The exact local portable contract is **ex-stream-first-token-v1**, SHA-256 `fddd71c8e0062c489588b2e15df749e934cf9d9412d05b4ee08eb52673425a6c`. A paired external run must adopt/verify this same identified set and report its own tested source identity and results. The inspected TypeScript historical result is not fresh paired verification. These source/test/fixture hashes identify the tested uncommitted Elixir revision in addition to base HEAD `df29a1c36f6b4b172b3ff352d40201d6583a9890`:
+The exact local portable contract is **ex-stream-first-token-v1**, SHA-256 `fddd71c8e0062c489588b2e15df749e934cf9d9412d05b4ee08eb52673425a6c`. The TypeScript source files provide historical provenance; the October 17 library policy does not require another library to run this executable snapshot. These source/test/fixture hashes identify the tested uncommitted Elixir revision in addition to base HEAD `df29a1c36f6b4b172b3ff352d40201d6583a9890`:
 
 ```text
 fddd71c8e0062c489588b2e15df749e934cf9d9412d05b4ee08eb52673425a6c  test/contracts/stream_first_token_v1.json
@@ -1382,4 +1393,145 @@ d77cb743856a8b46ced5c96658a7945fb497440c164c2b2ede88c25b284f08b6  test/support/s
 1280e3fdcc50846677f8d5bca6fa9bfa71a140472c90b6627f9fd78db65cfdb3  mix.lock
 ```
 
-Both behavioral proofs have validated JSON, actual rejecting exit 2 / corrected exit 0, and complete existing logs. All changes remain uncommitted for Foundry review. No version bump, tag, publish, push, merge, rebase or ref modification occurred. External paired verification and the coordinated release remain unfinished.
+Both behavioral proofs have validated JSON, actual rejecting exit 2 / corrected exit 0, and complete existing logs. All changes remain uncommitted for Foundry review. No version bump, tag, publish, push, merge, rebase or ref modification occurred. The coordinated release remains held; external dependent verification occurs when adopting the published library.
+
+## Cycle 14: production dispatch-clock correction (October 17)
+
+This corrects the preserved cycle-13 implementation at base commit
+`e2c4558bc6af2234b8a7553d2106983b98e233c2`; it does not rebuild first-token timing.
+The initiative brief and MODEL-METADATA section 2 were read and their recorded
+SHA-256 identities above verified again. The current tested, uncommitted source
+is identified by `test/contracts/stream_first_token_v1.manifest.sha256`, SHA-256
+`996158daa54511092f643a9cc608d8e6a5027d658316254ae508daf6caafe241`.
+The verifier checks every entry before executing the contract.
+
+The contract remains **ex-stream-first-token-v1**, fixture SHA-256
+`fddd71c8e0062c489588b2e15df749e934cf9d9412d05b4ee08eb52673425a6c`, with additive
+dispatch and exact-request regressions identified by that manifest. The frozen
+TypeScript v1/v2 sources and their hashes remain unchanged as provenance. They
+are not cross-library verification prerequisites under the October 17 policy.
+
+### Behavior and consumer-perspective cases
+
+`ReqClient` starts timing in the final Req request step, after request capture,
+pool setup and request preparation, immediately before the production adapter.
+`WireTrace` stops rejected request capture without advancing or halting an
+unstarted HTTP resource: halting such a resource can itself invoke initialization.
+Started response resources retain their existing cancellation and pool cleanup.
+Frame observation and received-evidence updates still precede response capture.
+
+`test/mojentic/llm/first_token_wire_test.exs` executes the public API against
+loopback TCP using production Req, with the monotonic-clock gateway controlled
+through Mox. It does not replace Req or its adapter. Named cases include:
+
+- `<provider> <route> blocked request capture <outcome> excludes pre-dispatch time and evidence`:
+  60 cases covering OpenAI, Ollama and oMLX; direct legacy/event streams, Broker
+  legacy/event streams and ChatSession; release, reject, exception and cancellation.
+  Construction/capture begins at 10; actual dispatch is released at 100; the
+  token frame is observed at 125 and terminal acceptance at 180. No clock reads
+  or HTTP requests occur while capture blocks. Release yields 25 ms first-token
+  latency and 80 ms duration; pre-dispatch failure/cancellation yields no timing
+  fields and no HTTP request, preserving the typed terminal reason.
+- `<provider> <route> admitted retry spans one dispatch clock and repeats exact wire request`:
+  15 cases verify a 503 followed by admitted success, identical complete wire
+  requests, stable logical request identity, distinct attempt identities, and
+  timing from the first actual dispatch through admission and the second attempt.
+- `<provider> <route> tool continuation starts a fresh clock and executes once`:
+  six Broker/ChatSession cases verify 80 ms then 50 ms logical durations and
+  25 ms first-token latency for each completion. Complete expected JSON bodies
+  and header maps assert POST/path, host, authorization presence/absence,
+  content type/length, user agent, explicit temperature zero/output limit,
+  omitted parameters, tool schema, exact message order, assistant call ID `t1`
+  and matching tool-result ID. Ollama's supported wire format omits these IDs
+  and carries object arguments/tool-call details; those omissions and fields
+  are asserted explicitly. Tool execution occurs once.
+
+Existing split-frame, EOF, precedence, provider-metric, privacy, recovery,
+terminal/error identity, admission and bounded-history cases remain in the same
+executable suite. Context discovery, reasoning and request fidelity remain
+covered by the complete project tests.
+
+### Distribution self-validation policy and source identity
+
+The owner’s October 17 library self-validation policy supersedes historical
+external-pairing and reference-snapshot prerequisites in this document, AGENTS
+and the changelog. No dependent must adopt or verify an unreleased library.
+Consumers verify adoption after publication in their separately authorized work.
+No external tested commit is claimed here, and no sibling repository was changed.
+This library run establishes the declared public-API and packaged-consumer cases;
+it does not certify live vendor deployments. Changes between running services
+still require shared versioned producer/consumer verification on both sides.
+The coordinated six-port release hold remains in force.
+
+`scripts/verify-packaged-first-token` builds a local Hex tarball without publishing,
+extracts its actual payload and installs that extracted payload as a path dependency
+in a fresh consumer project. The consumer gets a fresh dependency resolution and
+build, using the existing lockfile, and runs the identical 864 consumer-perspective
+contract cases with the same fixtures/support. It does not compile this worktree's
+library source as its dependency. The temporary project is removed on completion.
+The package retains the existing 2.1.0 version; no version bump is authorized.
+
+Both verifiers are required in `.hone-gates.json` and the existing pinned CI test
+job. Local runs use `scripts/recovery-mix`; CI selects its already-pinned `mix`
+with `MOJENTIC_MIX=mix`. Elixir 1.18.5 and OTP 28.5.0.7 are unchanged. CI already
+caches `priv/plts/`, which remains ignored by Git.
+
+The final local Hex payload SHA-256 was
+`dd230d182c0752781be475c38a7ff32ffe63420e244a38b235b8fc2916e43c08`.
+Both sides of distribution validation used base `e2c4558bc6af2234b8a7553d2106983b98e233c2`
+plus the manifest above:
+
+| Perspective | Command | Result |
+| --- | --- | --- |
+| Source library through public gateway/Broker/ChatSession API and production Req | `scripts/verify-first-token-contract` | Exit 0; 864 tests, zero failures; manifest and historical-reference hashes verified |
+| Fresh consumer of extracted local Hex payload | `scripts/verify-packaged-first-token` | Exit 0; fresh dependency install/build; same 864 tests, zero failures |
+
+The proof-first characterization failed before the fix (exit 2): the public API
+read the dispatch clock at 10 while request capture remained blocked. After the
+correction all 60 dispatch characterizations passed (exit 0). The rejecting and
+passing probes used actual loopback HTTP and asserted semantic terminal evidence,
+request bytes/absence and clock milestones. No marker toggle or count-only probe
+was used. Foundry retains the validated behavioral proof and full command logs
+as execution evidence; project verification is reproducible with the scripts above.
+
+Three preserved ordinary-completion tests expected one HTTP request even when
+request capture returned an error, threw or exited. The first full runs exposed
+those superseded expectations. Their corrected named cases,
+`exact trace observer <failure> request failure prevents dispatch and preserves failure identity`,
+now require zero HTTP traffic and no timing fields while retaining `capture_failed`,
+wire-attempt identity 1 and the original privacy checks. This follows the authorized
+pre-dispatch correction; recovery policy and failure identity were not changed.
+The source manifest also identifies this supplementary full-suite regression file.
+
+### Final quality checks for cycle 14
+
+All commands use the unchanged pinned runtime. The corrected compatibility tests
+were rerun before the complete suites. Required gates include both timing
+verifiers; their final reruns passed with the expanded source manifest above.
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `scripts/recovery-mix format --check-formatted` | 0 | Passed |
+| `scripts/recovery-mix compile --warnings-as-errors` | 0 | Passed |
+| `env MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | Passed |
+| `scripts/recovery-mix credo --strict` | 0 | Zero findings |
+| `scripts/recovery-mix dialyzer` | 0 | Zero errors/skips |
+| `scripts/recovery-mix deps.audit` | 0 | No vulnerabilities |
+| `scripts/recovery-mix hex.audit` | 0 | No retired/advisory packages |
+| `scripts/recovery-mix sobelow --config` | 0 | Passed; existing non-Phoenix router notice and lockfile syntax diagnostics |
+| `scripts/recovery-mix hex.outdated --all` | 1 | Available upgrades; nonblocking visibility check, no dependency changes or advisory suppressions |
+| `scripts/recovery-mix docs` | 0 | Generated; existing README LICENSE and AGENTS parent-release/dependency-rule link warnings |
+| `scripts/recovery-mix test test/mojentic/llm/recovery_wire_test.exs:1093` | 0 | Three corrected compatibility cases passed; 639 excluded |
+| `scripts/verify-first-token-contract` | 0 | Final manifest verified; 864 cases passed |
+| `scripts/verify-packaged-first-token` | 0 | Final fresh packaged consumer; same 864 cases passed |
+| `scripts/recovery-mix test` | 0 | 22 doctests, 6,122 tests, zero failures, 19 existing integration exclusions; 719.8 seconds |
+| `scripts/recovery-mix test --cover` | 0 | Same complete suite passed; **91.13%** coverage above the unchanged **80%** threshold; 722.1 seconds, within the 900-second gate limit |
+
+All required project gates passed after the correction. The initial full runs
+reported only the three superseded request-count expectations described above;
+both complete final reruns passed after those assertions were corrected. Streaming
+guides were reviewed and remain consistent with dispatch-based timing. No dependency,
+runtime, version, advisory-suppression or release changes were made. The validated
+behavioral proof records actual rejecting exit 2 and corrected exit 0 with existing
+logs. HEAD remains `e2c4558bc6af2234b8a7553d2106983b98e233c2`; changes are uncommitted
+for Foundry finalization. The coordinated six-port release hold remains.

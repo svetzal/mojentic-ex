@@ -29,7 +29,6 @@ defmodule Mojentic.HTTP.WireTrace do
     Stream.resource(
       fn ->
         continuation = &Enumerable.reduce(stream, &1, fn item, _ -> {:suspend, item} end)
-        Mojentic.LLM.StreamTiming.dispatch(timing)
         capture = notify(trace, request)
 
         %{
@@ -44,7 +43,7 @@ defmodule Mojentic.HTTP.WireTrace do
       end,
       &next(&1, trace, observer),
       fn state ->
-        state.continuation.({:halt, nil})
+        if state.capture == :ok, do: state.continuation.({:halt, nil})
 
         unless state.done do
           case notify(trace, %{
@@ -61,6 +60,10 @@ defmodule Mojentic.HTTP.WireTrace do
   end
 
   defp next(%{done: true} = state, _trace, _request), do: {:halt, state}
+
+  # Failed request capture must never advance the lazy HTTP resource.
+  defp next(%{capture: {:error, _}} = state, _trace, _observer),
+    do: {[{:error, :capture_failed}], %{state | done: true}}
 
   defp next(state, trace, observer) do
     case state.continuation.({:cont, nil}) do

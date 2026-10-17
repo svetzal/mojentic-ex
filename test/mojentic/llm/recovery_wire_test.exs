@@ -1090,7 +1090,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
   for failure <- [:return, :throw, :exit] do
     @failure failure
-    test "exact trace observer #{failure} cannot report success or resend" do
+    test "exact trace observer #{failure} request failure prevents dispatch and preserves failure identity" do
       server =
         start_supervised!(
           {ScriptedCompletionServer, {self(), [response(503, "response-secret")]}}
@@ -1105,7 +1105,15 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       assert {:error, error} = invoke(OpenAI, :complete, config)
       assert error.reason == :capture_failed
       assert error.wire_attempt == 1
-      assert length(GenServer.call(server, :requests)) == 1
+      assert GenServer.call(server, :requests) == []
+      refute_received {:wire_request, _}
+
+      assert Map.take(error.metadata, [
+               :request_duration_ms,
+               :time_to_first_token_ms,
+               :first_token_kind
+             ]) == %{}
+
       refute inspect(error) =~ "secret"
       refute Jason.encode!(error) =~ "secret"
     end

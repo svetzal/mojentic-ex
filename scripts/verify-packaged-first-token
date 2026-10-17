@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Consume the actual local Hex payload in a fresh project; never publish it.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+source_root="$PWD"
+mix_runner="${MOJENTIC_MIX:-$source_root/scripts/recovery-mix}"
+mkdir -p "$source_root/.foundry"
+consumer_root="$(mktemp -d "$source_root/.foundry/consumer.XXXXXX")"
+trap 'rm -rf "$consumer_root"' EXIT
+export HEX_HOME="$source_root/.foundry/runtime/hex"
+export XDG_CACHE_HOME="$source_root/.foundry/runtime/cache"
+
+"$mix_runner" hex.build --output "$consumer_root/mojentic.tar"
+sha256sum "$consumer_root/mojentic.tar"
+mkdir -p "$consumer_root/package" "$consumer_root/consumer/test/support"
+tar -xf "$consumer_root/mojentic.tar" -C "$consumer_root" contents.tar.gz
+tar -xzf "$consumer_root/contents.tar.gz" -C "$consumer_root/package"
+cat > "$consumer_root/consumer/mix.exs" <<'ELIXIR'
+defmodule TimingConsumer.MixProject do
+  use Mix.Project
+  def project do
+    [app: :timing_consumer, version: "0.0.0", elixirc_paths: ["test/support"],
+     deps: [{:mojentic, path: "../package"}, {:mox, "~> 1.2", only: :test}]]
+  end
+  def application, do: [extra_applications: [:logger]]
+end
+ELIXIR
+cp mix.lock "$consumer_root/consumer/mix.lock"
+cp test/test_helper.exs "$consumer_root/consumer/test/"
+cp test/mojentic/llm/first_token_wire_test.exs "$consumer_root/consumer/test/"
+cp -R test/contracts "$consumer_root/consumer/test/"
+cp test/support/{first_token_contract,scripted_completion_server,counting_tool,stub_tokenizer}.ex \
+  "$consumer_root/consumer/test/support/"
+cd "$consumer_root/consumer"
+"$mix_runner" deps.get
+"$mix_runner" test test/first_token_wire_test.exs

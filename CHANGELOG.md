@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — stream dispatch timing
+
+- Start the client clock immediately before the production Req adapter sends,
+  after request capture and preparation. Blocked request capture adds no latency;
+  rejection, exception or cancellation before dispatch creates no HTTP request or
+  dispatch timing. Response observation remains ahead of response capture.
+- Verify exact continuation requests and shared retry clocks across OpenAI,
+  Ollama and oMLX, including Broker and ChatSession. A fresh consumer verifies
+  the locally built Hex payload through the same public-API executable cases.
+
 ### Added — client stream timing
 
 - Every production OpenAI, Ollama and oMLX stream reports monotonic
@@ -30,7 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   measurements and cleanup belong to the original request.
 - The local `ex-stream-first-token-v1` matrix maps the designated TypeScript v1
   and v2 references through production Req, direct adapters, Broker and ChatSession.
-  External paired verification remains pending; the coordinated release hold remains.
+  Readiness follows October 17 library self-validation; dependent adoption follows
+  publication. The coordinated release hold remains.
 
 ### Fixed — context-window response decoding
 
@@ -40,7 +51,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Valid objects remain accepted. `context-window-v1` now verifies this through
   both direct and Gateway dispatch, and checks shared POST response bytes in
   ordinary, retry-disabled and traced modes. Completion and streaming behavior
-  remain covered by the existing suites; external paired verification is pending.
+  remain covered by the existing suites. Library validation follows the October 17
+  self-validation policy.
 
 ### Added — context-window discovery
 
