@@ -396,7 +396,7 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
       )
 
       disabled = GenServer.call(baseline, :requests) |> Enum.map(&encoded/1)
-      assert length(disabled) == if(@gateway == Ollama and @operation == :legacy, do: 2, else: 1)
+      assert length(disabled) == 1
       expected = expected(@gateway, @operation, "gpt-4o")
       assert Enum.all?(disabled, &(Jason.decode!(&1) == expected))
       stop_supervised!(ScriptedCompletionServer)

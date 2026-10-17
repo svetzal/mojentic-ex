@@ -53,10 +53,10 @@ output must never authorize an action. It streams one turn and yields:
 - `{:content, text}`: visible assistant content, in order.
 - `{:completed, evidence}`: terminal success. `evidence` is
   `%{finish_reason: finish_reason, usage: usage, provider_model: provider_model, metadata: metadata}`.
-  `usage`, `provider_model` and `metadata` are `nil` when the provider does not
-  report them. For Ollama, `metadata` holds the final frame's
-  `total_duration`, `load_duration`, `prompt_eval_duration` and `eval_duration`
-  (nanoseconds). For OpenAI, `metadata` is `nil`.
+  `usage` and `provider_model` remain `nil` when the provider does not report
+  them. `metadata` includes client timing. For Ollama it also retains the final
+  frame's `total_duration`, `load_duration`, `prompt_eval_duration` and
+  `eval_duration` (nanoseconds).
 - `{:error, reason}`: terminal failure.
 
 Exactly one terminal event ends every stream. Nothing follows it.
@@ -303,11 +303,12 @@ failure retains observed response evidence through the explicit private
 This increment follows the reviewed Rust recovery terminal behavior at
 `4ca1ed279c02eab37827a1ed07c30e961155ecf3`, using Elixir tuples/maps and explicit
 UTF-8 byte fields. Reasoning parity with recovery disabled and ordinary completion
-finish handling remain deferred. In the recovery-disabled legacy HTTP
-characterization, the existing adapter re-enumerates the cold stream and sends
-two identical requests for the fixture; it ignores content carried on the final
-frame. This increment preserves that behavior. The disabled terminal-event API
-sends one request and retains its existing content-then-length-error sequence.
+finish handling outside streaming remain deferred. The client-timing correction
+now keeps one HTTP continuation for the recovery-disabled legacy API and reports
+terminal evidence with the reported finish reason. Its permissive legacy finish
+handling still ignores content carried on that final frame; strict validation
+remains in the event/recovery APIs. The disabled terminal-event API
+retains its existing content-then-length-error sequence.
 
 ### Cancellation migration and limits
 
@@ -562,3 +563,61 @@ obeys admission; real semantic output still prevents replay. See the
 [oMLX guide](omlx.md#omlx-keepalives-during-recovery) for behavior and the local
 `scripts/verify-omlx-keepalive-contract` executable checks through Broker and
 ChatSession.
+
+
+## Client first-token timing
+
+Every production OpenAI, Ollama and oMLX streamed logical completion includes
+client measurements in `{:completed, evidence}.metadata` or terminal error
+metadata. This applies to both stream APIs, Broker and ChatSession. Legacy
+streams now yield `{:completed, evidence}` after each successful logical turn;
+a tool turn and its continuation each produce their own terminal evidence.
+Consumers should handle these tuples alongside content, thinking and telemetry.
+
+| Field | Client measurement |
+| --- | --- |
+| `time_to_first_token_ms` | Monotonic milliseconds from first HTTP dispatch to the first nonempty thinking, content or tool-argument delta |
+| `first_token_kind` | `:thinking`, `:content` or `:tool_call`; thinking wins within-frame ties, then content, then tool arguments |
+| `request_duration_ms` | Milliseconds from that dispatch to terminal success or failure, including response capture |
+
+Construction does not start the clock. Admitted retries share the original
+dispatch clock, including admission/backoff. Each tool continuation starts a
+fresh clock. Keepalives, empty deltas, tool names and empty argument fragments
+are not tokens. An empty stream omits both first-token fields, while retaining
+duration after dispatch. Provider usage (including oMLX timing in seconds) and
+Ollama duration fields retain their original names, values and units.
+
+Observation occurs when a complete provider frame arrives, before the optional
+response capture callback. A split frame is observed when its remainder arrives.
+Ollama may terminate its final JSON frame at EOF without a newline; that frame
+is observed at confirmed EOF, before response-end capture.
+Delayed capture increases total duration without changing an already observed
+first-token latency.
+Rejected/cancelled capture preserves observed timing, while withholding uncaptured
+output. Timing reports observation, not permission to deliver output or resend.
+
+Recovery failures retain their typed `CompletionError`, with timing at
+`error.metadata`. Existing incomplete-stream/completion evidence also carries
+metadata. Other failures without recovery use
+`{:stream_error, original_reason, %{metadata: metrics}}`, retaining the original
+reason. Local failures before dispatch have no client measurements.
+
+```elixir
+for event <- Broker.generate_stream(broker, messages, tools, config) do
+  case event do
+    text when is_binary(text) -> IO.write(text)
+    {:completed, evidence} -> IO.inspect(evidence.metadata, label: "Client timing")
+    {:error, %Mojentic.LLM.CompletionError{} = error} -> IO.inspect(error.metadata)
+    {:error, reason} -> IO.inspect(reason, label: "Stream failed")
+    _telemetry_or_thinking -> :ok
+  end
+end
+```
+
+`MonotonicClock` defines the clock boundary; the default uses
+`System.monotonic_time(:millisecond)`. Tests can configure `:monotonic_clock` with
+an implementation or Mox mock. Custom HTTP clients must honor `:stream_timing`
+through the same dispatch/observation boundary to provide measurements; the
+production Req path is verified by `scripts/verify-first-token-contract`.
+The frozen TypeScript v1/v2 references and local case mapping are identified in
+`CONFORMANCE-3.0.0.md`; external paired verification is still pending.

@@ -164,7 +164,12 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
 
     test "HTTP errors are observable and never retried" do
       serve([], false, 500)
-      assert [{:error, {:provider_error, %{status: 500}}}] = Enum.to_list(stream())
+
+      assert [{:error, {:stream_error, {:provider_error, %{status: 500}}, evidence}}] =
+               Enum.to_list(stream())
+
+      assert is_integer(evidence.metadata.request_duration_ms)
+      refute Map.has_key?(evidence.metadata, :first_token_kind)
       assert_receive {:request, _}
       refute_receive {:request, _}
     end
@@ -184,7 +189,15 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
       assert response.usage == %{"prompt_eval_count" => 26, "eval_count" => 290}
       assert response.provider_model == @model
       assert response.finish_reason == "stop"
-      assert response.metadata == %{"total_duration" => 5_000, "eval_duration" => 4_000}
+
+      assert Map.take(response.metadata, ["total_duration", "eval_duration"]) == %{
+               "total_duration" => 5_000,
+               "eval_duration" => 4_000
+             }
+
+      assert response.metadata.first_token_kind == :content
+      assert is_integer(response.metadata.time_to_first_token_ms)
+      assert is_integer(response.metadata.request_duration_ms)
     end
   end
 

@@ -7,10 +7,16 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
   def start_link({owner, responses, port}),
     do: GenServer.start_link(__MODULE__, {owner, responses, port})
 
+  # Dense milestone matrices can avoid idle polling delays without changing wire data.
+  def start_link({owner, responses, port, accept_timeout}),
+    do: GenServer.start_link(__MODULE__, {owner, responses, port, accept_timeout})
+
   @impl true
   def init({owner, responses}), do: init({owner, responses, 0})
 
-  def init({owner, responses, port}) do
+  def init({owner, responses, port}), do: init({owner, responses, port, 50})
+
+  def init({owner, responses, port, accept_timeout}) do
     {:ok, listener} =
       :gen_tcp.listen(port, [:binary, active: false, reuseaddr: true, ip: {127, 0, 0, 1}])
 
@@ -20,6 +26,7 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
     {:ok,
      %{
        owner: owner,
+       accept_timeout: accept_timeout,
        listener: listener,
        responses: responses,
        requests: [],
@@ -30,7 +37,7 @@ defmodule Mojentic.TestSupport.ScriptedCompletionServer do
 
   @impl true
   def handle_info(:timeout, state) do
-    case :gen_tcp.accept(state.listener, 50) do
+    case :gen_tcp.accept(state.listener, state.accept_timeout) do
       {:ok, socket} ->
         request = read_request(socket, "")
         send(state.owner, {:wire_request, request})

@@ -60,7 +60,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
              finish_reason: "stop",
              provider_model: "real-model",
              usage: %{"total_tokens" => 7},
-             metadata: nil
+             metadata: evidence.metadata
            }
 
     lifecycle = collect_events()
@@ -166,7 +166,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       assert Map.take(p1, [:logical_request_id, :attempt_id, :wire_attempt]) ==
                Map.take(p2, [:logical_request_id, :attempt_id, :wire_attempt])
 
-      if @mode == :events, do: assert([{:completed, _}] = terminal), else: assert(terminal == [])
+      assert [{:completed, _}] = terminal
       assert length(GenServer.call(server, :requests)) == 1
     end
 
@@ -338,10 +338,10 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
             assert [{:content, "🙂"}, {:completed, _}] = rest
 
           :broker_legacy ->
-            assert rest == ["🙂"]
+            assert ["🙂", {:completed, _}] = rest
 
           :session ->
-            assert rest == ["🙂"]
+            assert ["🙂", {:completed, _}] = rest
             session = ChatSession.finalize_stream(handle)
             assert List.last(ChatSession.messages(session)).message.content == "🙂"
         end
@@ -375,7 +375,13 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
             stream
         end
 
-      assert [{:progress, first}, {:progress, second}, {:metrics, _}, {:error, error}] =
+      assert [
+               {:progress, first},
+               {:completed, _},
+               {:progress, second},
+               {:metrics, _},
+               {:error, error}
+             ] =
                Enum.to_list(stream)
 
       refute first.logical_request_id == second.logical_request_id
@@ -411,24 +417,19 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     end
 
     @tag :telemetry_contract
-    test "Ollama #{@mode} recovery disabled keeps its length terminal behavior without telemetry" do
+    test "Ollama #{@mode} recovery disabled reports length terminal evidence without telemetry" do
       server = server(Ollama, [http(200, ndjson(telemetry_terminal("length")))])
       events = invoke(Ollama, @mode, CompletionConfig.new()) |> Enum.to_list()
 
       if @mode == :legacy do
-        assert events == []
+        assert [{:completed, evidence}] = events
+        assert evidence.finish_reason == "length"
       else
         assert [{:content, "🙂"}, {:error, {:incomplete_completion, evidence}}] = events
         assert evidence.finish_reason == "length"
       end
 
-      if @mode == :legacy do
-        # The disabled legacy adapter re-enumerates its cold HTTP stream.
-        # Characterize this existing behavior without changing it in this increment.
-        assert [request, request] = GenServer.call(server, :requests)
-      else
-        assert length(GenServer.call(server, :requests)) == 1
-      end
+      assert [_request] = GenServer.call(server, :requests)
     end
   end
 
@@ -440,9 +441,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       server = server(@gateway, [success(@gateway)])
       events = invoke(@gateway, @mode, config()) |> Enum.to_list()
 
-      if @mode == :events,
-        do: assert([{:content, "answer"}, {:completed, _}] = events),
-        else: assert(events == [{:content, "answer"}])
+      assert [{:content, "answer"}, {:completed, _}] = events
 
       assert length(GenServer.call(server, :requests)) == 1
     end
@@ -500,7 +499,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
         http(200, fragmented_tools(Ollama, :start) <> fragmented_tools(Ollama, :finish))
       ])
 
-    assert [{:progress, start}, {:progress, finish}, {:tool_calls, calls}] =
+    assert [{:progress, start}, {:progress, finish}, {:tool_calls, calls}, {:completed, _}] =
              invoke(Ollama, :legacy, config()) |> Enum.to_list()
 
     assert start.frame_index == 1
@@ -1408,7 +1407,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
           stream
       end
 
-    assert [{:error, error}] = semantic_events(Enum.to_list(stream))
+    assert [{:completed, _}, {:error, error}] = semantic_events(Enum.to_list(stream))
     assert error.http_status == status
     assert error.category == :http
     refute error.retry_eligible
@@ -1514,7 +1513,8 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     [exhausted] = Enum.filter(lifecycle, &(&1.type == :exhausted))
     assert [Map.delete(failed.metadata, :history)] == error.history
     assert exhausted.metadata == failed.metadata
-    assert failed.metadata == CompletionError.safe_metadata(error)
+
+    assert failed.metadata == Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
   end
 
   for gateway <- [OpenAI, Ollama, OMLX] do
@@ -1563,7 +1563,9 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
               stream
           end
 
-        assert ["sentinel-output", {:error, error}] = semantic_events(Enum.to_list(stream))
+        assert [{:completed, _}, "sentinel-output", {:error, error}] =
+                 semantic_events(Enum.to_list(stream))
+
         assert error.reason == :stream_interrupted
         assert error.http_status == 200
         assert error.progress.headers_received
@@ -1647,7 +1649,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       tool = %Mojentic.TestSupport.CountingTool{owner: self()}
       broker = Broker.new("gpt-4o", @gateway)
 
-      assert [{:error, :max_tool_iterations_exceeded}] =
+      assert [{:completed, _}, {:completed, _}, {:error, :max_tool_iterations_exceeded}] =
                Broker.generate_stream(broker, [Message.user("sentinel-input")], [tool], %{
                  config()
                  | max_tool_iterations: 1
@@ -2080,7 +2082,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
         send(owner, {:output, events})
       end)
 
-    assert_receive {:output, ["sentinel-output", {:error, error}]}
+    assert_receive {:output, [{:completed, _}, "sentinel-output", {:error, error}]}
     assert error.reason == :stream_interrupted
     assert_receive {:tool_executed, %{"value" => "sentinel-tool"}}
     refute_receive {:tool_executed, _}

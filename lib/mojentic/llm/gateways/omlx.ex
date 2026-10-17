@@ -208,7 +208,11 @@ defmodule Mojentic.LLM.Gateways.OMLX do
       :ok ->
         body = model |> chat_body(messages, tools, config) |> Map.put(:stream, true)
 
-        OpenAILegacyStream.stream(fn -> post_chat_stream(body) end, native_reasoning: true)
+        Mojentic.LLM.StreamTiming.wrap(:omlx, fn timing ->
+          OpenAILegacyStream.stream(fn -> post_chat_stream(body, timing) end,
+            native_reasoning: true
+          )
+        end)
 
       {:error, reason} ->
         [{:error, reason}]
@@ -264,7 +268,9 @@ defmodule Mojentic.LLM.Gateways.OMLX do
           |> chat_body(messages, nil, config)
           |> Map.merge(%{stream: true, stream_options: %{include_usage: true}})
 
-        OpenAIStream.events(fn -> post_chat_stream(body) end)
+        Mojentic.LLM.StreamTiming.wrap(:omlx, fn timing ->
+          OpenAIStream.events(fn -> post_chat_stream(body, timing) end)
+        end)
 
       {:error, reason} ->
         [{:error, reason}]
@@ -342,13 +348,13 @@ defmodule Mojentic.LLM.Gateways.OMLX do
     )
   end
 
-  defp post_chat_stream(body) do
+  defp post_chat_stream(body, timing) do
     with {:ok, frames} <-
            http_client().post_stream(
              url("/chat/completions"),
              Jason.encode!(body),
              json_headers(),
-             [stream_timeout: :idle] ++ timeout_opts(get_timeout())
+             [stream_timing: timing, stream_timeout: :idle] ++ timeout_opts(get_timeout())
            ) do
       {:ok, drop_keepalive_frames(frames)}
     end

@@ -252,7 +252,10 @@ defmodule Mojentic.LLM.TypedErrorsWireTest do
   defp assert_lifecycle(error, scenario) do
     events = lifecycle_events()
     assert Enum.map(events, & &1.type) == [:attempt_started, :attempt_failed, :exhausted]
-    assert List.last(events).metadata == CompletionError.safe_metadata(error)
+
+    assert List.last(events).metadata ==
+             Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
+
     assert Enum.at(events, 1).metadata.attempt_id == error.attempt_id
 
     for value <- [inspect(error), Jason.encode!(error), inspect(events)] do

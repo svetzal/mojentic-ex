@@ -379,7 +379,12 @@ defmodule Mojentic.LLM.ReasoningWireTest do
         })
         |> Enum.reject(fn {kind, _} -> kind in [:progress, :metrics] end)
 
-      assert [{:thinking, "private deliberation"}, {:content, "checking"}, {:tool_calls, [call]}] =
+      assert [
+               {:thinking, "private deliberation"},
+               {:content, "checking"},
+               {:tool_calls, [call]},
+               {:completed, %{metadata: %{first_token_kind: :thinking}}}
+             ] =
                events
 
       assert call.id == "call-native"
@@ -465,7 +470,13 @@ defmodule Mojentic.LLM.ReasoningWireTest do
 
     session = ChatSession.new(Broker.new("unrelated-name", OMLX))
     assert {:ok, stream, handle} = ChatSession.send_stream(session, "question")
-    assert Enum.to_list(stream) == [{:thinking, "native"}, "answer"]
+
+    assert [
+             {:thinking, "native"},
+             "answer",
+             {:completed, %{metadata: %{first_token_kind: :thinking}}}
+           ] = Enum.to_list(stream)
+
     session = ChatSession.finalize_stream(handle)
     assert List.last(ChatSession.messages(session)).message == Message.assistant("answer")
     assert [_request] = requests(server)

@@ -1,6 +1,6 @@
 # 3.0.0 conformance (partial)
 
-The final section records part-2 native reasoning and its external verification gaps.
+The final section records client first-token timing and its external verification gaps.
 This partial recovery record also covers the October 12 **Typed errors** guarantee
 and the **Capabilities** amendment,
 alongside the **oMLX keepalive frames** guarantee,
@@ -1194,3 +1194,192 @@ added. ExDoc still reports the existing missing `LICENSE`, sibling
 `../RELEASE-3.0.0.md` and dependency usage-rules links. No security finding
 requires a dependency change. Gate evidence and behavioral failure/pass logs are
 retained by Foundry for review; they are execution scratch, not package sources.
+
+
+## Model metadata section 2: client first-token timing (October 17 correction)
+
+This section supersedes earlier cycle-specific timing deferrals. The coordinated
+3.0.0 release hold remains. Context-window discovery, effective-window clamping,
+registry fallback, request fidelity and native reasoning retain their existing
+contracts and implementation. No dependency/runtime/version or Git-ref changes
+are part of this correction.
+
+### Binding sources and executable identities
+
+- Initiative brief: verified SHA-256
+  `ea6a0efa56bfb3cd74b5ce728f80cc33c6fbd853114bec94b8aabe79f5d28e6e`.
+- `mojentic-unify/MODEL-METADATA-2026-10.md` section 2, source checkout
+  `ef9339c6a9682ed5f060bd690b738f6b8eea1d2d`, verified SHA-256
+  `d9945dca45ce09e2163843263a75b5e93028b00ee1baf191fc3ff13396830e9c`.
+  This includes Stacey’s October 17 thinking/content/tool precedence, one clock
+  across retries, and a fresh clock for each tool continuation.
+- Owner-designated **ts-stream-first-token-v1**, TypeScript source
+  `b8db5d59c02297e39335ba1deed83fa04e1b8f11`, executable-file SHA-256
+  `e94d4f53928b3ea519eceedcb0f7e7a41ae2eb5da52076369d92374108b3d2a8`.
+- Additive **ts-stream-first-token-v2**, TypeScript source
+  `54171796a2b02c0f0170d0758d2e3c693ad027c9`, executable-file SHA-256
+  `9b64e037af8ee375a6344b94f4f66992f867357a32b8db360042a8eff4f12eca`.
+  Both exact executable sources are retained under `test/contracts/reference/`;
+  the required gates verify their hashes. These files are provenance references,
+  not a claim that Jest ran in this Elixir worktree.
+- Local **ex-stream-first-token-v1**:
+  `test/contracts/stream_first_token_v1.json`, consumed by
+  `test/support/first_token_contract.ex` and
+  `test/mojentic/llm/first_token_wire_test.exs`. The fixture identifies shared
+  reference cases and controlled dispatch/frame/capture milestones.
+  `scripts/verify-first-token-contract` checks both frozen references, prints
+  HEAD and source/test/fixture hashes, and runs the executable local matrix.
+
+Tested Elixir source is base `df29a1c36f6b4b172b3ff352d40201d6583a9890` plus
+this uncommitted correction. Exact local fixture/test hashes and gate results are recorded below. Foundry owns Git finalization.
+
+### Characterized boundary and implementation
+
+`ReqClient.post_stream/4` constructs a cold stream. Enumeration enters
+`WireTrace`, starts the measurement at authorized HTTP dispatch, and advances
+one Req/Finch response continuation. Wire bytes form complete SSE/NDJSON frames
+before the optional capture callback. `StreamTiming` records the first frame’s
+kind and latency atomically, independently of delivery and capture acceptance.
+One small numeric reference survives a cancelled/killed capture worker; it
+contains no request or response payload. No new process or storage is needed.
+
+Recovery shares that reference across sequential admitted attempts and decorates
+the final success/error after the policy returns. Recovery lifecycle/history
+snapshots retain their existing policy/provider fields; terminal-only client
+measurements do not retroactively rewrite those snapshots. Existing snapshot
+assertions remove only the three additive client fields with `StreamEvidence`;
+the new contract asserts the full terminal timing separately. Cancellation,
+admission decisions, original causes, IDs, bounded history and replay barriers
+remain covered by the existing real-wire suites.
+
+Recovery-disabled adapters retain their parsers. Legacy streams now expose
+`{:completed, evidence}` per successful logical completion. The Ollama legacy
+path retains one HTTP continuation instead of re-enumerating the cold request;
+permissive legacy finish handling remains available, with the reported finish
+reason retained. Strict terminal validation remains in event/recovery APIs.
+Supported legacy EOF and omitted-finish-reason parsing remain available. Broker forwards
+each turn’s evidence, then starts a new completion for a tool continuation.
+ChatSession forwards evidence while accumulating only visible text and refuses
+successful finalization after a stream failure.
+
+### Named executable checks and reference case mapping
+
+All local cases use production `ReqClient`, loopback TCP and the existing
+`ScriptedCompletionServer` mechanism. Only the monotonic clock boundary is
+controlled through Mox and a supervised Agent. No completion result, provider
+parser, Req function or recovery result is mocked.
+
+| Contract requirement / shared case | Local named test family in `first_token_wire_test.exs` |
+| --- | --- |
+| v1 content-first, thinking-first, tool-argument-first | `<provider> <route> <case> without recovery measures the production dispatch`; same cases through delayed capture |
+| v1 keepalives, empty deltas and names | `empty`, `empty-content`, `tool-name-only`, `empty-tool-arguments`; first-token pair absent, duration present |
+| October 17 within-frame precedence | `thinking-content-tool-precedence`, `content-tool-precedence`; later frames cannot replace the first kind |
+| v2 split-frame capture regressions | `<provider> <route> <case> split capture delayed/rejected/cancelled retains observation and terminal timing` |
+| v2 legacy `function_call` fragments | `legacy-arguments`, `legacy-name-only`, `empty-legacy-arguments`; same capture matrix |
+| Exact first-token and total durations | Construction 10, dispatch 100, partial frame 110, complete frame 125, capture/terminal 180; assertions are 25/80 ms, independent of clock-call counts |
+| No uncaptured output | Capture matrix observes actual emitted semantic events before release, then asserts no delivery on reject/cancel and exactly one terminal event |
+| Preserve provider metrics | Shared terminals retain Ollama `total_duration: 900`, `prompt_eval_duration: 200`, and compatible usage `time_to_first_token: 0.7`, `total_tokens: 5` |
+| One clock across retries | `<provider> <route> admitted retry spans one dispatch clock and repeats exact wire request`; 503, admitted retry, 25/80 ms, identical ordered request bytes, shared logical ID |
+| New clock for each tool continuation | `<provider> <route> tool continuation starts a fresh clock and executes once`; first turn 25/80 ms, continuation 25/50 ms, distinct logical IDs, exact retained history and JSON-encoded tool result |
+| HTTP errors without tokens | `<provider> recovery <policy> HTTP rejection has duration without a first token`; frame-shaped error bodies never count as tokens |
+| Failure after the first token | `<provider> <route> recovery <policy> retains first-token timing on disconnect without replay`; real premature socket closure, terminal 25/80 ms |
+| Legacy arguments prevent replay | `<provider> <mode> legacy argument observation prevents resend after disconnect`; argument fragment observed before a complete call, no delivery/admission/resend |
+| Default public session path | `<provider> default session forwards timing and finalizes successful history`; only visible assistant content enters history |
+| Supported Ollama EOF framing | `Ollama <route> split final frame without newline through <outcome> end capture`; direct/Broker event paths without recovery also retain timing and provider metrics |
+| Version/provenance integrity | `frozen v1 and additive v2 executable references retain their source identities` |
+
+Providers are OpenAI, Ollama and oMLX. Routes are direct event/legacy adapters,
+Broker event/legacy APIs and ChatSession. Requests assert configured routing,
+authentication, exact decoded bodies and ordered wire requests. Terminal checks
+assert cardinality and iterator exhaustion, not just request counts.
+
+The proof-first split-frame/rejected-capture test failed on the original
+production source with missing metadata (exit 2), then passed with 25 ms
+thinking-first latency and 80 ms failure duration (exit 0). No semantic output
+or resend occurred. Foundry’s behavioral proof and complete logs are archived
+separately from repository deliverables.
+
+The additional supported-Ollama EOF characterization found missing first-token
+fields when the final valid JSON frame had no newline. The isolated real-HTTP
+probe failed with duration 80 ms but no first-token pair (exit 2). After observing
+the trailing frame at confirmed EOF before response-end capture, the same probe
+passed with thinking-first 25 ms and duration 80 ms (exit 0), without delivering
+uncaptured output. The local fixture now also carries `eof_frame`, with delayed,
+rejected and cancelled end-capture cases across direct adapters, Broker and
+ChatSession, and recovery-disabled event cases. This preserves the parser’s
+existing EOF compatibility; it does not change finish validation or recovery
+policy. The isolated source-load probe leaves another running test VM untouched;
+final gates below use normal Mix compilation.
+
+The dense timing matrix uses the existing TCP harness with a 1 ms accept poll;
+older fixtures retain their existing 50 ms default. This removes idle test-control
+waits without changing response bytes, virtual clock milestones, or production
+HTTP dispatch/capture paths.
+
+### External paired verification: unfinished
+
+The local matrix maps the same identified v1/v2 behaviors into Elixir’s existing
+executable mechanism. Frozen source hashes and local real-HTTP checks establish
+traceability and local behavior; they do not establish cross-repository paired
+verification. There are no independently authored completion mocks presented as
+paired evidence.
+
+The TypeScript record at `54171796a2b02c0f0170d0758d2e3c693ad027c9` reports
+`npm test -- --runInBand src/llm/first-token-http.test.ts` passing 218/218 for v2.
+That is inspected historical evidence, not a fresh verification run by this
+correction. TypeScript and any other producer/consumer must verify the same
+identified shared cases against this Elixir source before initiative coordination
+can mark the cross-repository work complete. No external repository was changed
+or finalized. Bedrock and bedrock-workshop consumer verification remains pending
+publication and coordinator authorization, as recorded in the initiative brief.
+
+### Final local verification
+
+Runtime: Elixir **1.18.5**, OTP **28.5.0.7**, selected and asserted by the unchanged `scripts/recovery-mix`. No `precommit` alias is defined. The complete discovered project gates and applicable additional checks ran through Foundry capture.
+
+| Command | Exit | Actual result |
+| --- | --- | --- |
+| `scripts/recovery-mix format --check-formatted` | 0 | Passed. |
+| `scripts/recovery-mix compile --warnings-as-errors` | 0 | Passed with warnings treated as errors. |
+| `env MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | Passed in test environment with warnings treated as errors. |
+| `scripts/recovery-mix credo --strict` | 0 | Passed; zero findings. |
+| `scripts/recovery-mix test test/mojentic/llm/first_token_wire_test.exs --only first_token_proof` | 0 | One selected real-HTTP split-frame proof passed. |
+| `scripts/recovery-mix test test/mojentic/llm/first_token_wire_test.exs --only first_token_eof_proof` | 0 | One selected real-HTTP EOF/end-capture proof passed. |
+| `scripts/verify-first-token-contract` | 0 | 804 tests passed; frozen v1/v2 identities verified. |
+| `scripts/recovery-mix test` | 0 | 22 doctests, 6062 tests, zero failures; 19 existing integration exclusions. |
+| `scripts/recovery-mix test --cover` | 0 | Same full suite passed; 91.12% coverage, above the configured 80% threshold. |
+| `scripts/recovery-mix dialyzer` | 0 | Passed; no type errors. Existing CI PLT cache and ignored priv/plts paths retained. |
+| `scripts/recovery-mix deps.audit` | 0 | Passed; no vulnerabilities found. |
+| `scripts/recovery-mix hex.audit` | 0 | Passed; no retired or security-advisory packages found. |
+| `scripts/recovery-mix sobelow --config` | 0 | Passed. Non-Phoenix project; existing router notice/lockfile syntax diagnostics remain. |
+| `scripts/recovery-mix hex.outdated --all` | 1 | Available upgrades reported; nonblocking visibility check. No dependency changes or advisory suppressions. |
+| `scripts/recovery-mix docs` | 0 | Generated successfully. Existing missing links remain for README LICENSE and AGENTS parent release/dependency rules; no docs gate failure. |
+
+The final source passed both plain and coverage suites. Earlier full runs exposed old terminal-shape expectations and the characterized Ollama duplicate-request expectation; those assertions now retain their original content, wire, timeout, privacy and policy checks while checking the new evidence. An unrelated pre-existing realtime test using a fixed 200 ms sleep failed once during the initial PLT build; final sequential gate runs passed without changing that test.
+
+The exact local portable contract is **ex-stream-first-token-v1**, SHA-256 `fddd71c8e0062c489588b2e15df749e934cf9d9412d05b4ee08eb52673425a6c`. A paired external run must adopt/verify this same identified set and report its own tested source identity and results. The inspected TypeScript historical result is not fresh paired verification. These source/test/fixture hashes identify the tested uncommitted Elixir revision in addition to base HEAD `df29a1c36f6b4b172b3ff352d40201d6583a9890`:
+
+```text
+fddd71c8e0062c489588b2e15df749e934cf9d9412d05b4ee08eb52673425a6c  test/contracts/stream_first_token_v1.json
+94d4b78c2d81ec2dbd038cde47fa6a81f01e33b96861e1d3d94e294ab5c6a7ce  test/support/first_token_contract.ex
+8252526fb78a59e214d80916ebbd78d3305ebc8df2a43d1cfbce4ac8722ffd9a  test/mojentic/llm/first_token_wire_test.exs
+2d019b968bf1a0ab0fe22966ea84da0a850b3e610b488185f61399063d895859  lib/mojentic/llm/stream_timing.ex
+c80fde0b70765392f78deb0c05be5e3cf3d7e54e06c1f5a35f81e00c3731b786  lib/mojentic/llm/monotonic_clock.ex
+e6d038a33928a6436b5398a6a6d251502334c5f2287eeca135779dd259b0dbbc  lib/mojentic/llm/stream_recovery.ex
+2027ca4b43e19313bb3c40be55e91e72622f15b6870a72794a6863db17b33d01  lib/mojentic/llm/completion_error.ex
+4424d8d60fbebd9f4481aed62f6fe4b95897527b2ea1973bd946353d19c94f86  lib/mojentic/llm/broker.ex
+ef732a7d9a7ba1e7b184258ce4249566a0d4187e2bb60f997a8bb5daab27dc8d  lib/mojentic/llm/chat_session.ex
+780cad057878d7d2221fbd117182fc50f46c8fc123bc21b185fa9c96e7dcb969  lib/mojentic/llm/gateways/openai.ex
+4fe21b95aa072a6ca60a6605bec88c93fbea4e96234afd7f491b809fa246b692  lib/mojentic/llm/gateways/ollama.ex
+02fad11d1d7d8efa060122d05d8789629bcefdc5f8fd727c41948e4320313460  lib/mojentic/llm/gateways/omlx.ex
+70f985636c0675fce8015d2dc60ff3e52591bf7a86c739b721432e775e34a265  lib/mojentic/llm/gateways/openai_legacy_stream.ex
+6cd62d48590d22d341729128a1dd110404167d7f20c207eecf15e40726043f03  lib/mojentic/http/req_client.ex
+fc0b4055ab5e35f5338922e575c734b779f79a07902c4cfb14b7441a3f7b7885  lib/mojentic/http/wire_trace.ex
+05ec61d00bcd1bb3e240bcc55605dcd45d53dfd0efcb38b5bfd728ec752d7b6d  lib/mojentic/http/received_evidence.ex
+5eef2bbcbc63b5a69d818d1bc1fb1ec29519da2834565d614a9000c6e466ecad  test/support/scripted_completion_server.ex
+d77cb743856a8b46ced5c96658a7945fb497440c164c2b2ede88c25b284f08b6  test/support/stream_evidence.ex
+27e97d2a5beb44b1482b04a10e408412cafe68177704870571f11eb9a1817fce  test/test_helper.exs
+1280e3fdcc50846677f8d5bca6fa9bfa71a140472c90b6627f9fd78db65cfdb3  mix.lock
+```
+
+Both behavioral proofs have validated JSON, actual rejecting exit 2 / corrected exit 0, and complete existing logs. All changes remain uncommitted for Foundry review. No version bump, tag, publish, push, merge, rebase or ref modification occurred. External paired verification and the coordinated release remain unfinished.

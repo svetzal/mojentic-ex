@@ -29,7 +29,7 @@ defmodule Mojentic.LLM.Gateways.OpenAILegacyStream do
   defp open(start) do
     case start.() do
       {:ok, stream} ->
-        {:stream, stream_continuation(stream), "", %{}}
+        {:stream, stream_continuation(stream), "", %{}, %{}}
 
       {:error, reason} ->
         {:error, reason}
@@ -39,21 +39,21 @@ defmodule Mojentic.LLM.Gateways.OpenAILegacyStream do
   defp process_stream_chunk(:halt, _reasoning?), do: {:halt, :halt}
   defp process_stream_chunk({:error, _reason} = error, _reasoning?), do: {[error], :halt}
 
-  defp process_stream_chunk({:stream, stream, buffer, tool_calls_acc}, reasoning?) do
+  defp process_stream_chunk({:stream, stream, buffer, tool_calls_acc, evidence}, reasoning?) do
     case stream.({:cont, nil}) do
       {:suspended, {:data, chunk}, rest} ->
-        parse_sse_chunks(chunk, buffer, tool_calls_acc, rest, reasoning?)
+        parse_sse_chunks(chunk, buffer, tool_calls_acc, rest, reasoning?, evidence)
 
       {:suspended, {:error, _reason} = error, rest} ->
         rest.({:halt, nil})
         {[error], :halt}
 
       {done, _} when done in [:done, :halted] ->
-        handle_stream_end(tool_calls_acc)
+        handle_stream_end(tool_calls_acc, evidence)
     end
   end
 
-  defp handle_stream_end(tool_calls_acc) do
+  defp handle_stream_end(tool_calls_acc, evidence) do
     result =
       if map_size(tool_calls_acc) > 0 do
         [{:tool_calls, build_complete_tool_calls(tool_calls_acc)}]
@@ -61,19 +61,19 @@ defmodule Mojentic.LLM.Gateways.OpenAILegacyStream do
         []
       end
 
-    {result, :halt}
+    {result ++ [{:completed, evidence}], :halt}
   end
 
   defp stream_continuation(stream),
     do: &Enumerable.reduce(stream, &1, fn element, _ -> {:suspend, element} end)
 
-  defp cleanup_stream({:stream, continuation, _, _}), do: continuation.({:halt, nil})
+  defp cleanup_stream({:stream, continuation, _, _, _}), do: continuation.({:halt, nil})
   defp cleanup_stream(:halt), do: :ok
   defp cleanup_stream({:error, _}), do: :ok
   defp cleanup_stream(_), do: :ok
 
   # Parse SSE chunks from OpenAI streaming response
-  defp parse_sse_chunks(chunk, buffer, tool_calls_acc, rest_stream, reasoning?) do
+  defp parse_sse_chunks(chunk, buffer, tool_calls_acc, rest_stream, reasoning?, evidence) do
     new_buffer = buffer <> chunk
 
     # Split on double newlines (SSE format)
@@ -91,34 +91,53 @@ defmodule Mojentic.LLM.Gateways.OpenAILegacyStream do
       end
 
     # Process each complete line
-    {results, new_tool_calls_acc} =
-      Enum.reduce(complete_lines, {[], tool_calls_acc}, fn line, {acc_results, acc_tools} ->
+    {results, new_tool_calls_acc, evidence} =
+      Enum.reduce_while(complete_lines, {[], tool_calls_acc, evidence}, fn line,
+                                                                           {acc_results,
+                                                                            acc_tools,
+                                                                            evidence} ->
         if String.starts_with?(line, "data: ") do
           data = String.replace_prefix(line, "data: ", "")
 
           if data == "[DONE]" do
-            # Final chunk - return accumulated tool calls if any
-            if map_size(acc_tools) > 0 do
-              {[{:tool_calls, build_complete_tool_calls(acc_tools)} | acc_results], %{}}
-            else
-              {acc_results, acc_tools}
-            end
+            tools =
+              if map_size(acc_tools) > 0,
+                do: [{:tool_calls, build_complete_tool_calls(acc_tools)}],
+                else: []
+
+            {:halt, {[{:completed, evidence} | tools ++ acc_results], %{}, evidence}}
           else
             case Jason.decode(data) do
               {:ok, json} ->
-                parse_streaming_json(json, acc_results, acc_tools, reasoning?)
+                {results, tools} = parse_streaming_json(json, acc_results, acc_tools, reasoning?)
+
+                evidence =
+                  Map.merge(
+                    evidence,
+                    Map.new(
+                      [
+                        {:usage, json["usage"]},
+                        {:provider_model, json["model"]},
+                        {:finish_reason, get_in(json, ["choices", Access.at(0), "finish_reason"])}
+                      ]
+                      |> Enum.reject(fn {_, value} -> is_nil(value) end)
+                    )
+                  )
+
+                {:cont, {results, tools, evidence}}
 
               {:error, _} ->
                 Logger.warning("Failed to parse SSE chunk: #{data}")
-                {acc_results, acc_tools}
+                {:cont, {acc_results, acc_tools, evidence}}
             end
           end
         else
-          {acc_results, acc_tools}
+          {:cont, {acc_results, acc_tools, evidence}}
         end
       end)
 
-    {Enum.reverse(results), {:stream, rest_stream, remaining_buffer, new_tool_calls_acc}}
+    {Enum.reverse(results),
+     {:stream, rest_stream, remaining_buffer, new_tool_calls_acc, evidence}}
   end
 
   defp add_reasoning(results, true, text) when is_binary(text) and text != "",

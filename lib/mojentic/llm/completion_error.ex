@@ -16,7 +16,14 @@ defmodule Mojentic.LLM.CompletionError do
   `{:incomplete_completion, evidence}` with `evidence.finish_reason == "length"`.
   These protocol failures never authorize automatic replay or tool execution.
   Safe metadata excludes these causes and received payloads. Recovery-disabled
-  entrypoints keep their legacy result and error shapes.
+  non-streaming entrypoints keep their legacy result and error shapes.
+
+  Stream terminal `metadata` carries client-measured `request_duration_ms` after
+  dispatch, and `time_to_first_token_ms` / `first_token_kind` only when a nonempty
+  thinking, content or tool-argument delta was observed. These numeric/enum fields
+  are safe to serialize. Observation precedes response capture, so capture failure
+  or cancellation can retain timing without delivering the observed output.
+  The logical clock spans admitted retries; a tool continuation starts a new clock.
   """
 
   defstruct [
@@ -38,6 +45,7 @@ defmodule Mojentic.LLM.CompletionError do
     :private_evidence,
     wire_attempt: 1,
     resend_permission: :not_granted,
+    metadata: %{},
     history: []
   ]
 
@@ -83,6 +91,7 @@ defmodule Mojentic.LLM.CompletionError do
           wire_attempt: non_neg_integer(),
           resend_permission: atom(),
           history: [map()],
+          metadata: map(),
           private_evidence: nil | (-> map()),
           private_cause: (-> term())
         }

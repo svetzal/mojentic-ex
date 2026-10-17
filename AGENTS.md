@@ -5,20 +5,21 @@
 The coordinated implementation scope is defined in [../RELEASE-3.0.0.md](../RELEASE-3.0.0.md).
 The owner authorizes the coordinated 3.0.0 scope in that release plan. This
 execution is authorized by the owner's current Foundry correction plan to implement
-**context-window discovery and the effective-window helper only** (part 3),
-under `MODEL-METADATA-2026-10.md` section 1, SHA-256
-`a085da1c0d110f9d587a24ace6ac2854b653e1ac28905b3829d94d665b2c906e`.
-Characterize model lookup, configured HTTP routing/authentication and completion
-requests first. Add optional Gateway.get_model_context_window with compatible
-not-advertised handling, exact oMLX/Ollama metadata queries and registry-only
-OpenAI lookup. Verify provenance, effective-window precedence/clamping, errors
-and unchanged later completion requests using the versioned executable contract.
-Preserve registry capability/pattern fallback and landed request fidelity,
-recovery, typed errors, native reasoning, privacy, cancellation, admission,
-failure identity, bounded history and terminal streams. First-token timing,
-dependency/runtime changes, unrelated recovery changes and rebuilding completed
-request-fidelity work are outside this run. Write only in this worktree; record
-missing external counterpart verification for initiative coordination.
+**client first-token timing only** (part 3), under `MODEL-METADATA-2026-10.md`
+section 2, SHA-256
+`d9945dca45ce09e2163843263a75b5e93028b00ee1baf191fc3ff13396830e9c`,
+including Stacey’s October 17 precedence, retry-span and continuation-reset decisions.
+Use the owner-designated `ts-stream-first-token-v1` reference and additive v2
+capture regressions at TypeScript commit `54171796a2b02c0f0170d0758d2e3c693ad027c9`.
+Verify dispatch, frame observation and capture through production Req real HTTP,
+including legacy/event streams, recovery, Broker and ChatSession. Preserve completed
+context-window discovery, registry fallback, request fidelity, native reasoning,
+recovery decisions, typed errors, privacy, cancellation, admission, failure identity,
+bounded history and terminal behavior. Dependency/runtime changes, unrelated recovery
+changes and rebuilding completed metadata/request-fidelity work are outside this run.
+Write only in this worktree; record missing external counterpart verification for
+initiative coordination. Run `scripts/verify-first-token-contract` with the project
+gates; local case mapping does not establish external paired verification.
 
 The coordinated release hold remains in force until all six ports are ready and
 the release coordinator authorizes release. Do not tag, publish or bump versions.

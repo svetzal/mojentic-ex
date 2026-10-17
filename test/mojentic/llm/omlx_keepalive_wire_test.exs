@@ -402,23 +402,20 @@ defmodule Mojentic.LLM.OMLXKeepaliveWireTest do
     offset + 18
   end
 
-  defp assert_success(output, entrypoint) when entrypoint in [:events, :broker_events] do
-    assert output == [
-             content: "first",
-             content: "second",
-             completed: %{
-               finish_reason: "stop",
-               provider_model: "real-model",
-               usage: %{"total_tokens" => 7},
-               metadata: nil
-             }
-           ]
+  defp assert_success(output, entrypoint) do
+    assert {:completed, evidence} = List.last(output)
+    assert evidence.finish_reason == "stop"
+    assert evidence.provider_model == "real-model"
+    assert evidence.usage == %{"total_tokens" => 7}
+    assert evidence.metadata.first_token_kind == :content
+    assert is_integer(evidence.metadata.time_to_first_token_ms)
+    assert is_integer(evidence.metadata.request_duration_ms)
+    content = Enum.drop(output, -1)
+
+    if entrypoint in [:events, :broker_events, :legacy],
+      do: assert(content == [content: "first", content: "second"]),
+      else: assert(content == ["first", "second"])
   end
-
-  defp assert_success(output, :legacy),
-    do: assert(output == [content: "first", content: "second"])
-
-  defp assert_success(output, _), do: assert(output == ["first", "second"])
 
   defp assert_session(nil, _), do: :ok
 

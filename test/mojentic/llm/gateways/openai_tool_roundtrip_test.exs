@@ -122,7 +122,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIToolRoundtripTest do
         {:ok, [{:data, "data: " <> Jason.encode!(frame) <> "\n\ndata: [DONE]\n\n"}]}
       end)
 
-      assert ["Sunny"] =
+      assert [{:completed, _}, "Sunny", {:completed, _}] =
                @model
                |> Broker.new(@gateway)
                |> Broker.generate_stream([Message.user("Weather in Paris?")], [GetWeatherTool])

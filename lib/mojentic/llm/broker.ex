@@ -319,7 +319,9 @@ defmodule Mojentic.LLM.Broker do
   Generates streaming text response from the LLM.
 
   Yields content chunks as they arrive, and handles tool calls automatically
-  through recursion. When tool calls are detected, the broker executes them
+  through recursion. Each successful logical completion also yields
+  `{:completed, evidence}` with client timing in `evidence.metadata`; a tool turn
+  and its continuation have separate clocks. When tool calls are detected, the broker executes them
   and recursively streams the LLM's follow-up response.
 
   ## Parameters
@@ -345,6 +347,8 @@ defmodule Mojentic.LLM.Broker do
       |> Stream.each(fn
         text when is_binary(text) -> IO.write(text)
         {:thinking, _text} -> :ok
+        {:completed, _evidence} -> :ok
+        {:error, error} -> IO.inspect(error)
       end)
       |> Stream.run()
 
@@ -438,7 +442,8 @@ defmodule Mojentic.LLM.Broker do
       {:element, {:content, text} = event, continuation} ->
         {[event], %{state | continuation: continuation, content: state.content <> text}}
 
-      {:element, {kind, _} = event, continuation} when kind in [:progress, :metrics] ->
+      {:element, {kind, _} = event, continuation}
+      when kind in [:progress, :metrics] ->
         {[event], %{state | continuation: continuation}}
 
       {:element, {kind, _} = event, continuation} when kind in [:completed, :error] ->
@@ -479,6 +484,10 @@ defmodule Mojentic.LLM.Broker do
   defp terminal_evidence({:error, {:incomplete_stream, evidence}}) when is_map(evidence),
     do: evidence
 
+  defp terminal_evidence({:error, %Mojentic.LLM.CompletionError{metadata: metadata}}),
+    do: %{metadata: metadata}
+
+  defp terminal_evidence({:error, {:stream_error, _, evidence}}), do: evidence
   defp terminal_evidence(_), do: %{}
 
   defp close_event_stream(%{continuation: continuation}), do: continuation.({:halt, nil})
@@ -534,7 +543,7 @@ defmodule Mojentic.LLM.Broker do
         {[chunk],
          {next_cont, acc_tool_calls, acc_content <> chunk, acc_thinking, iterations_remaining}}
 
-      {:element, {kind, _} = event, next_cont} when kind in [:progress, :metrics] ->
+      {:element, {kind, _} = event, next_cont} when kind in [:progress, :metrics, :completed] ->
         {[event], {next_cont, acc_tool_calls, acc_content, acc_thinking, iterations_remaining}}
 
       {:element, {:tool_calls, tool_calls}, next_cont} ->
@@ -582,6 +591,11 @@ defmodule Mojentic.LLM.Broker do
        when not is_nil(config.recovery) or config.preserve_reasoning == true do
     next_cont.({:halt, nil})
     {[{:error, error}], :halt}
+  end
+
+  defp finish_stream_error({:stream_error, _, _} = reason, next_cont, _config) do
+    next_cont.({:halt, nil})
+    {[{:error, reason}], :halt}
   end
 
   defp finish_stream_error(reason, next_cont, config)

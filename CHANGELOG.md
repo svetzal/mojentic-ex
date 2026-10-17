@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — client stream timing
+
+- Every production OpenAI, Ollama and oMLX stream reports monotonic
+  `time_to_first_token_ms`, `first_token_kind` and `request_duration_ms` in
+  terminal metadata, including failures. Empty streams omit the first-token pair.
+  Thinking takes precedence over content, then nonempty tool arguments, within
+  the first token-bearing frame. Keepalives, names and empty fragments do not count.
+- One dispatch clock spans admitted retries; tool continuations start fresh.
+  Split-frame observations survive delayed, rejected and cancelled response capture
+  without delivering uncaptured output. Provider metrics remain independent.
+
+### Migration — streaming terminal evidence
+
+- Legacy adapter, Broker and ChatSession streams now also yield
+  `{:completed, evidence}` for each successful logical completion, including
+  a tool turn before its continuation. Handle this tuple alongside content,
+  thinking, progress and metrics. Recovery errors retain `CompletionError` and
+  expose timing in `error.metadata`; other stream failures without existing
+  evidence use `{:stream_error, original_reason, %{metadata: metrics}}`.
+- Ollama legacy streaming retains a single HTTP continuation between chunks so
+  measurements and cleanup belong to the original request.
+- The local `ex-stream-first-token-v1` matrix maps the designated TypeScript v1
+  and v2 references through production Req, direct adapters, Broker and ChatSession.
+  External paired verification remains pending; the coordinated release hold remains.
+
 ### Fixed — context-window response decoding
 
 - Preserve raw POST response bodies through production Req so Ollama context

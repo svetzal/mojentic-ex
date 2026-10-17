@@ -220,6 +220,8 @@ defmodule Mojentic.LLM.ChatSession do
       stream |> Stream.each(fn
         text when is_binary(text) -> IO.write(text)
         {:thinking, _text} -> :ok
+        {kind, _} when kind in [:completed, :metrics, :progress] -> :ok
+        {:error, error} -> IO.inspect(error)
       end) |> Stream.run()
       session = ChatSession.finalize_stream(handle)
 
@@ -243,6 +245,8 @@ defmodule Mojentic.LLM.ChatSession do
       |> Stream.each(fn
         chunk when is_binary(chunk) -> Agent.update(agent, fn chunks -> chunks ++ [chunk] end)
         {:thinking, _text} -> :ok
+        {kind, _} when kind in [:completed, :metrics, :progress] -> :ok
+        {:error, error} -> Agent.update(agent, fn _ -> %{status: {:error, error}} end)
       end)
 
     {:ok, wrapped_stream, {session, agent}}
@@ -325,6 +329,8 @@ defmodule Mojentic.LLM.ChatSession do
       stream |> Stream.each(fn
         text when is_binary(text) -> IO.write(text)
         {:thinking, _text} -> :ok
+        {:completed, _evidence} -> :ok
+        {:error, error} -> IO.inspect(error)
       end) |> Stream.run()
       session = ChatSession.finalize_stream(handle)
 

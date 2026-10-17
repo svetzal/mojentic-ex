@@ -30,7 +30,7 @@ defmodule Mojentic.HTTP.ReceivedEvidence do
             reasoning:
               observed.reasoning or present?(message["thinking"] || message["reasoning_content"]),
             tool_fragments:
-              observed.tool_fragments + if(evidence.mode != :ordinary, do: length(calls), else: 0),
+              observed.tool_fragments + stream_fragments(evidence.mode, message, calls),
             completed_tool_calls:
               observed.completed_tool_calls + completed_tools(evidence, tools, terminal)
         }
@@ -45,6 +45,13 @@ defmodule Mojentic.HTTP.ReceivedEvidence do
       delivered: empty
     }
   end
+
+  defp stream_fragments(:ordinary, _message, _calls), do: 0
+
+  defp stream_fragments(_mode, message, calls),
+    do:
+      length(calls) +
+        if(Mojentic.LLM.StreamTiming.legacy_argument_fragment?(message), do: 1, else: 0)
 
   defp completed_tools(%{mode: {_provider, :events}}, _tools, _terminal), do: 0
   defp completed_tools(%{mode: {_provider, :legacy}}, _tools, false), do: 0

@@ -153,7 +153,8 @@ defmodule Mojentic.LLM.Gateways.OpenAITest do
                     name: "resolve_date",
                     arguments: %{"relative" => "today"}
                   }
-                ]}
+                ]},
+               {:completed, _}
              ] =
                "gpt-4o"
                |> OpenAI.complete_stream([Message.user("hi")], nil, config(nil))
@@ -192,7 +193,8 @@ defmodule Mojentic.LLM.Gateways.OpenAITest do
 
       assert [
                {:content, "Checking"},
-               {:tool_calls, [%Mojentic.LLM.ToolCall{id: "call_1", name: "resolve_date"}]}
+               {:tool_calls, [%Mojentic.LLM.ToolCall{id: "call_1", name: "resolve_date"}]},
+               {:completed, _}
              ] =
                "gpt-4o"
                |> OpenAI.complete_stream([Message.user("hi")], nil, config(nil))

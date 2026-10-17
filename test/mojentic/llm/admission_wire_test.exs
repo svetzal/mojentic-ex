@@ -262,7 +262,10 @@ defmodule Mojentic.LLM.AdmissionWireTest do
       end
 
     assert Enum.map(events, & &1.type) == types
-    assert List.last(events).metadata == CompletionError.safe_metadata(error)
+
+    assert List.last(events).metadata ==
+             Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
+
     failures = Enum.filter(events, &(&1.type == :attempt_failed))
     assert Enum.map(failures, &Map.delete(&1.metadata, :history)) == error.history
 
@@ -365,7 +368,7 @@ defmodule Mojentic.LLM.AdmissionWireTest do
              %{type: :exhausted, metadata: terminal}
            ] = events
 
-    assert terminal == CompletionError.safe_metadata(error)
+    assert terminal == Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
     assert pending == failed
     assert undecided == failed
     assert context.failure == failed

@@ -126,7 +126,10 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
     assert GenServer.call(server, :requests) == [wire]
     events = for _ <- 1..3, do: receive_lifecycle()
     assert Enum.map(events, & &1.type) == [:attempt_started, :attempt_failed, :cancelled]
-    assert List.last(events).metadata == CompletionError.safe_metadata(error)
+
+    assert List.last(events).metadata ==
+             Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
+
     for event <- events, do: assert(event.metadata.attempt_id == error.attempt_id)
     assert_private(error, secret, tracer, events)
     evidence = CompletionError.received_evidence(error)
@@ -359,7 +362,7 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
     [started, failed, _, _, _, _, retried, failure, terminal] = events
     assert started.metadata.attempt_id == failed.metadata.attempt_id
     assert retried.metadata.attempt_id == error.attempt_id
-    assert terminal.metadata == CompletionError.safe_metadata(error)
+    assert terminal.metadata == Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
     assert failure.metadata.attempt_id == error.attempt_id
 
     assert Enum.map(error.history, & &1.attempt_id) == [

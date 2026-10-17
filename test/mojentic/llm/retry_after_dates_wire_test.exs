@@ -324,7 +324,7 @@ defmodule Mojentic.LLM.RetryAfterDatesWireTest do
 
     assert List.last(events) == %{
              type: :exhausted,
-             metadata: CompletionError.safe_metadata(error)
+             metadata: Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
            }
 
     assert_schedule(events, expected, wall, attempts)

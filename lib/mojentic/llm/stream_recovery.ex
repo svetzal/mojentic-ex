@@ -1,7 +1,7 @@
 defmodule Mojentic.LLM.StreamRecovery do
   @moduledoc false
 
-  alias Mojentic.LLM.{CompletionError, CompletionRequest, Recovery, ToolCall}
+  alias Mojentic.LLM.{CompletionError, CompletionRequest, Recovery, StreamTiming, ToolCall}
   alias Mojentic.LLM.Gateways.{Ollama, OllamaStream, OpenAIStream}
 
   # One local worker owns every HTTP continuation for this logical request.
@@ -19,6 +19,7 @@ defmodule Mojentic.LLM.StreamRecovery do
   end
 
   defp open(client, url, body, headers, opts, recovery, provider, mode) do
+    timing = StreamTiming.new(provider)
     owner = self()
     ref = make_ref()
     cancel = Keyword.get(recovery, :cancel_ref, make_ref())
@@ -26,6 +27,7 @@ defmodule Mojentic.LLM.StreamRecovery do
 
     opts =
       Keyword.merge(opts,
+        stream_timing: timing,
         stream_timeout: :idle,
         stream_metadata: true,
         recovery_metadata: true,
@@ -49,6 +51,7 @@ defmodule Mojentic.LLM.StreamRecovery do
               mode: mode,
               parser: parser(provider),
               parser_state: parser(provider).new(),
+              evidence: %{},
               buffer: "",
               tools: %{},
               finished: false,
@@ -107,8 +110,20 @@ defmodule Mojentic.LLM.StreamRecovery do
             end
           end)
 
-        case {mode, result} do
-          {:events, {:ok, {_progress, evidence}}} -> send(owner, {ref, :terminal, evidence})
+        result =
+          case result do
+            {:ok, {progress, evidence}} ->
+              {:ok, {progress, StreamTiming.evidence(evidence, timing)}}
+
+            {:error, %CompletionError{} = error} ->
+              {:error, StreamTiming.error(error, timing)}
+
+            other ->
+              other
+          end
+
+        case result do
+          {:ok, {_progress, evidence}} -> send(owner, {ref, :terminal, evidence})
           _ -> :ok
         end
 
@@ -599,7 +614,9 @@ defmodule Mojentic.LLM.StreamRecovery do
       | content: observed.content or present?(delta["content"]),
         reasoning:
           observed.reasoning or present?(delta["thinking"] || delta["reasoning_content"]),
-        tool_fragments: observed.tool_fragments + length(calls)
+        tool_fragments:
+          observed.tool_fragments + length(calls) +
+            if(StreamTiming.legacy_argument_fragment?(delta), do: 1, else: 0)
     }
 
     %{state | progress: %{state.progress | observed: observed}}
@@ -635,6 +652,17 @@ defmodule Mojentic.LLM.StreamRecovery do
   end
 
   defp parse_frame(frame, events, state) do
+    evidence =
+      Map.new(
+        [
+          {:usage, frame["usage"]},
+          {:provider_model, frame["model"]},
+          {:finish_reason, get_in(frame, ["choices", Access.at(0), "finish_reason"])}
+        ]
+        |> Enum.reject(fn {_, value} -> is_nil(value) end)
+      )
+
+    state = %{state | evidence: Map.merge(state.evidence, evidence)}
     delta = message(frame)
     content = if present?(delta["content"]), do: [{:content, delta["content"]}], else: []
     reasoning = delta["thinking"] || delta["reasoning_content"]
@@ -663,12 +691,23 @@ defmodule Mojentic.LLM.StreamRecovery do
 
   defp legacy_terminal(frame, state, done, calls) do
     cond do
-      frame["_invalid"] == true -> [{:error, :invalid_stream_event}]
-      frame["error"] != nil -> [{:error, {:provider_error, frame["error"]}}]
-      done and map_size(state.tools) != length(calls) -> [{:error, :invalid_stream_event}]
-      frame["_done"] == true and not state.finished -> [{:error, :invalid_stream_event}]
-      frame["_done"] == true or (state.provider == :ollama and done) -> [{:completed, %{}}]
-      true -> []
+      frame["_invalid"] == true ->
+        [{:error, :invalid_stream_event}]
+
+      frame["error"] != nil ->
+        [{:error, {:provider_error, frame["error"]}}]
+
+      done and map_size(state.tools) != length(calls) ->
+        [{:error, :invalid_stream_event}]
+
+      frame["_done"] == true and not state.finished ->
+        [{:error, :invalid_stream_event}]
+
+      frame["_done"] == true or (state.provider == :ollama and done) ->
+        [{:completed, state.evidence}]
+
+      true ->
+        []
     end
   end
 

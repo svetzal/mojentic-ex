@@ -157,7 +157,16 @@ defmodule Mojentic.LLM.Gateway do
 
   ## Returns
 
-  A stream of `{:content, chunk}` or `{:tool_calls, calls}` tuples
+  A stream of `{:content, chunk}`, `{:thinking, text}`, `{:tool_calls, calls}`
+  and `{:completed, evidence}` tuples. Terminal `evidence.metadata` carries
+  client `request_duration_ms` and, when a token arrived, `time_to_first_token_ms`
+  and `first_token_kind` (`:thinking`, `:content` or `:tool_call`). Thinking wins
+  ties within a frame, then content, then nonempty tool arguments. Measurements
+  start at HTTP dispatch, span admitted retries and reset for tool continuations.
+  Capture must succeed before observed output can be delivered.
+  Stream errors carry the same measurements: `CompletionError.metadata` with
+  recovery, existing error evidence where available, otherwise
+  `{:stream_error, original_reason, %{metadata: metrics}}`.
 
   """
   @callback complete_stream(
@@ -166,7 +175,12 @@ defmodule Mojentic.LLM.Gateway do
               tools :: [module()] | nil,
               config :: CompletionConfig.t()
             ) :: Enumerable.t()
-  @doc "Single-turn content and terminal events. No executable tools are supplied."
+  @doc """
+  Single-turn content and terminal events. No executable tools are supplied.
+
+  Terminal metadata has the same client timing contract as `complete_stream/4`.
+  Provider usage and durations retain their original fields and units.
+  """
   @callback complete_stream_events(String.t(), [Message.t()], CompletionConfig.t()) ::
               Enumerable.t()
   @optional_callbacks complete_stream_events: 3

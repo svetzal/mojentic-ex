@@ -297,7 +297,11 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
     {:messages, messages} = Process.info(self(), :messages)
     lifecycle = for {:socket_lifecycle, event} <- messages, do: event
     assert Enum.map(lifecycle, & &1.type) == [:attempt_failed, :cancelled]
-    assert Enum.all?(lifecycle, &(&1.metadata == CompletionError.safe_metadata(error)))
+
+    assert Enum.all?(
+             lifecycle,
+             &(&1.metadata == Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error))
+           )
 
     stream_mode = handoff_stream_mode(operation)
     adapter_operation = handoff_adapter_operation(operation)
@@ -531,7 +535,9 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
                :cancelled
              ]
 
-      assert List.last(lifecycle).metadata == CompletionError.safe_metadata(error)
+      assert List.last(lifecycle).metadata ==
+               Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
+
       starts = Enum.filter(lifecycle, &(&1.type == :attempt_started))
       assert Map.take(hd(starts).metadata, Map.keys(ids)) == Map.take(previous, Map.keys(ids))
       assert Map.take(List.last(starts).metadata, Map.keys(ids)) == ids
@@ -759,7 +765,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
   end
 
   defp assert_paused_result(error, events, failed, started, server, wire, body, caller) do
-    assert failed == CompletionError.safe_metadata(error)
+    assert failed == Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
     ids = Map.take(started, [:logical_request_id, :attempt_id, :wire_attempt])
     assert_received_error(error, ids, body, paused_observed(caller), false)
     assert error.progress.delivered.content
@@ -851,7 +857,9 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
            }
 
     assert CompletionError.cause(error) == :cancelled
-    assert Map.take(CompletionError.safe_metadata(error), Map.keys(ids)) == ids
+
+    assert Map.take(Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error), Map.keys(ids)) ==
+             ids
 
     for secret <- ["payload-secret", "reason-secret", "credential-secret", "secret-argument"] do
       refute inspect(error) =~ secret
@@ -1051,7 +1059,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
     assert failure.reason == expected_reason
     assert_receive {:socket_lifecycle, %{type: :attempt_failed, metadata: failed}}, 2000
     assert_receive {:socket_lifecycle, %{type: :cancelled, metadata: stopped}}, 2000
-    assert failed == CompletionError.safe_metadata(error)
+    assert failed == Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
     assert stopped == failed
     refute_received {:socket_lifecycle, _}
     refute_received :unexpected_admission

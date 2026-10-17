@@ -34,7 +34,12 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
     assert [
              {:content, _},
              {:content, _},
-             {:completed, %{finish_reason: "stop", usage: %{"total_tokens" => 12}, metadata: nil}}
+             {:completed,
+              %{
+                finish_reason: "stop",
+                usage: %{"total_tokens" => 12},
+                metadata: %{first_token_kind: :content}
+              }}
            ] = events
 
     assert_receive {:request, request}
@@ -69,7 +74,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
     schema = %{"type" => "object", "properties" => %{}}
     config = CompletionConfig.new(response_format: %{type: :json_object, schema: schema})
 
-    assert ["{}"] =
+    assert ["{}", {:completed, _}] =
              Enum.to_list(
                Broker.generate_stream(
                  Broker.new("gpt-4o", OpenAI),
@@ -92,7 +97,12 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
 
   test "complete-looking JSON followed by EOF remains failed and retains content" do
     serve([event("{}")])
-    assert [{:content, "{}"}, {:error, {:incomplete_stream, nil}}] = Enum.to_list(stream())
+
+    assert [{:content, "{}"}, {:error, {:stream_error, {:incomplete_stream, nil}, evidence}}] =
+             Enum.to_list(stream())
+
+    assert evidence.metadata.first_token_kind == :content
+    assert is_integer(evidence.metadata.request_duration_ms)
   end
 
   test "EOF after a finish reason and usage attaches that partial evidence" do
@@ -145,7 +155,12 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
 
   test "HTTP errors are observable and are never retried" do
     serve([], false, 504)
-    assert [{:error, {:provider_error, %{status: 504}}}] = Enum.to_list(stream())
+
+    assert [{:error, {:stream_error, {:provider_error, %{status: 504}}, evidence}}] =
+             Enum.to_list(stream())
+
+    assert is_integer(evidence.metadata.request_duration_ms)
+    refute Map.has_key?(evidence.metadata, :first_token_kind)
     assert_receive {:request, _}
     refute_receive {:request, _}
   end
@@ -156,9 +171,15 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
     System.put_env("OPENAI_TIMEOUT", "500")
     serve([event("partial")], true)
 
-    assert [{:content, "partial"}, {:error, {:request_failed, :timeout}}] =
+    assert [
+             {:content, "partial"},
+             {:error, {:stream_error, {:request_failed, :timeout}, evidence}}
+           ] =
              Enum.to_list(stream())
 
+    assert evidence.metadata.first_token_kind == :content
+    assert is_integer(evidence.metadata.time_to_first_token_ms)
+    assert evidence.metadata.request_duration_ms >= evidence.metadata.time_to_first_token_ms
     assert_receive {:cancel_result, {:error, :closed}}, 2000
   end
 
@@ -183,7 +204,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
   test "legacy string broker stream consumes the real HTTP stream once" do
     serve([event("one"), event("two"), finish("stop"), "data: [DONE]\n\n"])
 
-    assert ["one", "two"] =
+    assert ["one", "two", {:completed, _}] =
              Enum.to_list(
                Broker.generate_stream(Broker.new("gpt-4o", OpenAI), [Message.user("hello")])
              )

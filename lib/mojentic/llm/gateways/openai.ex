@@ -258,7 +258,11 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
         headers = build_headers()
         timeout = get_timeout()
 
-        OpenAILegacyStream.stream(fn -> initiate_stream_request(body, headers, timeout) end)
+        Mojentic.LLM.StreamTiming.wrap(:openai, fn timing ->
+          OpenAILegacyStream.stream(fn ->
+            initiate_stream_request(body, headers, timeout, timing)
+          end)
+        end)
 
       {:error, reason} ->
         [{:error, reason}]
@@ -308,14 +312,17 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
 
         client = http_client()
 
-        Mojentic.LLM.Gateways.OpenAIStream.events(fn ->
-          client.post_stream(
-            "#{get_endpoint()}/chat/completions",
-            Jason.encode!(body),
-            build_headers(),
-            recv_timeout: get_timeout(),
-            timeout: get_timeout()
-          )
+        Mojentic.LLM.StreamTiming.wrap(:openai, fn timing ->
+          Mojentic.LLM.Gateways.OpenAIStream.events(fn ->
+            client.post_stream(
+              "#{get_endpoint()}/chat/completions",
+              Jason.encode!(body),
+              build_headers(),
+              recv_timeout: get_timeout(),
+              timeout: get_timeout(),
+              stream_timing: timing
+            )
+          end)
         end)
 
       {:error, reason} ->
@@ -359,13 +366,14 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
     ]
   end
 
-  defp initiate_stream_request(body, headers, timeout) do
+  defp initiate_stream_request(body, headers, timeout, timing) do
     endpoint = get_endpoint()
 
     http_client().post_stream(
       "#{endpoint}/chat/completions",
       Jason.encode!(body),
       headers,
+      stream_timing: timing,
       recv_timeout: timeout,
       timeout: timeout
     )

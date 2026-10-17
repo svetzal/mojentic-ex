@@ -2023,7 +2023,9 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       assert Enum.at(events, 1).metadata.history == [failure]
       assert Enum.at(events, 5).metadata.next_attempt == 2
-      assert List.last(events).metadata == CompletionError.safe_metadata(error)
+
+      assert List.last(events).metadata ==
+               Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
     end
   end
 
@@ -2085,7 +2087,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       assert error.history == []
       assert CompletionError.cause(error) == :cancelled
       assert [%{type: :cancelled, metadata: metadata}] = drain_dispatch_events()
-      assert metadata == CompletionError.safe_metadata(error)
+      assert metadata == Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
       assert metadata.logical_request_id == error.logical_request_id
       assert metadata.attempt_id == error.attempt_id
       assert metadata.wire_attempt == 0
@@ -2163,7 +2165,9 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     assert_event_identity(events, error)
 
     assert Enum.at(events, 1).metadata.history == [failure]
-    assert List.last(events).metadata == CompletionError.safe_metadata(error)
+
+    assert List.last(events).metadata ==
+             Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
   end
 
   defp assert_dispatched_cancellation(:retry, error, events) do
@@ -2199,7 +2203,9 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     assert Enum.at(events, 1).metadata.history == [first]
     assert Enum.at(events, 5).metadata.next_attempt == 2
     assert Enum.at(events, 7).metadata.history == [first, cancelled]
-    assert List.last(events).metadata == CompletionError.safe_metadata(error)
+
+    assert List.last(events).metadata ==
+             Mojentic.TestSupport.StreamEvidence.recovery_snapshot(error)
   end
 
   defp assert_event_identity(events, ids) do

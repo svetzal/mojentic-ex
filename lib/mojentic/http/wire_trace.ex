@@ -21,14 +21,15 @@ defmodule Mojentic.HTTP.WireTrace do
     _, _ -> {:error, :capture_failed}
   end
 
-  def stream(trace, request, stream, observer \\ nil, mode \\ :ordinary)
+  def stream(trace, request, stream, observer \\ nil, mode \\ :ordinary, timing \\ nil)
 
-  def stream(nil, _request, stream, nil, _mode), do: stream
+  def stream(nil, _request, stream, nil, _mode, nil), do: stream
 
-  def stream(trace, request, stream, observer, mode) do
+  def stream(trace, request, stream, observer, mode, timing) do
     Stream.resource(
       fn ->
         continuation = &Enumerable.reduce(stream, &1, fn item, _ -> {:suspend, item} end)
+        Mojentic.LLM.StreamTiming.dispatch(timing)
         capture = notify(trace, request)
 
         %{
@@ -36,7 +37,9 @@ defmodule Mojentic.HTTP.WireTrace do
           capture: capture,
           observed: false,
           done: false,
-          evidence: Mojentic.HTTP.ReceivedEvidence.new(mode)
+          timing_buffer: "",
+          timing: timing,
+          evidence: if(observer, do: Mojentic.HTTP.ReceivedEvidence.new(mode))
         }
       end,
       &next(&1, trace, observer),
@@ -62,8 +65,16 @@ defmodule Mojentic.HTTP.WireTrace do
   defp next(state, trace, observer) do
     case state.continuation.({:cont, nil}) do
       {:suspended, item, continuation} ->
-        evidence = Mojentic.HTTP.ReceivedEvidence.observe(item, state.evidence)
-        if observer, do: observer.(evidence)
+        buffer = Mojentic.LLM.StreamTiming.observe(item, state.timing, state.timing_buffer)
+        state = %{state | timing_buffer: buffer}
+
+        evidence =
+          if observer do
+            evidence = Mojentic.HTTP.ReceivedEvidence.observe(item, state.evidence)
+            observer.(evidence)
+            evidence
+          end
+
         state = %{state | continuation: continuation, evidence: evidence}
 
         with :ok <- state.capture,
@@ -79,8 +90,12 @@ defmodule Mojentic.HTTP.WireTrace do
         end
 
       {done, _} when done in [:done, :halted] ->
-        evidence = Mojentic.HTTP.ReceivedEvidence.complete(state.evidence)
-        if observer, do: observer.(evidence)
+        Mojentic.LLM.StreamTiming.finish(state.timing, state.timing_buffer)
+
+        if observer do
+          evidence = Mojentic.HTTP.ReceivedEvidence.complete(state.evidence)
+          observer.(evidence)
+        end
 
         case notify(trace, %{
                type: :response_end,

@@ -131,7 +131,8 @@ defmodule Mojentic.HTTP.ReqClient do
         %{type: :request, method: :post, url: url, headers: headers, body: body},
         stream,
         Keyword.get(opts, :received_observer),
-        Keyword.get(opts, :evidence_mode, :ordinary)
+        Keyword.get(opts, :evidence_mode, :ordinary),
+        Keyword.get(opts, :stream_timing)
       )
 
     {:ok, stream}

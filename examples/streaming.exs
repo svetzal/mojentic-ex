@@ -99,7 +99,12 @@ defmodule StreamingExample do
 
     broker
     |> Broker.generate_stream(messages, [CalculatorTool])
-    |> Stream.each(&IO.write/1)
+    |> Stream.each(fn
+      text when is_binary(text) -> IO.write(text)
+      {:completed, _evidence} -> :ok
+      {:error, error} -> IO.inspect(error, label: "Stream failed")
+      _event -> :ok
+    end)
     |> Stream.run()
 
     IO.puts("\n\nDone!")

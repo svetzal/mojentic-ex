@@ -20,3 +20,5 @@ Mox.defmock(Mojentic.LegacyContextWindowGatewayMock,
   for: Mojentic.LLM.Gateway,
   skip_optional_callbacks: true
 )
+
+Mox.defmock(Mojentic.MonotonicClockMock, for: Mojentic.LLM.MonotonicClock)

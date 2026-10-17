@@ -544,7 +544,8 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
                     name: "resolve_date",
                     arguments: %{"relative" => "today"}
                   }
-                ]}
+                ]},
+               {:completed, _}
              ] = Enum.reject(events, &match?({:thinking, _}, &1))
 
       thinking = for {:thinking, text} <- events, into: "", do: text

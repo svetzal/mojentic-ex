@@ -271,56 +271,61 @@ defmodule Mojentic.LLM.Gateways.Ollama do
         timeout = get_timeout()
         body = stream_request_body(model, messages, tools, config)
 
-        Stream.resource(
-          fn ->
-            case http_client().post_stream(
-                   "#{host}/api/chat",
-                   Jason.encode!(body),
-                   [{"content-type", "application/json"}],
-                   recv_timeout: timeout,
-                   timeout: timeout
-                 ) do
-              {:ok, stream} ->
-                {:stream, stream, "", []}
+        Mojentic.LLM.StreamTiming.wrap(:ollama, fn timing ->
+          Stream.resource(
+            fn ->
+              case http_client().post_stream(
+                     "#{host}/api/chat",
+                     Jason.encode!(body),
+                     [{"content-type", "application/json"}],
+                     stream_timing: timing,
+                     recv_timeout: timeout,
+                     timeout: timeout
+                   ) do
+                {:ok, stream} ->
+                  {:stream, &Enumerable.reduce(stream, &1, fn item, _ -> {:suspend, item} end),
+                   "", []}
 
-              {:error, reason} ->
-                {:error, reason}
-            end
-          end,
-          fn
-            :halt ->
-              {:halt, :halt}
-
-            {:error, _reason} = error ->
-              {[error], :halt}
-
-            {:stream, stream, buffer, acc_tool_calls} ->
-              case Enum.take(stream, 1) do
-                [{:data, chunk}] ->
-                  rest = Stream.drop(stream, 1)
-                  parse_streaming_chunks(chunk, buffer, acc_tool_calls, rest)
-
-                [{:error, _reason} = error] ->
-                  {[error], :halt}
-
-                [] ->
-                  # Stream ended — yield accumulated tool calls if any
-                  result =
-                    if acc_tool_calls != [] do
-                      [{:tool_calls, Enum.reverse(acc_tool_calls)}]
-                    else
-                      []
-                    end
-
-                  {result, :halt}
+                {:error, reason} ->
+                  {:error, reason}
               end
-          end,
-          fn
-            :halt -> :ok
-            {:error, _} -> :ok
-            _ -> :ok
-          end
-        )
+            end,
+            fn
+              :halt ->
+                {:halt, :halt}
+
+              {:error, _reason} = error ->
+                {[error], :halt}
+
+              {:stream, stream, buffer, acc_tool_calls} ->
+                case stream.({:cont, nil}) do
+                  {:suspended, {:data, chunk}, rest} ->
+                    parse_streaming_chunks(chunk, buffer, acc_tool_calls, rest)
+
+                  {:suspended, {:error, _reason} = error, rest} ->
+                    rest.({:halt, nil})
+                    {[error], :halt}
+
+                  {done, _} when done in [:done, :halted] ->
+                    # Stream ended — yield accumulated tool calls if any
+                    result =
+                      if acc_tool_calls != [] do
+                        [{:tool_calls, Enum.reverse(acc_tool_calls)}]
+                      else
+                        []
+                      end
+
+                    {result, :halt}
+                end
+            end,
+            fn
+              :halt -> :ok
+              {:error, _} -> :ok
+              {:stream, continuation, _, _} -> continuation.({:halt, nil})
+              _ -> :ok
+            end
+          )
+        end)
 
       {:error, reason} ->
         [{:error, reason}]
@@ -385,14 +390,17 @@ defmodule Mojentic.LLM.Gateways.Ollama do
         host = get_host()
         timeout = get_timeout()
 
-        OllamaStream.events(fn ->
-          client.post_stream(
-            "#{host}/api/chat",
-            Jason.encode!(body),
-            [{"content-type", "application/json"}],
-            recv_timeout: timeout,
-            timeout: timeout
-          )
+        Mojentic.LLM.StreamTiming.wrap(:ollama, fn timing ->
+          OllamaStream.events(fn ->
+            client.post_stream(
+              "#{host}/api/chat",
+              Jason.encode!(body),
+              [{"content-type", "application/json"}],
+              recv_timeout: timeout,
+              timeout: timeout,
+              stream_timing: timing
+            )
+          end)
         end)
 
       {:error, reason} ->
@@ -751,7 +759,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
     # Process each complete line
     {results, new_acc_tool_calls} =
-      Enum.reduce(complete_lines, {[], acc_tool_calls}, fn line, {acc_results, acc_tools} ->
+      Enum.reduce_while(complete_lines, {[], acc_tool_calls}, fn line, {acc_results, acc_tools} ->
         case Jason.decode(line) do
           {:ok, %{"message" => message, "done" => false}} ->
             # Content chunk
@@ -773,22 +781,33 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
             new_tools = if tool_calls != [], do: acc_tools ++ tool_calls, else: acc_tools
 
-            {new_results, new_tools}
+            {:cont, {new_results, new_tools}}
 
-          {:ok, %{"done" => true}} ->
-            # Final chunk
-            {acc_results, acc_tools}
+          {:ok, %{"done" => true} = frame} ->
+            terminal = legacy_terminal(frame)
+            tools = if acc_tools == [], do: [], else: [{:tool_calls, acc_tools}]
+            {:halt, {[terminal | tools ++ acc_results], []}}
 
           {:error, _} ->
             Logger.warning("Failed to parse streaming chunk: #{line}")
-            {acc_results, acc_tools}
+            {:cont, {acc_results, acc_tools}}
 
           _ ->
-            {acc_results, acc_tools}
+            {:cont, {acc_results, acc_tools}}
         end
       end)
 
     # Return reversed results (they were prepended) and continue with new state
     {Enum.reverse(results), {:stream, rest_stream, remaining_buffer, new_acc_tool_calls}}
+  end
+
+  defp legacy_terminal(frame) do
+    {:completed,
+     %{
+       finish_reason: frame["done_reason"],
+       provider_model: frame["model"],
+       usage: reported_usage(frame),
+       metadata: reported_timings(frame)
+     }}
   end
 end
