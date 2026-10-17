@@ -3,6 +3,34 @@ defmodule Mojentic.HTTP.ReqClientTest do
   use ExUnit.Case, async: false
 
   alias Mojentic.HTTP.ReqClient
+  alias Mojentic.TestSupport.{ContextWindowContract, ScriptedCompletionServer}
+
+  @external_resource "test/contracts/context_window_v1.json"
+  @response_cases Enum.filter(ContextWindowContract.contract()["cases"], fn row ->
+                    row["provider"] == "ollama" and
+                      (row["name"] in ["qwen4_exp", "reject-json-string-object"] or
+                         String.starts_with?(row["name"], "malformed-"))
+                  end)
+
+  for row <- @response_cases,
+      {mode, opts} <- [ordinary: [], no_retry: [retry: false], traced: [recovery_metadata: true]] do
+    @row row
+    @opts opts
+    test "context-window-v1 POST #{mode} preserves exact #{row["name"]} response bytes" do
+      server =
+        start_supervised!(
+          {ScriptedCompletionServer, {self(), [ContextWindowContract.response(@row)]}}
+        )
+
+      assert_receive {:server_port, port}
+
+      assert {:ok, %{status_code: 200, body: body}} =
+               ReqClient.post("http://127.0.0.1:#{port}/api/show", "{}", [], @opts)
+
+      assert body == @row["response"]
+      assert [_request] = GenServer.call(server, :requests)
+    end
+  end
 
   # Mojentic.HTTP promises a binary body. Req decodes JSON responses by
   # default, so these tests use a real socket and a JSON content type.

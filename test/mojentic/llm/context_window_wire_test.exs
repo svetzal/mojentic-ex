@@ -30,6 +30,8 @@ defmodule Mojentic.LLM.ContextWindowWireTest do
   for boundary <- [:adapter, :consumer], row <- @contract["cases"] do
     @boundary boundary
     @row row
+    if row["name"] == "reject-json-string-object", do: @tag(:context_string_proof)
+
     test "context-window-v1 #{boundary} #{row["provider"]} #{row["name"]} exact wire and result" do
       gateway = gateway(@row["provider"])
       server = server(gateway, [ContextWindowContract.response(@row)])
@@ -42,9 +44,9 @@ defmodule Mojentic.LLM.ContextWindowWireTest do
           :consumer -> Gateway.get_model_context_window(gateway, @row["model"])
         end
 
-      assert result == ContextWindowContract.result(@row)
       [request] = GenServer.call(server, :requests)
       assert_discovery_request(request, @row)
+      assert result == ContextWindowContract.result(@row)
     end
   end
 

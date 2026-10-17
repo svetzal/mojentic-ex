@@ -972,7 +972,7 @@ timing were not implemented by that correction. Context discovery is recorded be
 This mapping does not assert
 complete part 3 or coordinated release readiness.
 
-## Context-window discovery — partial part 3 evidence
+## Context-window discovery — preserved cycle-11 evidence
 
 This correction implements only MODEL-METADATA-2026-10 section 1 (SHA-256
 `a085da1c0d110f9d587a24ace6ac2854b653e1ac28905b3829d94d665b2c906e`).
@@ -1102,3 +1102,95 @@ strengthened. The final focused contract and full coverage run include that
 assertion; production code is identical across these runs. The full coverage
 gate also passed before that strengthening (650.1 seconds, 90.80%). No new
 integration exclusions or coverage suppressions were introduced.
+
+
+## Cycle-12 correction: reject double-decoded Ollama metadata
+
+This section supersedes the cycle-11 snapshot identity and quality results above
+for context-window discovery. Tested source is preserved commit
+`35013e921793710e344a708fdfea209248d4fd8e` plus the uncommitted candidate in
+[test/contracts/context_window_v1.manifest.sha256](test/contracts/context_window_v1.manifest.sha256),
+SHA-256 `407e4a0e7acec1c04dfe8d22b7e55a9722dc4e59182ce56c69f0cb81db070434`.
+The initiative brief and binding MODEL-METADATA section 1 hashes above were read
+and reverified against their coordinating copies. No external source was changed.
+
+The additive **context-window-v1** executable set now has SHA-256
+`9327502962112a020bafb46c6a677366df732f5a29cd44c92f17e8f632281395`.
+All previous cases and supported optional/legacy callback behavior remain;
+there are now 54 provider rows. Its new `ollama reject-json-string-object` row
+serves `application/json` with a top-level JSON string containing
+`{"model_info":{"qwen4_exp.context_length":262144}}` through a real TCP server.
+Both `context-window-v1 adapter ollama reject-json-string-object exact wire and
+result` and `context-window-v1 consumer ollama reject-json-string-object exact
+wire and result` assert configured routing, exact `POST /api/show`, JSON content
+type, no authorization and the model-only request body before asserting
+`{:error, :invalid_response}`. The selected proof command is:
+
+```sh
+scripts/recovery-mix test test/mojentic/llm/context_window_wire_test.exs --only context_string_proof
+```
+
+Before the fix it exited **2**: both calls wrongly returned a 262144-token window
+with `model_info.qwen4_exp.context_length` provenance. After the fix it exited
+**0**, both selected tests passed (130 excluded). This is a behavioral regression
+through production Req, with no mocked Req internals.
+
+`ReqClient.ordinary_post/4` now disables Req body decoding and returns the raw
+binary promised by `Mojentic.HTTP`. The gateway performs its existing single
+JSON decode and shape validation. Retry, redirect, timeout, headers, request
+bodies and the traced/stream implementations are unchanged. Contract-derived
+`context-window-v1 POST {ordinary,no_retry,traced} preserves exact {case}
+response bytes` checks seven response shapes in all three POST modes: a valid
+object, the encoded object string, invalid JSON, array, null, number and string.
+The existing object/provenance and malformed-shape cases still execute on both
+local sides. Consumer doubles derive the new rejection from this same contract.
+
+| Verification side | Tested identity | Command / result |
+| --- | --- | --- |
+| Local production adapters and HTTP boundary | Base commit plus manifest above | `scripts/verify-context-window-contract`: exit 0, 233 tests, zero failures |
+| Local metadata consumers and pure helper | Same source identity and executable set | Same command: exit 0; direct and dispatch cases, contract-derived Mox doubles and compatible old callbacks |
+| Actual Ollama/oMLX server producers | No external tested commit/version | Not run; missing verification of the updated shared executable set |
+| External application consumers | No external tested commit | Not run; missing paired verification, retained for initiative coordination |
+
+The verification script now includes shared POST byte conformance. Existing
+same-model journeys compare identical completion requests before/after discovery
+for ordinary/structured completion and both stream APIs; request-fidelity,
+recovery, typed errors, native reasoning and cancellation remain in the full
+repository suite. Schema checks and local doubles do not establish compatibility
+with unverified external counterparts. Initiative coordination must assign and
+run this exact updated set on both external sides and record their commits,
+versions and results; that work remains unfinished. The prior cycle-11 finding
+identifies an older executable snapshot and cannot certify this candidate.
+
+Only the demonstrated response-decoding defect is corrected. No first-token,
+recovery, dependency, runtime, version or release changes were made. Git
+finalization belongs to Foundry; this candidate remains uncommitted.
+
+### Cycle-12 quality results
+
+Pinned Elixir 1.18.5 and OTP 28.5.0.7 remain unchanged, as do CI PLT caching
+and the 80% coverage threshold. Final-candidate results:
+
+| Command | Result |
+| --- | --- |
+| `scripts/recovery-mix format --check-formatted` | Exit 0 |
+| `scripts/recovery-mix compile --warnings-as-errors` | Exit 0 |
+| `MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | Exit 0 |
+| `scripts/recovery-mix credo --strict` | Exit 0, zero issues |
+| `scripts/recovery-mix test --cover` | Exit 0; 22 doctests, 5,258 tests, zero failures, 19 existing exclusions; 90.77% coverage, 634.5 seconds of test execution within the 900-second limit |
+| `scripts/recovery-mix test` | Exit 0; 22 doctests, 5,258 tests, zero failures, 19 existing exclusions; 637.0 seconds |
+| `scripts/recovery-mix dialyzer` | Exit 0; zero errors, skips or unnecessary skips |
+| `MIX_ENV=test scripts/recovery-mix dialyzer` | Exit 0; zero errors, skips or unnecessary skips |
+| `scripts/recovery-mix deps.audit` | Exit 0; no vulnerabilities |
+| `scripts/recovery-mix hex.audit` | Exit 0; no retired or security advisory packages |
+| `scripts/recovery-mix sobelow --config` | Exit 0; no findings under the existing configuration |
+| `scripts/recovery-mix hex.outdated --all` | Exit 1; available updates, informational and nonblocking |
+| `scripts/recovery-mix docs` | Exit 0; existing missing-link warnings only |
+| `sha256sum --check test/contracts/context_window_v1.manifest.sha256` | Exit 0; all candidate source/contract/test hashes match |
+
+No `precommit` alias is defined. Sobelow retains its pre-existing
+`Traversal.FileModule` exclusion; no exclusions or advisory suppressions were
+added. ExDoc still reports the existing missing `LICENSE`, sibling
+`../RELEASE-3.0.0.md` and dependency usage-rules links. No security finding
+requires a dependency change. Gate evidence and behavioral failure/pass logs are
+retained by Foundry for review; they are execution scratch, not package sources.

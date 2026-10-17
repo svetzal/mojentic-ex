@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — context-window response decoding
+
+- Preserve raw POST response bodies through production Req so Ollama context
+  discovery rejects a top-level JSON string containing an object with
+  `{:error, :invalid_response}` rather than decoding it twice into a window.
+  Valid objects remain accepted. `context-window-v1` now verifies this through
+  both direct and Gateway dispatch, and checks shared POST response bytes in
+  ordinary, retry-disabled and traced modes. Completion and streaming behavior
+  remain covered by the existing suites; external paired verification is pending.
+
 ### Added — context-window discovery
 
 - Optional `Gateway.get_model_context_window/1` callback and compatible

@@ -78,8 +78,9 @@ defmodule Mojentic.HTTP.ReqClient do
   defp ordinary_post(url, body, headers, opts) do
     timeout = Keyword.get(opts, :recv_timeout, 30_000)
 
+    # Preserve response bytes so callers decode and validate the top-level JSON once.
     case Req.post(url,
-           decode_body: Keyword.get(opts, :retry) != false,
+           decode_body: false,
            retry: Keyword.get(opts, :retry, :safe_transient),
            redirect: Keyword.get(opts, :redirect, true),
            body: body,
@@ -88,7 +89,6 @@ defmodule Mojentic.HTTP.ReqClient do
            connect_options: [timeout: timeout]
          ) do
       {:ok, %Req.Response{status: status, body: resp_body, headers: resp_headers}} ->
-        resp_body = if is_binary(resp_body), do: resp_body, else: Jason.encode!(resp_body)
         {:ok, %{status_code: status, body: resp_body, headers: flatten_headers(resp_headers)}}
 
       {:error, exception} ->
