@@ -49,7 +49,7 @@ defmodule Mojentic.LLM.ChatSession do
           tools: [module()] | nil,
           max_context: non_neg_integer(),
           tokenizer: Mojentic.LLM.Tokenizer.t(),
-          temperature: float()
+          temperature: number() | nil
         }
 
   @type sized_message :: %{
@@ -65,7 +65,7 @@ defmodule Mojentic.LLM.ChatSession do
     tools: nil,
     max_context: 32_768,
     tokenizer: nil,
-    temperature: 1.0
+    temperature: nil
   ]
 
   @doc """
@@ -79,7 +79,7 @@ defmodule Mojentic.LLM.ChatSession do
   - `:tokenizer` - A struct implementing `Mojentic.LLM.Tokenizer` (default: auto-created via
     the module configured in `Application.get_env(:mojentic, :default_tokenizer_mod)`,
     which defaults to `Mojentic.LLM.Gateways.TokenizerGateway`)
-  - `:temperature` - Temperature for response generation (default: 1.0)
+  - `:temperature` - Temperature for response generation (default: provider setting)
 
   ## Examples
 
@@ -102,7 +102,7 @@ defmodule Mojentic.LLM.ChatSession do
     system_prompt = Keyword.get(opts, :system_prompt, "You are a helpful assistant.")
     tools = Keyword.get(opts, :tools)
     max_context = Keyword.get(opts, :max_context, 32_768)
-    temperature = Keyword.get(opts, :temperature, 1.0)
+    temperature = Keyword.get(opts, :temperature)
 
     tokenizer =
       case Keyword.get(opts, :tokenizer) do
@@ -154,6 +154,10 @@ defmodule Mojentic.LLM.ChatSession do
 
       # Continue conversation
       {:ok, response, session} = ChatSession.send(session, "And what about 3+3?")
+
+  Per-send `temperature`, `num_ctx`, `max_tokens`, `top_p` and `top_k` are
+  forwarded; temperature overrides the optional session setting. `max_context`
+  only controls local history trimming.
 
   Pass `recovery: []` as the third argument to opt into safe completion errors; include `max_attempts`
   and an admission policy to enable bounded recovery. On failure, keep the original session returned by `new/2`
@@ -244,19 +248,16 @@ defmodule Mojentic.LLM.ChatSession do
     {:ok, wrapped_stream, {session, agent}}
   end
 
-  @doc "Streams with opt-in recovery; failed or halted streams cannot finalize successfully."
+  @doc """
+  Streams with per-send completion options, including sampling and output limits.
+  Explicit temperature overrides the session setting; `nil` leaves it unset.
+  Recovery is opt-in; failed or halted streams cannot finalize successfully.
+  """
   def send_stream(session, query, opts) do
-    case session_config(session, opts) do
-      %CompletionConfig{
-        recovery: nil,
-        reasoning_effort: nil,
-        reasoning_profile: nil,
-        preserve_reasoning: false
-      } ->
-        send_stream(session, query)
-
-      _config ->
-        recovery_stream(session, query, opts)
+    if opts == [] do
+      send_stream(session, query)
+    else
+      recovery_stream(session, query, opts)
     end
   end
 
@@ -377,8 +378,18 @@ defmodule Mojentic.LLM.ChatSession do
 
   defp session_config(session, opts) do
     opts
-    |> Keyword.take([:recovery, :reasoning_effort, :reasoning_profile, :preserve_reasoning])
-    |> Keyword.put(:temperature, session.temperature)
+    |> Keyword.take([
+      :temperature,
+      :num_ctx,
+      :max_tokens,
+      :top_p,
+      :top_k,
+      :recovery,
+      :reasoning_effort,
+      :reasoning_profile,
+      :preserve_reasoning
+    ])
+    |> Keyword.put_new(:temperature, session.temperature)
     |> CompletionConfig.new()
   end
 

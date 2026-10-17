@@ -5,6 +5,9 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
   alias Mojentic.LLM.Gateways.{Ollama, OMLX, OpenAI}
   alias Mojentic.TestSupport.{CountingTool, ScriptedCompletionServer, StubTokenizer}
 
+  @external_resource "test/contracts/request_fidelity_v1.json"
+  @contract Jason.decode!(File.read!(@external_resource))
+
   @original "original-image-π"
   @changed "changed-image-δ"
   @keys ["OPENAI_API_ENDPOINT", "OPENAI_API_KEY", "OLLAMA_HOST", "OMLX_HOST", "OMLX_API_KEY"]
@@ -28,6 +31,181 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
     %{path: path}
   end
 
+  for gateway <- [OpenAI, Ollama, OMLX],
+      boundary <- [:gateway, :broker],
+      operation <- [:complete, :object, :legacy, :events],
+      row <- @contract["cases"] do
+    @gateway gateway
+    @boundary boundary
+    @operation operation
+    @row row
+    test "fidelity-v1 #{gateway} #{boundary} #{operation} #{row["name"]} exact body and admitted replay" do
+      recovery = [
+        max_attempts: 2,
+        base_delay: 0,
+        admission: fn _ -> :allow end,
+        sleeper: fn _ -> :ok end
+      ]
+
+      fields = [:temperature, :num_ctx, :max_tokens, :top_p, :top_k]
+
+      opts =
+        for field <- fields,
+            Map.has_key?(@row["config"], Atom.to_string(field)),
+            do: {field, @row["config"][Atom.to_string(field)]}
+
+      config = CompletionConfig.new(opts)
+      baseline = server(@gateway, List.duplicate(success(@gateway, @operation), 2))
+      invoke(@gateway, @operation, [Message.user("question")], config, "gpt-4o", @boundary)
+      [original | additional] = GenServer.call(baseline, :requests) |> Enum.map(&encoded/1)
+      assert Enum.all?(additional, &(&1 == original))
+      assert Jason.decode!(original) == fidelity_body(@gateway, @operation, @row["config"])
+      stop_supervised!(ScriptedCompletionServer)
+
+      retry =
+        server(@gateway, [
+          http(@contract["retryable_error"]["status"], @contract["retryable_error"]["body"]),
+          success(@gateway, @operation)
+        ])
+
+      invoke(
+        @gateway,
+        @operation,
+        [Message.user("question")],
+        %{config | recovery: recovery},
+        "gpt-4o",
+        @boundary
+      )
+
+      assert [^original, ^original] = GenServer.call(retry, :requests) |> Enum.map(&encoded/1)
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX],
+      operation <- [:complete, :legacy],
+      row <- @contract["cases"] do
+    @gateway gateway
+    @operation operation
+    @row row
+    test "fidelity-v1 #{gateway} session #{operation} #{row["name"]} preserves per-send values" do
+      server = server(@gateway, List.duplicate(success(@gateway, @operation), 2))
+
+      session =
+        ChatSession.new(Broker.new("gpt-4o", @gateway),
+          system_prompt: "system",
+          tokenizer: StubTokenizer.new!(),
+          temperature: 0.6,
+          max_context: 1000
+        )
+
+      opts =
+        for field <- [:temperature, :num_ctx, :max_tokens, :top_p, :top_k],
+            Map.has_key?(@row["config"], Atom.to_string(field)),
+            do: {field, @row["config"][Atom.to_string(field)]}
+
+      if @operation == :complete do
+        assert {:ok, "answer", _} = ChatSession.send(session, "question", opts)
+      else
+        assert {:ok, stream, handle} = ChatSession.send_stream(session, "question", opts)
+        assert "answer" in Enum.to_list(stream)
+        assert %ChatSession{} = ChatSession.finalize_stream(handle)
+      end
+
+      bodies = GenServer.call(server, :requests) |> Enum.map(&(encoded(&1) |> Jason.decode!()))
+      fields = Map.put_new(@row["config"], "temperature", 0.6)
+
+      expected =
+        fidelity_body(@gateway, @operation, fields)
+        |> Map.put("messages", [
+          %{"role" => "system", "content" => "system"},
+          %{"role" => "user", "content" => "question"}
+        ])
+        |> Map.delete("tools")
+
+      assert bodies != []
+      assert Enum.all?(bodies, &(&1 == expected))
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX] do
+    @gateway gateway
+    test "fidelity-v1 #{@gateway} Broker tracing retains unset and zero caller temperature" do
+      server = server(@gateway, [success(@gateway, :complete), success(@gateway, :complete)])
+      tracer = start_supervised!(Mojentic.Tracer.TracerSystem)
+      broker = Broker.new("gpt-4o", @gateway, tracer: tracer)
+      assert {:ok, "answer"} = Broker.generate(broker, [Message.user("question")])
+
+      assert {:ok, "answer"} =
+               Broker.generate(broker, [Message.user("question")], nil, %CompletionConfig{
+                 temperature: 0
+               })
+
+      event_type = Mojentic.Tracer.TracerEvents.LLMCallTracerEvent
+      events = Mojentic.Tracer.get_events(tracer, event_type: event_type)
+      assert Enum.map(events, & &1.temperature) == [nil, 0]
+      [unset, zero] = events
+      refute event_type.printable_summary(unset) =~ "Temperature:"
+      assert event_type.printable_summary(zero) =~ "Temperature: 0"
+
+      [unset_body, zero_body] =
+        GenServer.call(server, :requests) |> Enum.map(&(encoded(&1) |> Jason.decode!()))
+
+      assert unset_body == Map.delete(fidelity_body(@gateway, :complete, %{}), "tools")
+
+      assert zero_body ==
+               Map.delete(fidelity_body(@gateway, :complete, %{"temperature" => 0}), "tools")
+    end
+  end
+
+  for operation <- [:complete, :object, :legacy, :events] do
+    @operation operation
+    test "fidelity-v1 OpenAI #{@operation} unset reasoning limit and temperature stay absent" do
+      server = server(OpenAI, [success(OpenAI, @operation)])
+      invoke(OpenAI, @operation, [Message.user("question")], %CompletionConfig{}, "o3")
+      [body] = GenServer.call(server, :requests) |> Enum.map(&(encoded(&1) |> Jason.decode!()))
+      assert body == Map.put(fidelity_body(OpenAI, @operation, %{}), "model", "o3")
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX] do
+    @gateway gateway
+    @tag :fidelity_proof
+    test "#{gateway} unset parameters survive a tool continuation and admitted retry through production Req" do
+      server =
+        server(@gateway, [
+          tool_response(@gateway),
+          http(@contract["retryable_error"]["status"], @contract["retryable_error"]["body"]),
+          success(@gateway, :complete)
+        ])
+
+      config = %CompletionConfig{
+        recovery: [
+          max_attempts: 2,
+          base_delay: 0,
+          admission: fn _ -> :allow end,
+          sleeper: fn _ -> :ok end
+        ]
+      }
+
+      assert {:ok, "answer"} =
+               Broker.generate(
+                 Broker.new("gpt-4o", @gateway),
+                 [Message.user("question")],
+                 [%CountingTool{owner: self()}],
+                 config
+               )
+
+      assert_receive {:tool_executed, %{"value" => "next-π"}}
+      refute_receive {:tool_executed, _}
+      [initial, continuation, replay] = GenServer.call(server, :requests) |> Enum.map(&encoded/1)
+      assert continuation == replay
+      assert Jason.decode!(initial) == fidelity_body(@gateway, :complete, %{})
+
+      assert Map.delete(Jason.decode!(continuation), "messages") ==
+               Map.delete(Jason.decode!(initial), "messages")
+    end
+  end
+
   for gateway <- [OpenAI, Ollama, OMLX] do
     @gateway gateway
     @tag :immutable_proof
@@ -38,7 +216,7 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
       server =
         server(@gateway, [
           tool_response(@gateway),
-          http(503, "busy"),
+          http(@contract["retryable_error"]["status"], @contract["retryable_error"]["body"]),
           success(@gateway, :complete)
         ])
 
@@ -137,7 +315,12 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
       stop_supervised!(ScriptedCompletionServer)
       drain(:wire_request)
 
-      retry = server(@gateway, [http(503, "busy"), success(@gateway, @operation)])
+      retry =
+        server(@gateway, [
+          http(@contract["retryable_error"]["status"], @contract["retryable_error"]["body"]),
+          success(@gateway, @operation)
+        ])
+
       invoke(@gateway, @operation, history(path), config(path, owner), "gpt-4o", @boundary)
       [first, second] = GenServer.call(retry, :requests) |> Enum.map(&encoded/1)
       assert Jason.decode!(first) == expected
@@ -160,7 +343,12 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
       [disabled] = GenServer.call(baseline, :requests) |> Enum.map(&encoded/1)
       stop_supervised!(ScriptedCompletionServer)
       drain(:wire_request)
-      retry = server(OpenAI, [http(503, "busy"), success(OpenAI, @operation)])
+
+      retry =
+        server(OpenAI, [
+          http(@contract["retryable_error"]["status"], @contract["retryable_error"]["body"]),
+          success(OpenAI, @operation)
+        ])
 
       invoke(
         OpenAI,
@@ -205,7 +393,7 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
       retry =
         server(@gateway, [
           success(@gateway, :complete),
-          http(503, "busy"),
+          http(@contract["retryable_error"]["status"], @contract["retryable_error"]["body"]),
           success(@gateway, @operation)
         ])
 
@@ -239,11 +427,11 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
       expected =
         if @gateway == Ollama do
           Map.merge(expected, %{
-            "options" => %{"temperature" => 1.0, "num_ctx" => 32_768, "num_predict" => 16_384},
+            "options" => %{},
             "stream" => @operation == :legacy
           })
         else
-          Map.merge(expected, %{"temperature" => 1.0, "max_tokens" => 16_384})
+          expected
         end
 
       expected =
@@ -268,7 +456,12 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
     @defect defect
     @tag :lifecycle_rejection_proof
     test "#{gateway} actual HTTP evidence rejects #{inspect(defect)}", %{path: path} do
-      fixture = server(@gateway, [http(503, "busy"), success(@gateway, :complete)])
+      fixture =
+        server(@gateway, [
+          http(@contract["retryable_error"]["status"], @contract["retryable_error"]["body"]),
+          success(@gateway, :complete)
+        ])
+
       invoke(@gateway, :complete, history(path), config(path, self()), "gpt-4o")
       bodies = GenServer.call(fixture, :requests) |> Enum.map(&encoded/1)
       assert length(bodies) == 2
@@ -438,7 +631,6 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
       temperature: 0.6,
       num_ctx: 8192,
       max_tokens: 73,
-      num_predict: 61,
       top_p: 0.8,
       top_k: 17,
       reasoning_effort: :high,
@@ -513,7 +705,7 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
             "options" => %{
               "temperature" => 0.6,
               "num_ctx" => 8192,
-              "num_predict" => 61,
+              "num_predict" => 73,
               "top_p" => 0.8,
               "top_k" => 17
             },
@@ -601,43 +793,70 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
 
   defp encoded(wire), do: wire |> String.split("\r\n\r\n", parts: 2) |> List.last()
 
-  defp success(gateway, operation) when operation in [:legacy, :events] do
-    body =
-      if gateway == Ollama do
-        Jason.encode!(%{message: %{content: "answer"}, done: false}) <>
-          "\n" <>
-          Jason.encode!(%{message: %{content: ""}, done: true, done_reason: "stop"}) <> "\n"
-      else
-        "data: " <>
-          Jason.encode!(%{
-            choices: [%{index: 0, delta: %{content: "answer"}, finish_reason: nil}]
-          }) <>
-          "\n\n" <>
-          "data: " <>
-          Jason.encode!(%{choices: [%{index: 0, delta: %{}, finish_reason: "stop"}]}) <>
-          "\n\ndata: [DONE]\n\n"
-      end
-
-    http(200, body)
+  defp success(gateway, operation) do
+    provider = if gateway == Ollama, do: "ollama", else: "openai"
+    http(200, @contract["responses"][provider <> "-" <> Atom.to_string(operation)])
   end
 
-  defp success(gateway, operation) do
-    content = if operation == :object, do: "{\"answer\":\"answer\"}", else: "answer"
+  defp fidelity_body(gateway, operation, fields) do
+    fields = Map.reject(fields, fn {_key, value} -> is_nil(value) end)
+    body = %{"model" => "gpt-4o", "messages" => [%{"role" => "user", "content" => "question"}]}
 
     body =
-      if gateway == Ollama,
-        do: %{"message" => %{"content" => content}, "done" => true, "done_reason" => "stop"},
-        else: %{"choices" => [%{"message" => %{"content" => content}, "finish_reason" => "stop"}]}
+      if gateway == Ollama do
+        options =
+          for {key, value} <- fields,
+              into: %{},
+              do: {if(key == "max_tokens", do: "num_predict", else: key), value}
 
-    http(200, Jason.encode!(body))
+        Map.merge(body, %{"options" => options, "stream" => operation in [:legacy, :events]})
+      else
+        Map.merge(
+          body,
+          Map.take(
+            fields,
+            if(gateway == OpenAI,
+              do: ["temperature", "max_tokens", "top_p"],
+              else: ["temperature", "max_tokens", "top_p", "top_k"]
+            )
+          )
+        )
+      end
+
+    body =
+      if operation == :object do
+        key = if gateway == Ollama, do: "format", else: "response_format"
+
+        format =
+          if gateway == Ollama,
+            do: schema(),
+            else: %{
+              "type" => "json_schema",
+              "json_schema" => %{"name" => "response", "schema" => schema()}
+            }
+
+        Map.put(body, key, format)
+      else
+        body
+      end
+
+    body =
+      if gateway != Ollama and operation in [:legacy, :events],
+        do: Map.put(body, "stream", true),
+        else: body
+
+    body =
+      if gateway != Ollama and operation == :events,
+        do: Map.put(body, "stream_options", %{"include_usage" => true}),
+        else: body
+
+    if operation in [:complete, :legacy],
+      do: Map.put(body, "tools", [Jason.decode!(Jason.encode!(CountingTool.descriptor()))]),
+      else: body
   end
 
   defp tool_response(gateway) do
-    call = %{
-      "id" => "next-id",
-      "type" => "function",
-      "function" => %{"name" => "count", "arguments" => "{\"value\":\"next-π\"}"}
-    }
+    call = @contract["tool_call"]
 
     call =
       if gateway == Ollama,

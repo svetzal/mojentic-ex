@@ -7,10 +7,9 @@ defmodule Mojentic.LLM.CompletionConfigTest do
     test "creates config with default values" do
       config = CompletionConfig.new()
 
-      assert config.temperature == 1.0
-      assert config.num_ctx == 32_768
-      assert config.max_tokens == 16_384
-      assert config.num_predict == nil
+      assert config.temperature == nil
+      assert config.num_ctx == nil
+      assert config.max_tokens == nil
       assert config.top_p == nil
       assert config.top_k == nil
       assert config.response_format == nil
@@ -22,31 +21,24 @@ defmodule Mojentic.LLM.CompletionConfigTest do
       config = CompletionConfig.new(temperature: 0.7)
 
       assert config.temperature == 0.7
-      assert config.num_ctx == 32_768
-      assert config.max_tokens == 16_384
+      assert config.num_ctx == nil
+      assert config.max_tokens == nil
     end
 
     test "creates config with custom max_tokens" do
       config = CompletionConfig.new(max_tokens: 1000)
 
-      assert config.temperature == 1.0
-      assert config.num_ctx == 32_768
+      assert config.temperature == nil
+      assert config.num_ctx == nil
       assert config.max_tokens == 1000
     end
 
     test "creates config with custom num_ctx" do
       config = CompletionConfig.new(num_ctx: 4096)
 
-      assert config.temperature == 1.0
+      assert config.temperature == nil
       assert config.num_ctx == 4096
-      assert config.max_tokens == 16_384
-    end
-
-    test "creates config with custom num_predict" do
-      config = CompletionConfig.new(num_predict: 512)
-
-      assert config.temperature == 1.0
-      assert config.num_predict == 512
+      assert config.max_tokens == nil
     end
 
     test "creates config with multiple overrides" do
@@ -54,14 +46,12 @@ defmodule Mojentic.LLM.CompletionConfigTest do
         CompletionConfig.new(
           temperature: 0.5,
           max_tokens: 2000,
-          num_ctx: 8192,
-          num_predict: 1024
+          num_ctx: 8192
         )
 
       assert config.temperature == 0.5
       assert config.num_ctx == 8192
       assert config.max_tokens == 2000
-      assert config.num_predict == 1024
     end
 
     test "accepts zero temperature" do
@@ -80,14 +70,14 @@ defmodule Mojentic.LLM.CompletionConfigTest do
       config = CompletionConfig.new(top_p: 0.9)
 
       assert config.top_p == 0.9
-      assert config.temperature == 1.0
+      assert config.temperature == nil
     end
 
     test "creates config with custom top_k" do
       config = CompletionConfig.new(top_k: 40)
 
       assert config.top_k == 40
-      assert config.temperature == 1.0
+      assert config.temperature == nil
     end
 
     test "creates config with response_format as json_object" do

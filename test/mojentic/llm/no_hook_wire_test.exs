@@ -54,7 +54,7 @@ defmodule Mojentic.LLM.NoHookWireTest do
                %{"role" => "user", "content" => "unchanged-input"}
              ],
              "stream" => true,
-             "options" => %{"temperature" => 1.0, "num_ctx" => 32_768, "num_predict" => 16_384}
+             "options" => %{}
            }
 
     assert GenServer.call(server, :requests) == [wire]

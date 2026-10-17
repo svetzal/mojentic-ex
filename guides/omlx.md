@@ -36,8 +36,8 @@ broker = Broker.new("Qwen3.8-27B-MLX-8bit", OMLX)
 
 A chat request sends these `CompletionConfig` fields:
 
-- `temperature` and `max_tokens`. The gateway always sends `max_tokens`, never
-  `max_completion_tokens`.
+- `temperature` and `max_tokens`, only when set. The output-limit name is
+  `max_tokens`, never `max_completion_tokens`. Unset limits use server settings.
 - `top_p`, `top_k` and `reasoning_effort`, when they are set.
 - `response_format`, in the OpenAI-compatible shape.
 - The tools that you give to the broker.

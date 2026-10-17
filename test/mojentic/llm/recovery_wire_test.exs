@@ -1598,10 +1598,10 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       if gateway == Ollama do
         Map.merge(base, %{
           "stream" => false,
-          "options" => %{"temperature" => 1.0, "num_ctx" => 32_768, "num_predict" => 16_384}
+          "options" => %{}
         })
       else
-        Map.merge(base, %{"temperature" => 1.0, "max_tokens" => 16_384})
+        base
       end
 
     expected =

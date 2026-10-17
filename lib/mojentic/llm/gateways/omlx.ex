@@ -23,7 +23,7 @@ defmodule Mojentic.LLM.Gateways.OMLX do
 
   ## Request parameters
 
-  Chat requests send `model`, `messages`, `temperature` and `max_tokens`, and
+  Chat requests send `model` and `messages`, and send `temperature`, `max_tokens`,
   `top_p`, `top_k`, `reasoning_effort`, `response_format` and `tools` when they
   are set. `num_ctx` and `num_predict` are not sent: oMLX sets the context
   length per model.
@@ -277,9 +277,9 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   defp chat_body(model, messages, tools, config) do
     %{
       model: model,
-      messages: adapt_messages_with_reasoning(messages),
-      temperature: config.temperature
+      messages: adapt_messages_with_reasoning(messages)
     }
+    |> put_set(:temperature, config.temperature)
     |> put_set(:max_tokens, config.max_tokens)
     |> put_set(:top_p, config.top_p)
     |> put_set(:top_k, config.top_k)

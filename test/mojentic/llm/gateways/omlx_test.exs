@@ -117,7 +117,6 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
         CompletionConfig.new(
           temperature: 0.2,
           max_tokens: 512,
-          num_predict: 99,
           top_p: 0.9,
           top_k: 40,
           reasoning_effort: :high
@@ -148,7 +147,7 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
       assert {:ok, _} = OMLX.complete(@model, [Message.user("hi")], [], CompletionConfig.new())
 
       assert_received {:post, _url, body, _headers, _opts}
-      assert Enum.sort(Map.keys(body)) == ["max_tokens", "messages", "model", "temperature"]
+      assert Enum.sort(Map.keys(body)) == ["messages", "model"]
     end
 
     test "forwards each response format as an OpenAI-compatible value" do

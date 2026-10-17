@@ -256,9 +256,30 @@ config = CompletionConfig.new(num_ctx: 32768)
 # Constrained generation
 config = CompletionConfig.new(
   temperature: 0.7,
-  num_predict: 256  # Limit response length
+  max_tokens: 256  # Limit response length
 )
 ```
+
+### Provider defaults and migrating output limits
+
+`CompletionConfig.new()` leaves `temperature`, `num_ctx` and `max_tokens` unset.
+All adapters omit them, including on tool continuations and retries. Ollama sends
+an explicit `max_tokens` as `options.num_predict`; OpenAI uses `max_tokens` or
+`max_completion_tokens` for reasoning models; oMLX uses `max_tokens`.
+`num_ctx` only affects Ollama. `top_p` is supported by all three; `top_k` is
+supported by Ollama and oMLX. OpenAI still adapts an explicit unsupported
+fixed temperature to 1.0 and warns when dropping non-reasoning-model effort.
+
+Replace `CompletionConfig.new(num_predict: n)` with
+`CompletionConfig.new(max_tokens: n)`. To restore the previous defaults:
+
+```elixir
+config = CompletionConfig.new(temperature: 1.0, num_ctx: 32_768, max_tokens: 16_384)
+```
+
+Without these explicit settings, Ollama uses model/server settings (possibly a
+smaller context or unlimited output). OpenAI output is limited by the model,
+which can increase generation length and cost. oMLX also uses server defaults.
 
 ### Reasoning Effort
 

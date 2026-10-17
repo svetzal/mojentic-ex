@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking changes — request fidelity
+
+- `CompletionConfig.temperature`, `num_ctx` and `max_tokens` now default to `nil`.
+  OpenAI, Ollama and oMLX omit unset parameters across ordinary, structured and
+  both streaming APIs, including Broker/ChatSession, continuations and retries.
+  Explicit zero temperature and supported sampling controls are preserved.
+- Removed the separate `CompletionConfig.num_predict` field. Migrate
+  `num_predict: n` to `max_tokens: n`: Ollama receives `options.num_predict`,
+  OpenAI receives `max_tokens` or `max_completion_tokens` for reasoning models,
+  and oMLX receives `max_tokens` only when set.
+- ChatSession no longer injects temperature 1.0. Per-send sampling/context/output
+  settings are forwarded; per-send temperature overrides the optional session
+  value. Local history trimming (`max_context`) remains independent.
+
+Migration: restore the former request settings explicitly with
+`CompletionConfig.new(temperature: 1.0, num_ctx: 32_768, max_tokens: 16_384)`.
+For ChatSession set `temperature: 1.0` in `new/2` and pass `num_ctx: 32_768,
+max_tokens: 16_384` to each send. Otherwise Ollama uses model/server settings,
+possibly a smaller context and unlimited output; OpenAI may generate more output
+and cost more; oMLX uses server defaults. Fixed-temperature OpenAI adaptation and
+reasoning-drop warnings remain in place for explicit caller controls.
+
+
 ### Verified
 
 - Established the October 12 admission-without-a-hook guarantee through the real

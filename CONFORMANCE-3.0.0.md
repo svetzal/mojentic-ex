@@ -953,3 +953,20 @@ also passed (exit 0) on this final snapshot: one selected case, 181 excluded.
 These results establish the declared local adapter/consumer cases only; paired
 external verification remains unfinished. The independent `typed-errors-v1`
 consumer follow-up retains its separate assignment.
+
+## Request fidelity — partial part 3 evidence
+
+The current correction implements only MODEL-METADATA-2026-10 sections 3–3.6
+(SHA-256 `a085da1c0d110f9d587a24ace6ac2854b653e1ac28905b3829d94d665b2c906e`).
+`temperature`, `num_ctx` and `max_tokens` are optional without defaults;
+`CompletionConfig.num_predict` is removed. See
+[REQUEST-FIDELITY-CONFORMANCE.md](REQUEST-FIDELITY-CONFORMANCE.md) for the
+characterized public boundary, `request-fidelity-v1` executable manifest, named
+exact-body and replay cases, local adapter/consumer identities and results,
+changed-default migration profile and external verification gaps.
+
+Local adapter and Broker/ChatSession verification use the same versioned
+contract-derived responses through production Req. External provider/consumer
+paired verification remains unfinished. Context-window discovery and first-token
+timing are not implemented by this correction. This mapping does not assert
+complete part 3 or coordinated release readiness.

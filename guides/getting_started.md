@@ -172,7 +172,9 @@ tools = [DateResolver]
 
 ## Configuration Options
 
-Customize LLM behavior with `CompletionConfig`:
+Customize LLM behavior with `CompletionConfig`. Unset sampling, context and
+output-limit fields are omitted; the provider chooses its defaults. Use
+`max_tokens` as the only output limit (`num_predict` was removed):
 
 ```elixir
 alias Mojentic.LLM.CompletionConfig
@@ -180,8 +182,7 @@ alias Mojentic.LLM.CompletionConfig
 config = CompletionConfig.new(
   temperature: 0.7,      # Randomness (0.0-2.0)
   max_tokens: 2000,      # Maximum response length
-  num_ctx: 8192,         # Context window size
-  num_predict: 1024      # Prediction length
+  num_ctx: 8192          # Ollama context window size
 )
 
 {:ok, response} = Broker.generate(broker, messages, [], config)

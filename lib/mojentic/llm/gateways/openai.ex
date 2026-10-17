@@ -401,23 +401,19 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
 
     params = %{}
 
-    # Handle token limit parameter conversion
-    max_tokens =
-      cond do
-        config.max_tokens > 0 -> config.max_tokens
-        config.num_predict && config.num_predict > 0 -> config.num_predict
-        true -> 16_384
-      end
-
     params =
-      case capabilities.model_type do
-        :reasoning -> Map.put(params, :max_completion_tokens, max_tokens)
-        _ -> Map.put(params, :max_tokens, max_tokens)
+      case {capabilities.model_type, config.max_tokens} do
+        {_, nil} -> params
+        {:reasoning, limit} -> Map.put(params, :max_completion_tokens, limit)
+        {_, limit} -> Map.put(params, :max_tokens, limit)
       end
 
     # Handle temperature restrictions
     params =
       cond do
+        is_nil(config.temperature) ->
+          params
+
         OpenAIModelRegistry.supports_temperature?(registry, model, config.temperature) ->
           Map.put(params, :temperature, config.temperature)
 

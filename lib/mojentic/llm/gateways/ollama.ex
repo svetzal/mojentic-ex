@@ -513,38 +513,14 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   end
 
   defp extract_options(config) do
-    options = %{
+    %{
       temperature: config.temperature,
-      num_ctx: config.num_ctx
+      num_ctx: config.num_ctx,
+      num_predict: config.max_tokens,
+      top_p: config.top_p,
+      top_k: config.top_k
     }
-
-    options =
-      case config.num_predict do
-        nil when config.max_tokens > 0 ->
-          Map.put(options, :num_predict, config.max_tokens)
-
-        num when is_integer(num) and num > 0 ->
-          Map.put(options, :num_predict, num)
-
-        _ ->
-          options
-      end
-
-    options =
-      if config.top_p do
-        Map.put(options, :top_p, config.top_p)
-      else
-        options
-      end
-
-    options =
-      if config.top_k do
-        Map.put(options, :top_k, config.top_k)
-      else
-        options
-      end
-
-    options
+    |> Map.reject(fn {_key, value} -> is_nil(value) end)
   end
 
   defp maybe_add_tools(body, nil), do: body

@@ -525,8 +525,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       config = %CompletionConfig{
         temperature: 0.7,
         max_tokens: 100,
-        num_ctx: 2048,
-        num_predict: nil
+        num_ctx: 2048
       }
 
       response_body =
@@ -548,41 +547,13 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
       assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
     end
 
-    test "uses num_predict when provided directly" do
+    test "omits num_predict when max_tokens is unset" do
       messages = [Message.user("Test")]
 
       config = %CompletionConfig{
         temperature: 0.5,
-        max_tokens: 50,
-        num_ctx: 1024,
-        num_predict: 200
-      }
-
-      response_body =
-        Jason.encode!(%{
-          "message" => %{
-            "content" => "Response",
-            "role" => "assistant"
-          }
-        })
-
-      expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
-        decoded = Jason.decode!(body)
-        assert decoded["options"]["num_predict"] == 200
-        {:ok, %{status_code: 200, body: response_body}}
-      end)
-
-      assert {:ok, _response} = Ollama.complete("qwen2.5:3b", messages, [], config)
-    end
-
-    test "omits num_predict when max_tokens is zero and num_predict is nil" do
-      messages = [Message.user("Test")]
-
-      config = %CompletionConfig{
-        temperature: 0.5,
-        max_tokens: 0,
-        num_ctx: 1024,
-        num_predict: nil
+        max_tokens: nil,
+        num_ctx: 1024
       }
 
       response_body =
@@ -609,7 +580,6 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
         temperature: 0.7,
         max_tokens: 100,
         num_ctx: 2048,
-        num_predict: nil,
         top_p: 0.9
       }
 
@@ -637,7 +607,6 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
         temperature: 0.7,
         max_tokens: 100,
         num_ctx: 2048,
-        num_predict: nil,
         top_k: 40
       }
 
@@ -665,7 +634,6 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
         temperature: 0.7,
         max_tokens: 100,
         num_ctx: 2048,
-        num_predict: nil,
         top_p: 0.95,
         top_k: 50
       }
@@ -695,7 +663,6 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
         temperature: 0.5,
         max_tokens: 50,
         num_ctx: 1024,
-        num_predict: nil,
         top_p: nil
       }
 
@@ -723,7 +690,6 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
         temperature: 0.5,
         max_tokens: 50,
         num_ctx: 1024,
-        num_predict: nil,
         top_k: nil
       }
 

@@ -38,18 +38,26 @@ defmodule Mojentic.LLM.CompletionConfig do
   can override that request. OpenAI rejects these new controls and native
   history, while its legacy low/medium/high controls remain available.
 
-  Provides settings for temperature, context window size, and token limits.
+  `temperature`, `num_ctx` and `max_tokens` default to `nil`: gateways omit
+  unset fields so model/server defaults apply. Explicit zero temperature is kept.
+  `num_ctx` is an Ollama request setting, independent of ChatSession trimming.
+  `max_tokens` is the only output limit: Ollama sends `options.num_predict`,
+  OpenAI sends `max_tokens` (or `max_completion_tokens` for reasoning models),
+  and oMLX sends `max_tokens`. The separate `num_predict` config field is removed.
+  To restore the old limits, explicitly set `temperature: 1.0`,
+  `num_ctx: 32_768`, and `max_tokens: 16_384`.
+
 
   ## Examples
 
       iex> CompletionConfig.new()
-      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: nil, top_k: nil, response_format: nil, reasoning_effort: nil, max_tool_iterations: 10}
+      %CompletionConfig{temperature: nil, num_ctx: nil, max_tokens: nil, top_p: nil, top_k: nil, response_format: nil, reasoning_effort: nil, max_tool_iterations: 10}
 
       iex> CompletionConfig.new(temperature: 0.7, max_tokens: 1000)
-      %CompletionConfig{temperature: 0.7, num_ctx: 32768, max_tokens: 1000, top_p: nil, top_k: nil, response_format: nil, reasoning_effort: nil, max_tool_iterations: 10}
+      %CompletionConfig{temperature: 0.7, num_ctx: nil, max_tokens: 1000, top_p: nil, top_k: nil, response_format: nil, reasoning_effort: nil, max_tool_iterations: 10}
 
       iex> CompletionConfig.new(top_p: 0.9, top_k: 40)
-      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: 0.9, top_k: 40, response_format: nil, reasoning_effort: nil, max_tool_iterations: 10}
+      %CompletionConfig{temperature: nil, num_ctx: nil, max_tokens: nil, top_p: 0.9, top_k: 40, response_format: nil, reasoning_effort: nil, max_tool_iterations: 10}
 
   """
 
@@ -61,10 +69,9 @@ defmodule Mojentic.LLM.CompletionConfig do
   @type reasoning_effort :: :disabled | :enabled | :low | :medium | :high | :xhigh
 
   @type t :: %__MODULE__{
-          temperature: float(),
-          num_ctx: pos_integer(),
-          max_tokens: pos_integer(),
-          num_predict: integer() | nil,
+          temperature: number() | nil,
+          num_ctx: pos_integer() | nil,
+          max_tokens: pos_integer() | nil,
           top_p: float() | nil,
           top_k: integer() | nil,
           response_format: response_format() | nil,
@@ -78,10 +85,9 @@ defmodule Mojentic.LLM.CompletionConfig do
   defstruct reasoning_profile: nil,
             preserve_reasoning: false,
             recovery: nil,
-            temperature: 1.0,
-            num_ctx: 32_768,
-            max_tokens: 16_384,
-            num_predict: nil,
+            temperature: nil,
+            num_ctx: nil,
+            max_tokens: nil,
             top_p: nil,
             top_k: nil,
             response_format: nil,
@@ -98,13 +104,13 @@ defmodule Mojentic.LLM.CompletionConfig do
   ## Examples
 
       iex> CompletionConfig.new(temperature: 0.5)
-      %CompletionConfig{temperature: 0.5, num_ctx: 32768, max_tokens: 16384, top_p: nil, top_k: nil, response_format: nil, reasoning_effort: nil, max_tool_iterations: 10}
+      %CompletionConfig{temperature: 0.5, num_ctx: nil, max_tokens: nil, top_p: nil, top_k: nil, response_format: nil, reasoning_effort: nil, max_tool_iterations: 10}
 
       iex> CompletionConfig.new(top_p: 0.95)
-      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: 0.95, top_k: nil, response_format: nil, reasoning_effort: nil, max_tool_iterations: 10}
+      %CompletionConfig{temperature: nil, num_ctx: nil, max_tokens: nil, top_p: 0.95, top_k: nil, response_format: nil, reasoning_effort: nil, max_tool_iterations: 10}
 
       iex> CompletionConfig.new(response_format: %{type: :json_object, schema: nil})
-      %CompletionConfig{temperature: 1.0, num_ctx: 32768, max_tokens: 16384, top_p: nil, top_k: nil, response_format: %{type: :json_object, schema: nil}, reasoning_effort: nil, max_tool_iterations: 10}
+      %CompletionConfig{temperature: nil, num_ctx: nil, max_tokens: nil, top_p: nil, top_k: nil, response_format: %{type: :json_object, schema: nil}, reasoning_effort: nil, max_tool_iterations: 10}
 
   """
   def new(opts \\ []) do

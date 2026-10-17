@@ -101,8 +101,12 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistry do
 
   @doc """
   Checks if a model supports a specific temperature value.
+  `nil` is valid for every model: it requests omission, leaving the provider default.
   """
-  @spec supports_temperature?(t(), String.t(), float()) :: boolean()
+  @spec supports_temperature?(t(), String.t(), number() | nil) :: boolean()
+  def supports_temperature?(registry, model_name, temperature)
+  def supports_temperature?(_registry, _model_name, nil), do: true
+
   def supports_temperature?(registry, model_name, temperature) do
     capabilities = get_model_capabilities(registry, model_name)
 

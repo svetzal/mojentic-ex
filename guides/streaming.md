@@ -532,23 +532,25 @@ completed tool again.
 
 `ImmutableRequestWireTest` verifies full server-observed bodies through production
 Req for both stream APIs, ordinary and structured completions, brokers and session
-history, against independently specified payloads and recovery-disabled bytes.
-The event stream API supplies no tools; structured completion supplies a schema
-and no tool descriptors. OpenAI and oMLX history encodes tool IDs and JSON argument
-strings; Ollama history encodes argument objects and omits IDs, including tool
-result IDs. Ollama structured completion currently omits `think`, while ordinary
-and streaming completion send `think: true` for a configured reasoning effort.
-These are existing adaptation limits, preserved by recovery.
+history, against the `request-fidelity-v1` executable contract and recovery-disabled
+bytes. The event stream API supplies no tools; structured completion supplies a
+schema and no tool descriptors. OpenAI and oMLX history encodes tool IDs and JSON
+argument strings; Ollama history encodes argument objects and omits IDs,
+including tool result IDs.
 
-`Message` has no native reasoning-history field. Assistant text in these fixtures
-is ordinary content, not evidence of native reasoning preservation. Received
-reasoning and configured reasoning controls retain their existing behavior.
-OpenAI drops `top_k` and non-reasoning-model `reasoning_effort`; o3 uses
-`max_completion_tokens` and adapts temperature to 1.0. oMLX sends `top_k` and
-`reasoning_effort` but ignores `num_ctx` and `num_predict`. Ollama uses `num_predict`
-in preference to `max_tokens`, and reasoning effort enables a boolean `think`
-rather than transmitting the effort level. Recovery does not add unsupported
-history or controls.
+`temperature`, `num_ctx` and `max_tokens` are optional and have no defaults.
+Unset parameters are omitted in ordinary, structured, event and legacy stream
+requests. `max_tokens` is the only output limit: Ollama sends
+`options.num_predict`, OpenAI uses `max_tokens` or `max_completion_tokens`, and
+oMLX uses `max_tokens`. Explicit zero temperature and supported sampling controls
+survive the stream paths. OpenAI drops `top_k` and warns when dropping effort on
+a non-reasoning model; fixed-temperature adaptation applies only to explicit
+temperatures. oMLX ignores `num_ctx`. Native reasoning remains separate from
+content; exact effort controls and opt-in completed continuation retention follow
+the [Broker reasoning guidance](broker.md#native-reasoning-3-0-migration).
+
+See `REQUEST-FIDELITY-CONFORMANCE.md` in the repository for
+named cases, source identities and external verification gaps.
 
 
 ## oMLX keepalives during recovery

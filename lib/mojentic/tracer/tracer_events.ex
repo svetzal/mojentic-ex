@@ -76,7 +76,7 @@ defmodule Mojentic.Tracer.TracerEvents.LLMCallTracerEvent do
       end
 
     summary =
-      if event.temperature != 1.0 do
+      if event.temperature != nil and event.temperature != 1.0 do
         "#{summary}\n   Temperature: #{event.temperature}"
       else
         summary

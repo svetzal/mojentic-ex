@@ -111,7 +111,7 @@ defmodule Mojentic.LLM.ChatSessionTest do
       assert session.system_prompt == "You are a helpful assistant."
       assert session.tools == nil
       assert session.max_context == 32_768
-      assert session.temperature == 1.0
+      assert session.temperature == nil
       assert is_struct(session.tokenizer, StubTokenizer)
 
       # Should have system message

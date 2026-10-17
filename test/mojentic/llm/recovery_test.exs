@@ -704,11 +704,11 @@ defmodule Mojentic.LLM.RecoveryTest do
         Ollama ->
           Map.merge(base, %{
             "stream" => false,
-            "options" => %{"temperature" => 1.0, "num_ctx" => 32_768, "num_predict" => 16_384}
+            "options" => %{}
           })
 
         _ ->
-          Map.merge(base, %{"temperature" => 1.0, "max_tokens" => 16_384})
+          base
       end
 
     case {gateway, operation} do

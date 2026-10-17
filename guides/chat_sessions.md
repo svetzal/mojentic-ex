@@ -189,11 +189,11 @@ Recovery preserves the encoded request for the current session turn, including
 prior system, user and assistant messages. The immutable-request loopback tests
 exercise both `send/3` and `send_stream/3` after a successful prior turn and compare
 the complete payload and retry bytes with recovery disabled. Session APIs build
-their own completion configuration from the session temperature and default
-limits; they do not expose every gateway sampling/reasoning control. The richer
-control/schema/tool-history matrix is tested through gateways and brokers.
-`Message` does not represent native reasoning history; ordinary assistant text
-must not be treated as reasoning evidence.
+their own completion configuration from the optional session temperature and
+per-send sampling/context/output controls. Unset provider limits stay omitted.
+The richer schema/tool-history matrix is tested through gateways and brokers.
+Native reasoning is kept separate from ordinary assistant text; reasoning
+retention across completed tool continuations is opt-in.
 
 Recovery-enabled `send/3` and `send_stream/3` preserve `CompletionError` values
 for invalid policies, capture failures and provider length termination. Invalid
@@ -221,3 +221,21 @@ arrives separately as `{:thinking, text}` and is excluded from the visible reply
 stored at finalization. Failed or consumer-halted retention streams cannot
 finalize successfully. Use completed `Broker.generate_response/4` results and
 `Message.reasoning_content` when managing native history across outer turns.
+
+## Request fidelity
+
+The session temperature defaults to `nil`; the provider chooses its setting.
+An explicit `temperature: 0` is preserved. Per-send options on `send/3` and
+`send_stream/3` accept `temperature`, `num_ctx`, `max_tokens`, `top_p` and `top_k`;
+a per-send temperature overrides the session setting, including explicit `nil`
+to omit it. Unset provider limits stay omitted on continuations and retries.
+`max_context` still defaults to 32,768 for local history trimming and never
+becomes a provider `num_ctx` request setting. To restore previous request limits:
+
+```elixir
+session = ChatSession.new(broker, temperature: 1.0)
+{:ok, answer, session} = ChatSession.send(session, "Hello",
+  num_ctx: 32_768, max_tokens: 16_384)
+```
+
+Use `max_tokens` instead of the removed `CompletionConfig.num_predict`.

@@ -4,17 +4,18 @@
 
 The coordinated implementation scope is defined in [../RELEASE-3.0.0.md](../RELEASE-3.0.0.md).
 The owner authorizes the coordinated 3.0.0 scope in that release plan. This
-execution is authorized by the owner's current Foundry objective to implement
-**Native reasoning** (part 2), under `REASONING-PROTOTYPE-2026-10.md`, SHA-256
-`0a40f3ad45c593bc779411021e45db569e73d3ecce86c99b201e7f8ebb656809`.
-Rust's prototype is the read-only reference. Characterize the real public boundary
-first; implement separate native reasoning, exact efforts, caller-selected
-profiles and opt-in completed tool-continuation retention, with production Req
-contracts, API/migration documentation and partial conformance evidence.
-Preserve landed recovery and typed errors, admission, Retry-After, keepalive,
-capability declarations, privacy, cancellation, failure identity, bounded history,
-terminal streams and unrelated legacy behavior. Model metadata/request fidelity,
-dependency/runtime changes and unrelated recovery changes are outside this run.
+execution is authorized by the owner's current Foundry correction plan to implement
+**request fidelity only** (part 3), under `MODEL-METADATA-2026-10.md` sections 3
+and 3.6, SHA-256 `a085da1c0d110f9d587a24ace6ac2854b653e1ac28905b3829d94d665b2c906e`.
+Characterize the public boundaries first; make temperature, num_ctx and max_tokens
+optional without defaults, remove CompletionConfig.num_predict, and send only
+caller-selected parameters under each provider's correct names. Verify exact
+production Req bodies across ordinary, structured and both stream APIs,
+Broker/ChatSession, tool continuations and admitted retries using the versioned
+executable contract. Preserve landed recovery, typed errors, native reasoning,
+privacy, cancellation, admission, failure identity, bounded history and terminal
+streams. Context-window discovery, first-token timing, dependency/runtime changes
+and unrelated recovery changes are outside this run.
 
 The coordinated release hold remains in force until all six ports are ready and
 the release coordinator authorizes release. Do not tag, publish or bump versions.

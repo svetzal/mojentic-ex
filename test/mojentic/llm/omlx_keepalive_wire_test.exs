@@ -467,13 +467,11 @@ defmodule Mojentic.LLM.OMLXKeepaliveWireTest do
 
     expected = %{
       "model" => "requested-model",
-      "max_tokens" => 16_384,
       "messages" => [
         %{"role" => "system", "content" => "prior-system"},
         %{"role" => "user", "content" => "user-input"}
       ],
-      "stream" => true,
-      "temperature" => 1.0
+      "stream" => true
     }
 
     expected =

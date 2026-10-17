@@ -76,6 +76,14 @@ defmodule Mojentic.LLM.Gateways.OpenAIModelRegistryTest do
   end
 
   describe "supports_temperature?/3" do
+    test "an unset temperature is valid for unrestricted, fixed and unknown models" do
+      registry = OpenAIModelRegistry.new()
+
+      for model <- ["gpt-4", "o1", "o3", "unknown-model"] do
+        assert OpenAIModelRegistry.supports_temperature?(registry, model, nil)
+      end
+    end
+
     test "returns true for unrestricted models" do
       registry = OpenAIModelRegistry.new()
 
