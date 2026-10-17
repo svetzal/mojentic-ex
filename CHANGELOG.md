@@ -32,6 +32,14 @@ reasoning-drop warnings remain in place for explicit caller controls.
 
 ### Verified
 
+- Extended `request-fidelity-v1` through production Req for Broker legacy
+  streaming tool continuations and ChatSession streaming sends on OpenAI,
+  Ollama and oMLX. All seven contract rows verify complete initial/continuation
+  bodies, native parameter names and omissions, one tool execution, byte-identical
+  continuation retries after an admitted 503, final output and session history.
+  Existing production forwarding and finalization already conform; this closes
+  a local verification gap. External provider/consumer verification remains open.
+
 - Established the October 12 admission-without-a-hook guarantee through the real
   Req boundary across OpenAI, Ollama and oMLX ordinary, structured, event and
   legacy streaming APIs, Broker and ChatSession. Eligible OpenAI failures may

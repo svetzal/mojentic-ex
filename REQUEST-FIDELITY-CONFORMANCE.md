@@ -62,6 +62,7 @@ Elixir 1.18.5 and OTP 28.5.0.7. There are no dependency/runtime/version changes.
 | Session defaults and admitted retries | Existing `<gateway> ChatSession <operation> freezes full prior history for its current turn`; entire default body and immutable retry bytes |
 | Broker tracing | `fidelity-v1 <gateway> Broker tracing retains unset and zero caller temperature`; trace values, summaries and exact wire bodies |
 | Tool continuation with default settings | `<gateway> unset parameters survive a tool continuation and admitted retry through production Req`; exactly one tool outcome, omitted defaults, unchanged continuation replay bytes |
+| Legacy streaming tool continuations and session finalization | `fidelity-v1 <gateway> <broker/session> legacy tool continuation <unset/zero-temperature/context-only/output-only/sampling/all/explicit-nil> exact bodies and admitted replay` (tag `legacy_continuation_fidelity`); 42 cases compare independently specified whole initial and continuation documents, including system/user/assistant/tool messages, native identifiers, arguments and result, with no deleted or masked fields. They assert one tool execution and admission, a contract-defined 503, byte-identical continuation replay, final streamed answer and successful finalized session history. Explicit nil and zero override a non-nil session temperature; `max_context` does not reach the wire. |
 | Rich history, explicit settings, tools and retries | Existing `<gateway> broker admitted follow-up freezes complete history and mutable image without tool replay`; entire initial and follow-up bodies, image mutation after admission, byte equality, attempt/failure identities and trace chronology |
 | Errors and terminal streams | 503 contract response is admitted and replayed; existing recovery/typed-error/native-reasoning suites remain in full gates, including length, cancellation, no semantic replay and invalid-policy zero dispatch |
 
@@ -90,18 +91,47 @@ is unfinished and must be assigned as separate authorized initiative work using
 this same artifact and executable semantics. No other repository was edited.
 No publication, Git finalization or coordinated-release readiness is claimed.
 
-## Tested identities and gate results
+## Cycle 10: legacy streaming continuation verification
 
-The following manifest and results describe the uncommitted Foundry review
-snapshot; the commit identity alone does not include these source changes.
+The base for both local sides is
+`ff479d92067b6ffbd99d3cd5533f96e13ebc09b0`, plus the uncommitted test changes
+identified below. This run closes only cycle 9's local legacy-stream verification
+gap. No production fidelity defect was demonstrated, so Broker's recursive
+configuration forwarding and ChatSession's forwarding/finalization remain intact.
+The existing verifier already includes the extended executable file, so its
+entrypoint and the normative JSON contract need no change.
 
-Git base (both local sides): `98b54a0cf0b028b82d38655ac59ebafcd7988077`,
-plus this uncommitted source snapshot:
+Streaming tool responses are derived from `request_fidelity_v1.json`'s
+`tool_call`; final streamed responses and the admitted retry's 503 come from
+that same artifact. The Ollama frame uses native object arguments, while
+OpenAI/oMLX use an indexed SSE tool delta. Expected documents are specified
+independently of production adapters and the tool descriptor implementation.
+Ollama's outgoing messages omit call IDs by its established native mapping;
+OpenAI/oMLX retain the exact `next-id` in both call and result messages. No
+message or identifier is removed from captured requests during comparison.
+
+Before expanding to 42 cases, the hardest probe exercised OpenAI ChatSession,
+all explicit caller controls (including zero temperature), a streamed tool call,
+an admitted continuation 503 and a final answer through production Req. A
+temporary source mutation cleared sampling/context/output settings only in
+Broker's recursive continuation. The test rejected the resulting entire
+continuation body (exit 2): temperature 0, max_tokens 73 and top_p 0.8 were lost.
+Restoring the existing config forwarding made the same probe pass (exit 0).
+The mutation is absent from the review snapshot. This proves the new assertions
+reject a concrete wire fidelity regression; it does not claim a pre-existing
+production bug was fixed.
+
+## Tested source identities
+
+Contract version: `request-fidelity-v1`. Its normative source SHA-256 remains
+`a085da1c0d110f9d587a24ace6ac2854b653e1ac28905b3829d94d665b2c906e`.
+The JSON artifact is unchanged; its hash and the executable/production source
+hashes identify the tested working-tree snapshot in addition to the base commit.
 
 | Artifact | SHA-256 |
 | --- | --- |
 | `test/contracts/request_fidelity_v1.json` | `6f02088311f50707b9c12154d888f844928c23d359043cb2e5d5654bf7e5eaea` |
-| `test/mojentic/llm/immutable_request_wire_test.exs` | `155860aece0aa423fee5ab172b62d61c014e5b4edeb3daec7fad45f45a51f5fb` |
+| `test/mojentic/llm/immutable_request_wire_test.exs` | `30172621c6af8c4ff4059077dbc87c6533d78b19a036d6687aa040e3efbf94dc` |
 | `test/mojentic/llm/gateways/openai_model_registry_test.exs` | `467a13033dd91a07f53ec825d49ce48f372da2fa8a187021e3de9c0f21cab192` |
 | `test/support/scripted_completion_server.ex` | `d03a3cf93eb25350bd8bf2387e70fbf7786e86e663809f55dfd7180f6e782e07` |
 | `test/support/counting_tool.ex` | `87eed78d78cd23be5082bfe504af1322127019f064f69b9179c4428c923fe194` |
@@ -116,57 +146,44 @@ plus this uncommitted source snapshot:
 | `lib/mojentic/tracer/tracer_events.ex` | `7dd22297873d250c5933bc48bdfc9c4d8657c1296f84f858f08841c8ddb5f0f2` |
 | `mix.lock` | `1280e3fdcc50846677f8d5bca6fa9bfa71a140472c90b6627f9fd78db65cfdb3` |
 
-The tracked behavioral patch (`git diff --binary -- lib test | sha256sum`) is
-`2681fc51a977fae68e20bb06fc29ffc0eb5f60e6e40ea9a4286ca2c7b92c70ab`;
-untracked contract JSON and runner identities are listed separately above.
-Both local sides test that same base plus snapshot, rather than an unmodified
-released commit.
+## Verification results
 
-The proof-first probe used production Req, a completed tool call, a 503 requiring
-admission and a final answer. On the original source it failed (exit 2) because
-the exact body contained temperature 1.0, num_ctx 32,768 and num_predict 16,384.
-Removing config defaults and adapter fallbacks made the same probe pass (exit 0).
-The final expanded probe passes for all three maintained adapters, checks the
-single tool outcome, and compares continuation replay bytes exactly.
-
-The full-suite fixture audit also updated `OMLXKeepaliveWireTest.assert_requests/3`
-to expect omitted defaults. Its keepalive semantics, metadata, admission, terminal
-progress and exact replay assertions remain unchanged. The focused keepalive
-contract passed after that fixture correction.
+All commands ran in this execution worktree through Foundry capture and the
+unchanged pinned runtime (`scripts/recovery-mix`, Elixir 1.18.5 / OTP 28.5.0.7).
+The initiative brief hash was verified before mutation. Dependencies were
+restored from the existing lockfile; no dependencies or runtime pins changed.
 
 | Verification side | Tested source | Command | Result |
 | --- | --- | --- | --- |
-| Maintained OpenAI/Ollama/oMLX adapter implementations | Base plus production source hashes above | `scripts/verify-request-fidelity-contract` | Exit 0; 348 tests in the shared set, including direct gateway cases |
-| Broker/ChatSession consumers in mojentic-ex | Same base, production and executable hashes | Same `scripts/verify-request-fidelity-contract` | Exit 0; same 348-test run includes matching Broker cases, supported session paths, tool outcomes and tracing |
-| External provider implementations and cross-repository consumers | Not tested in this authorized worktree | Not run | Missing verification; coordinate separately, no paired compatibility claim |
+| Maintained OpenAI/Ollama/oMLX adapters (local provider side) | Base `ff479d92067b6ffbd99d3cd5533f96e13ebc09b0` plus snapshot above | `scripts/verify-request-fidelity-contract` | Exit 0; 390 tests, zero failures |
+| Broker/ChatSession (local consumer side) | Same base and snapshot; same contract identity | Same `scripts/verify-request-fidelity-contract` | Exit 0; same 390 tests include all 42 added streaming continuation cases |
+| External OpenAI/Ollama/oMLX implementations and bedrock/bedrock-workshop | Missing counterpart commits, server versions and artifact verification identities | Counterpart verification commands and results unavailable | Not run; external agreement remains unverified and requires separate authorized coordination using this same `request-fidelity-v1` set and source hash |
 
-All project commands below use the unchanged pinned runtime through
-`scripts/recovery-mix` and were executed through Foundry capture. The dedicated
-contract set and focused keepalive suite passed with 348 and 72 tests respectively.
+Local scripted provider responses establish local conformance only. They do not
+establish external agreement or satisfy the outstanding counterpart verification.
+No coordinated release readiness is claimed.
 
 | Gate / applicable check | Result |
 | --- | --- |
-| `format --check-formatted` | Exit 0 |
-| `compile --warnings-as-errors` (development and test environments) | Exit 0 |
-| `credo --strict` | Exit 0; zero issues |
-| `dialyzer` (development and test environments) | Exit 0; zero errors, skipped errors or unnecessary skips |
-| `deps.audit` | Exit 0; no vulnerabilities found |
-| `hex.audit` | Exit 0; no retired or security-advisory packages |
-| `sobelow --config` | Exit 0; existing configuration unchanged |
-| `docs` | Exit 0; guides and API docs build |
-| `hex.outdated --all` | Exit 1 reporting available updates; informational, no upgrades made under the dependency hold |
+| `scripts/recovery-mix format --check-formatted` | Exit 0 |
+| `scripts/recovery-mix compile --warnings-as-errors` | Exit 0 |
+| `MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | Exit 0 |
+| `scripts/recovery-mix test --cover` | Exit 0; 22 doctests, 5,040 tests, zero failures; 19 excluded integration tests; 90.63% coverage (80% threshold) |
+| `scripts/recovery-mix credo --strict` | Exit 0; zero issues |
+| `scripts/recovery-mix dialyzer` | Exit 0; zero errors, skipped errors or unnecessary skips |
+| `scripts/recovery-mix deps.audit` | Exit 0; no vulnerabilities |
+| `scripts/recovery-mix hex.audit` | Exit 0; no retired or security-advisory packages |
+| `scripts/recovery-mix sobelow --config` | Exit 0; existing configuration unchanged |
+| `scripts/recovery-mix docs` | Exit 0 |
+| `scripts/recovery-mix hex.outdated --all` | Exit 1; available updates, informational only; no dependency changes under this correction's hold |
 
 The docs build retains existing unresolved links to `../RELEASE-3.0.0.md`,
-`LICENSE` and `deps/igniter/usage-rules.md` in the isolated documentation inputs.
+`LICENSE` and `deps/igniter/usage-rules.md` in isolated documentation inputs.
 No warning suppression or unrelated documentation/dependency changes were made.
 
-Final full project gate: `scripts/recovery-mix test --cover` exited 0 with
-**22 doctests, 4,998 tests, zero failures, 19 excluded integration tests**.
-Coverage was **90.60%**, above the configured 80% threshold; execution took
-590.8 seconds, within the 900-second gate budget. This command executes the
-complete default `mix test` suite with coverage, including the same executable
-request-fidelity contract and the corrected keepalive fixture.
-
-The required format, compile, strict Credo, full test/coverage, dependency audit
-and Sobelow gates all passed on the final implementation. No Git finalization,
-version bump, release or changes outside mojentic-ex were performed.
+The full coverage gate completed in 612.8 seconds (within the 900-second budget).
+It includes the same versioned contract executable and all existing recovery,
+reasoning, privacy, cancellation, admission, failure-identity, bounded-history
+and terminal-stream regression suites. All six declared project gates passed.
+Changes remain uncommitted for Foundry review; no release/version/ref changes
+or edits outside mojentic-ex were made.

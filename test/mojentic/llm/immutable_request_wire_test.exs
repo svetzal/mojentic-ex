@@ -32,6 +32,93 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
   end
 
   for gateway <- [OpenAI, Ollama, OMLX],
+      boundary <- [:broker, :session],
+      row <- @contract["cases"] do
+    @gateway gateway
+    @boundary boundary
+    @row row
+    @tag :legacy_continuation_fidelity
+    test "fidelity-v1 #{gateway} #{boundary} legacy tool continuation #{row["name"]} exact bodies and admitted replay" do
+      owner = self()
+
+      server =
+        server(@gateway, [
+          streaming_tool_response(@gateway),
+          http(@contract["retryable_error"]["status"], @contract["retryable_error"]["body"]),
+          success(@gateway, :legacy)
+        ])
+
+      recovery = [
+        max_attempts: 2,
+        base_delay: 0,
+        admission: fn context ->
+          send(owner, {:continuation_admitted, context})
+          :allow
+        end,
+        sleeper: fn _ -> :ok end
+      ]
+
+      opts =
+        for field <- [:temperature, :num_ctx, :max_tokens, :top_p, :top_k],
+            Map.has_key?(@row["config"], Atom.to_string(field)),
+            do: {field, @row["config"][Atom.to_string(field)]}
+
+      opts = Keyword.put(opts, :recovery, recovery)
+      broker = Broker.new("gpt-4o", @gateway)
+      tools = [%CountingTool{owner: owner}]
+
+      output =
+        case @boundary do
+          :broker ->
+            Broker.generate_stream(
+              broker,
+              [Message.system("system"), Message.user("question")],
+              tools,
+              CompletionConfig.new(opts)
+            )
+            |> Enum.to_list()
+
+          :session ->
+            temperature = if @row["name"] in ["zero-temperature", "all", "explicit-nil"], do: 0.6
+
+            session =
+              ChatSession.new(broker,
+                system_prompt: "system",
+                tools: tools,
+                tokenizer: StubTokenizer.new!(),
+                max_context: 1000,
+                temperature: temperature
+              )
+
+            assert {:ok, stream, handle} = ChatSession.send_stream(session, "question", opts)
+            output = Enum.to_list(stream)
+            assert %ChatSession{} = finalized = ChatSession.finalize_stream(handle)
+
+            assert Enum.map(ChatSession.messages(finalized), & &1.message) == [
+                     Message.system("system"),
+                     Message.user("question"),
+                     Message.assistant("answer")
+                   ]
+
+            output
+        end
+
+      assert Enum.filter(output, &is_binary/1) == ["answer"]
+      refute Enum.any?(output, &match?({:error, _}, &1))
+      assert_receive {:tool_executed, %{"value" => "next-π"}}
+      refute_received {:tool_executed, _}
+      assert_receive {:continuation_admitted, context}
+      assert context.failure.http_status == @contract["retryable_error"]["status"]
+      refute_received {:continuation_admitted, _}
+      [initial, continuation, replay] = GenServer.call(server, :requests) |> Enum.map(&encoded/1)
+      {expected_initial, expected_continuation} = streaming_tool_bodies(@gateway, @row["config"])
+      assert Jason.decode!(initial) == expected_initial
+      assert Jason.decode!(continuation) == expected_continuation
+      assert continuation == replay
+    end
+  end
+
+  for gateway <- [OpenAI, Ollama, OMLX],
       boundary <- [:gateway, :broker],
       operation <- [:complete, :object, :legacy, :events],
       row <- @contract["cases"] do
@@ -853,6 +940,114 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
     if operation in [:complete, :legacy],
       do: Map.put(body, "tools", [Jason.decode!(Jason.encode!(CountingTool.descriptor()))]),
       else: body
+  end
+
+  # Derive provider stream frames from the versioned native tool-call fixture.
+  defp streaming_tool_response(gateway) do
+    call = @contract["tool_call"]
+
+    body =
+      if gateway == Ollama do
+        native =
+          put_in(call, ["function", "arguments"], Jason.decode!(call["function"]["arguments"]))
+
+        Jason.encode!(%{
+          "message" => %{"content" => "", "tool_calls" => [native]},
+          "done" => true,
+          "done_reason" => "stop"
+        }) <> "\n"
+      else
+        frame = %{
+          "choices" => [
+            %{
+              "index" => 0,
+              "delta" => %{"tool_calls" => [Map.put(call, "index", 0)]},
+              "finish_reason" => "tool_calls"
+            }
+          ]
+        }
+
+        "data: " <> Jason.encode!(frame) <> "\n\ndata: [DONE]\n\n"
+      end
+
+    http(200, body)
+  end
+
+  # Expected wire documents are specified independently of production serializers.
+  defp streaming_tool_bodies(gateway, fields) do
+    messages = [
+      %{"role" => "system", "content" => "system"},
+      %{"role" => "user", "content" => "question"}
+    ]
+
+    body = %{
+      "model" => "gpt-4o",
+      "stream" => true,
+      "messages" => messages,
+      "tools" => [
+        %{
+          "type" => "function",
+          "function" => %{
+            "name" => "count",
+            "description" => "count",
+            "parameters" => %{"type" => "object"}
+          }
+        }
+      ]
+    }
+
+    fields = Map.reject(fields, fn {_key, value} -> is_nil(value) end)
+
+    body =
+      case gateway do
+        Ollama ->
+          options =
+            for {key, value} <- fields,
+                into: %{},
+                do: {if(key == "max_tokens", do: "num_predict", else: key), value}
+
+          Map.put(body, "options", options)
+
+        OpenAI ->
+          Map.merge(body, Map.take(fields, ["temperature", "max_tokens", "top_p"]))
+
+        OMLX ->
+          Map.merge(body, Map.take(fields, ["temperature", "max_tokens", "top_p", "top_k"]))
+      end
+
+    call =
+      if gateway == Ollama do
+        %{
+          "type" => "function",
+          "function" => %{"name" => "count", "arguments" => %{"value" => "next-π"}}
+        }
+      else
+        %{
+          "id" => "next-id",
+          "type" => "function",
+          "function" => %{"name" => "count", "arguments" => "{\"value\":\"next-π\"}"}
+        }
+      end
+
+    result = %{"role" => "tool", "content" => "\"tool-result-secret\""}
+
+    result =
+      if gateway == Ollama,
+        do: Map.put(result, "tool_calls", [call]),
+        else: Map.put(result, "tool_call_id", "next-id")
+
+    continuation =
+      Map.put(
+        body,
+        "messages",
+        messages ++
+          [
+            %{"role" => "assistant", "content" => "", "tool_calls" => [call]},
+            result
+          ]
+      )
+
+    {body, continuation}
   end
 
   defp tool_response(gateway) do
