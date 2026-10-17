@@ -43,119 +43,123 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
 
   @impl Gateway
   def complete(model, messages, tools, config) do
-    endpoint = get_endpoint()
-    api_key = get_api_key()
-    timeout = get_timeout()
+    with :ok <- Mojentic.LLM.Reasoning.validate(config, messages, :openai) do
+      endpoint = get_endpoint()
+      api_key = get_api_key()
+      timeout = get_timeout()
 
-    registry = OpenAIModelRegistry.new()
-    openai_messages = OpenAIMessagesAdapter.adapt_messages(messages)
-    adapted_params = adapt_parameters_for_model(registry, model, config)
-    capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
+      registry = OpenAIModelRegistry.new()
+      openai_messages = OpenAIMessagesAdapter.adapt_messages(messages)
+      adapted_params = adapt_parameters_for_model(registry, model, config)
+      capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
 
-    body = %{
-      model: model,
-      messages: openai_messages
-    }
+      body = %{
+        model: model,
+        messages: openai_messages
+      }
 
-    body = body |> Map.merge(adapted_params) |> put_response_format(config.response_format)
+      body = body |> Map.merge(adapted_params) |> put_response_format(config.response_format)
 
-    # Add tools if provided and supported
-    body =
-      if tools && tools != [] && capabilities.supports_tools do
-        tool_descriptors = Enum.map(tools, &Tool.descriptor/1)
-        Map.put(body, :tools, tool_descriptors)
-      else
-        if tools && tools != [] do
-          adaptation_warning(
-            config,
-            "Model #{model} does not support tools, ignoring tool configuration"
-          )
+      # Add tools if provided and supported
+      body =
+        if tools && tools != [] && capabilities.supports_tools do
+          tool_descriptors = Enum.map(tools, &Tool.descriptor/1)
+          Map.put(body, :tools, tool_descriptors)
+        else
+          if tools && tools != [] do
+            adaptation_warning(
+              config,
+              "Model #{model} does not support tools, ignoring tool configuration"
+            )
+          end
+
+          body
         end
 
-        body
-      end
+      headers = [
+        {"Content-Type", "application/json"},
+        {"Authorization", "Bearer #{api_key}"}
+      ]
 
-    headers = [
-      {"Content-Type", "application/json"},
-      {"Authorization", "Bearer #{api_key}"}
-    ]
+      Mojentic.LLM.CompletionRequest.run(
+        http_client(),
+        "#{endpoint}/chat/completions",
+        Jason.encode!(body),
+        headers,
+        [recv_timeout: timeout, timeout: timeout],
+        config,
+        {:openai, :complete},
+        fn result ->
+          case result do
+            {:ok, %{status_code: 200, body: response_body}} ->
+              parse_response(response_body)
 
-    Mojentic.LLM.CompletionRequest.run(
-      http_client(),
-      "#{endpoint}/chat/completions",
-      Jason.encode!(body),
-      headers,
-      [recv_timeout: timeout, timeout: timeout],
-      config,
-      {:openai, :complete},
-      fn result ->
-        case result do
-          {:ok, %{status_code: 200, body: response_body}} ->
-            parse_response(response_body)
+            {:ok, %{status_code: status, body: error_body}} ->
+              Logger.error("OpenAI API error: #{status} - #{error_body}")
+              {:error, {:http_error, status, error_body}}
 
-          {:ok, %{status_code: status, body: error_body}} ->
-            Logger.error("OpenAI API error: #{status} - #{error_body}")
-            {:error, {:http_error, status, error_body}}
-
-          {:error, reason} ->
-            {:error, {:request_failed, reason}}
+            {:error, reason} ->
+              {:error, {:request_failed, reason}}
+          end
         end
-      end
-    )
+      )
+    end
   end
 
   @impl Gateway
   def complete_object(model, messages, schema, config) do
-    endpoint = get_endpoint()
-    api_key = get_api_key()
-    timeout = get_timeout()
+    with :ok <- Mojentic.LLM.Reasoning.validate(config, messages, :openai) do
+      endpoint = get_endpoint()
+      api_key = get_api_key()
+      timeout = get_timeout()
 
-    registry = OpenAIModelRegistry.new()
-    openai_messages = OpenAIMessagesAdapter.adapt_messages(messages)
-    adapted_params = adapt_parameters_for_model(registry, model, config)
+      registry = OpenAIModelRegistry.new()
+      openai_messages = OpenAIMessagesAdapter.adapt_messages(messages)
+      adapted_params = adapt_parameters_for_model(registry, model, config)
 
-    body = %{
-      model: model,
-      messages: openai_messages,
-      response_format: %{
-        type: "json_schema",
-        json_schema: %{
-          name: "response",
-          schema: schema
+      body = %{
+        model: model,
+        messages: openai_messages,
+        response_format: %{
+          type: "json_schema",
+          json_schema: %{
+            name: "response",
+            schema: schema
+          }
         }
       }
-    }
 
-    # Add adapted parameters
-    body = Map.merge(body, adapted_params)
+      # Add adapted parameters
+      body = Map.merge(body, adapted_params)
 
-    headers = [
-      {"Content-Type", "application/json"},
-      {"Authorization", "Bearer #{api_key}"}
-    ]
+      headers = [
+        {"Content-Type", "application/json"},
+        {"Authorization", "Bearer #{api_key}"}
+      ]
 
-    Mojentic.LLM.CompletionRequest.run(
-      http_client(),
-      "#{endpoint}/chat/completions",
-      Jason.encode!(body),
-      headers,
-      [recv_timeout: timeout, timeout: timeout],
-      config,
-      {:openai, :complete_object},
-      fn result ->
-        case result do
-          {:ok, %{status_code: 200, body: response_body}} ->
-            parse_object_response(response_body)
+      Mojentic.LLM.CompletionRequest.run(
+        http_client(),
+        "#{endpoint}/chat/completions",
+        Jason.encode!(body),
+        headers,
+        [recv_timeout: timeout, timeout: timeout],
+        config,
+        {:openai, :complete_object},
+        fn result ->
+          case result do
+            {:ok, %{status_code: 200, body: response_body}} ->
+              parse_object_response(response_body)
 
-          {:ok, %{status_code: status, body: error_body}} ->
-            Logger.error("OpenAI API error: #{status} - #{error_body}")
-            {:error, {:http_error, status, error_body}}
+            {:ok, %{status_code: status, body: error_body}} ->
+              Logger.error("OpenAI API error: #{status} - #{error_body}")
+              {:error, {:http_error, status, error_body}}
 
-          {:error, reason} ->
-            {:error, {:request_failed, reason}}
+            {:error, reason} ->
+              {:error, {:request_failed, reason}}
+          end
         end
-      end
-    )
+      )
+    end
   end
 
   @impl Gateway
@@ -211,36 +215,48 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
         %Mojentic.LLM.CompletionConfig{recovery: recovery} = config
       )
       when not is_nil(recovery) do
-    registry = OpenAIModelRegistry.new()
-    capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
-    body = build_stream_request_body(model, messages, tools, config, registry, capabilities)
+    case Mojentic.LLM.Reasoning.validate(config, messages, :openai) do
+      :ok ->
+        registry = OpenAIModelRegistry.new()
+        capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
+        body = build_stream_request_body(model, messages, tools, config, registry, capabilities)
 
-    Mojentic.LLM.StreamRecovery.stream(
-      http_client(),
-      "#{get_endpoint()}/chat/completions",
-      Jason.encode!(body),
-      build_headers(),
-      [recv_timeout: get_timeout()],
-      recovery,
-      :openai,
-      :legacy
-    )
+        Mojentic.LLM.StreamRecovery.stream(
+          http_client(),
+          "#{get_endpoint()}/chat/completions",
+          Jason.encode!(body),
+          build_headers(),
+          [recv_timeout: get_timeout()],
+          recovery,
+          :openai,
+          :legacy
+        )
+
+      {:error, reason} ->
+        [{:error, reason}]
+    end
   end
 
   def complete_stream(model, messages, tools, config) do
-    registry = OpenAIModelRegistry.new()
-    capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
+    case Mojentic.LLM.Reasoning.validate(config, messages, :openai) do
+      :ok ->
+        registry = OpenAIModelRegistry.new()
+        capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
 
-    # Check if streaming is supported
-    unless capabilities.supports_streaming do
-      raise "Model #{model} does not support streaming"
+        # Check if streaming is supported
+        unless capabilities.supports_streaming do
+          raise "Model #{model} does not support streaming"
+        end
+
+        body = build_stream_request_body(model, messages, tools, config, registry, capabilities)
+        headers = build_headers()
+        timeout = get_timeout()
+
+        OpenAILegacyStream.stream(fn -> initiate_stream_request(body, headers, timeout) end)
+
+      {:error, reason} ->
+        [{:error, reason}]
     end
-
-    body = build_stream_request_body(model, messages, tools, config, registry, capabilities)
-    headers = build_headers()
-    timeout = get_timeout()
-
-    OpenAILegacyStream.stream(fn -> initiate_stream_request(body, headers, timeout) end)
   end
 
   @impl Gateway
@@ -250,43 +266,55 @@ defmodule Mojentic.LLM.Gateways.OpenAI do
         %Mojentic.LLM.CompletionConfig{recovery: recovery} = config
       )
       when not is_nil(recovery) do
-    tools = nil
-    registry = OpenAIModelRegistry.new()
-    capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
-    body = build_stream_request_body(model, messages, tools, config, registry, capabilities)
-    body = Map.put(body, :stream_options, %{include_usage: true})
+    case Mojentic.LLM.Reasoning.validate(config, messages, :openai) do
+      :ok ->
+        tools = nil
+        registry = OpenAIModelRegistry.new()
+        capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
+        body = build_stream_request_body(model, messages, tools, config, registry, capabilities)
+        body = Map.put(body, :stream_options, %{include_usage: true})
 
-    Mojentic.LLM.StreamRecovery.stream(
-      http_client(),
-      "#{get_endpoint()}/chat/completions",
-      Jason.encode!(body),
-      build_headers(),
-      [recv_timeout: get_timeout()],
-      recovery,
-      :openai,
-      :events
-    )
+        Mojentic.LLM.StreamRecovery.stream(
+          http_client(),
+          "#{get_endpoint()}/chat/completions",
+          Jason.encode!(body),
+          build_headers(),
+          [recv_timeout: get_timeout()],
+          recovery,
+          :openai,
+          :events
+        )
+
+      {:error, reason} ->
+        [{:error, reason}]
+    end
   end
 
   def complete_stream_events(model, messages, config) do
-    registry = OpenAIModelRegistry.new()
-    capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
+    case Mojentic.LLM.Reasoning.validate(config, messages, :openai) do
+      :ok ->
+        registry = OpenAIModelRegistry.new()
+        capabilities = OpenAIModelRegistry.get_model_capabilities(registry, model)
 
-    body =
-      build_stream_request_body(model, messages, nil, config, registry, capabilities)
-      |> Map.put(:stream_options, %{include_usage: true})
+        body =
+          build_stream_request_body(model, messages, nil, config, registry, capabilities)
+          |> Map.put(:stream_options, %{include_usage: true})
 
-    client = http_client()
+        client = http_client()
 
-    Mojentic.LLM.Gateways.OpenAIStream.events(fn ->
-      client.post_stream(
-        "#{get_endpoint()}/chat/completions",
-        Jason.encode!(body),
-        build_headers(),
-        recv_timeout: get_timeout(),
-        timeout: get_timeout()
-      )
-    end)
+        Mojentic.LLM.Gateways.OpenAIStream.events(fn ->
+          client.post_stream(
+            "#{get_endpoint()}/chat/completions",
+            Jason.encode!(body),
+            build_headers(),
+            recv_timeout: get_timeout(),
+            timeout: get_timeout()
+          )
+        end)
+
+      {:error, reason} ->
+        [{:error, reason}]
+    end
   end
 
   defp build_stream_request_body(model, messages, tools, config, registry, capabilities) do

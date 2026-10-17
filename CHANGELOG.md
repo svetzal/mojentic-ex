@@ -69,6 +69,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking changes and migration
 
+- Native reasoning now has six exact effort controls: `:disabled`, `:enabled`,
+  `:low`, `:medium`, `:high`, `:xhigh`. Ollama named levels are sent as strings
+  rather than being conflated with `true`. Structured requests use the same
+  controls. Select `ReasoningProfile.qwen3_8()` explicitly for its exact supported
+  efforts; `:enabled` and `:high` are rejected by that profile before HTTP.
+  Omitted effort stays unknown. No profile is inferred from a model name.
+- `Message.reasoning_content` stores native assistant reasoning separately.
+  Set `CompletionConfig.preserve_reasoning: true` to retain completed ordinary
+  and streaming Broker tool-turn reasoning (default off); failed, interrupted
+  and cancelled streams cannot create retained history. oMLX requests
+  `preserve_thinking` and serializes native history as `reasoning_content`;
+  Ollama uses `thinking`. Legacy local streams expose `{:thinking, text}`
+  separately from visible text; consumers must handle those tuples.
+  OpenAI rejects native history, profiles, retention and the new efforts,
+  preserving its existing low/medium/high behavior and history format.
+  ChatSession `send/3` and `send_stream/3` forward these configuration options;
+  session history continues to store the visible final reply. See the Broker
+  guide for manual outer-turn native history.
+
 - Callers matching only `:rejected` / `:admission_rejected` must also handle
   `:admission_no_decision`. Return `:reject` for deliberate refusal and `:pending`
   for an asynchronous decision. Unexpected returns (including `:cancelled` and

@@ -874,7 +874,7 @@ defmodule Mojentic.LLM.Gateways.OllamaTest do
 
       expect(Mojentic.HTTPMock, :post, fn _url, body, _headers, _opts ->
         decoded = Jason.decode!(body)
-        assert decoded["think"] == true
+        assert decoded["think"] == "high"
         {:ok, %{status_code: 200, body: response_body}}
       end)
 

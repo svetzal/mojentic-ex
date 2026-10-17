@@ -148,6 +148,7 @@ defmodule Mojentic.LLM.Broker do
       {:ok, response} = Broker.generate(broker, messages, tools)
 
   """
+  # Native reasoning stays separate and is retained only when explicitly enabled.
   def generate(broker, messages, tools \\ nil, config \\ nil) do
     config = config || %CompletionConfig{}
     do_generate(broker, messages, tools, config, config.max_tool_iterations)
@@ -199,7 +200,8 @@ defmodule Mojentic.LLM.Broker do
   end
 
   defp do_generate(broker, messages, tools, config, iterations_remaining) do
-    with {:ok, response} <- generate_response(broker, messages, tools, config) do
+    with {:ok, response} <- generate_response(broker, messages, tools, config),
+         :ok <- completed_reasoning_response(response, config) do
       case response.tool_calls do
         [] ->
           finish_generation(response)
@@ -219,6 +221,12 @@ defmodule Mojentic.LLM.Broker do
 
   # A truncated or otherwise unfinished response is an error, never a result.
   # Callers that want to resume own that policy through generate_response/4.
+  defp completed_reasoning_response(%{finish_reason: reason}, %{preserve_reasoning: true})
+       when reason not in [nil, "stop", "tool_calls"],
+       do: {:error, {:incomplete_completion, reason}}
+
+  defp completed_reasoning_response(_response, _config), do: :ok
+
   defp finish_generation(%{finish_reason: reason} = response) when reason in [nil, "stop"],
     do: {:ok, response.content || ""}
 
@@ -323,8 +331,9 @@ defmodule Mojentic.LLM.Broker do
 
   ## Returns
 
-  A stream that yields content strings as they arrive. With recovery enabled,
-  reasoning yields `{:thinking, text}` and failures yield `{:error, CompletionError.t()}`.
+  A stream that yields content strings as they arrive. Native local reasoning
+  yields `{:thinking, text}` separately. With recovery or reasoning retention
+  enabled, failures yield `{:error, CompletionError.t()}`.
 
   ## Examples
 
@@ -333,7 +342,10 @@ defmodule Mojentic.LLM.Broker do
 
       broker
       |> Broker.generate_stream(messages)
-      |> Stream.each(&IO.write/1)
+      |> Stream.each(fn
+        text when is_binary(text) -> IO.write(text)
+        {:thinking, _text} -> :ok
+      end)
       |> Stream.run()
 
       # With tools
@@ -342,7 +354,10 @@ defmodule Mojentic.LLM.Broker do
 
       broker
       |> Broker.generate_stream(messages, tools)
-      |> Stream.each(&IO.write/1)
+      |> Stream.each(fn
+        text when is_binary(text) -> IO.write(text)
+        {:thinking, _text} -> :ok
+      end)
       |> Stream.run()
 
   """
@@ -489,7 +504,7 @@ defmodule Mojentic.LLM.Broker do
     end
   end
 
-  defp cleanup_stream({cont, _, _, _}) when is_function(cont) do
+  defp cleanup_stream({cont, _, _, _, _}) when is_function(cont) do
     cont.({:halt, nil})
     :ok
   end
@@ -504,11 +519,11 @@ defmodule Mojentic.LLM.Broker do
   defp initialize_stream(broker, messages, tools, config, iterations_remaining) do
     stream = broker.gateway.complete_stream(broker.model, messages, tools, config)
     cont = stream_to_continuation(stream)
-    {cont, [], "", iterations_remaining}
+    {cont, [], "", nil, iterations_remaining}
   end
 
   defp process_stream_element(
-         {cont, acc_tool_calls, acc_content, iterations_remaining},
+         {cont, acc_tool_calls, acc_content, acc_thinking, iterations_remaining},
          broker,
          messages,
          tools,
@@ -516,32 +531,32 @@ defmodule Mojentic.LLM.Broker do
        ) do
     case next_element(cont) do
       {:element, {:content, chunk}, next_cont} ->
-        {[chunk], {next_cont, acc_tool_calls, acc_content <> chunk, iterations_remaining}}
+        {[chunk],
+         {next_cont, acc_tool_calls, acc_content <> chunk, acc_thinking, iterations_remaining}}
 
       {:element, {kind, _} = event, next_cont} when kind in [:progress, :metrics] ->
-        {[event], {next_cont, acc_tool_calls, acc_content, iterations_remaining}}
+        {[event], {next_cont, acc_tool_calls, acc_content, acc_thinking, iterations_remaining}}
 
       {:element, {:tool_calls, tool_calls}, next_cont} ->
-        {[], {next_cont, acc_tool_calls ++ tool_calls, acc_content, iterations_remaining}}
+        {[],
+         {next_cont, acc_tool_calls ++ tool_calls, acc_content, acc_thinking,
+          iterations_remaining}}
 
-      {:element, {:thinking, text}, next_cont} when not is_nil(config.recovery) ->
-        {[{:thinking, text}], {next_cont, acc_tool_calls, acc_content, iterations_remaining}}
+      {:element, {:thinking, text}, next_cont} ->
+        thinking = if config.preserve_reasoning, do: (acc_thinking || "") <> text
 
-      {:element, {:error, %Mojentic.LLM.CompletionError{} = error}, next_cont}
-      when not is_nil(config.recovery) ->
-        next_cont.({:halt, nil})
-        {[{:error, error}], :halt}
+        {[{:thinking, text}],
+         {next_cont, acc_tool_calls, acc_content, thinking, iterations_remaining}}
 
-      {:element, {:error, reason}, _next_cont} ->
-        Logger.error("Streaming error: #{inspect(reason)}")
-        {:halt, nil}
+      {:element, {:error, reason}, next_cont} ->
+        finish_stream_error(reason, next_cont, config)
 
       :done ->
         handle_stream_end(
           broker,
           messages,
           acc_tool_calls,
-          acc_content,
+          {acc_content, acc_thinking},
           tools,
           config,
           iterations_remaining
@@ -561,6 +576,29 @@ defmodule Mojentic.LLM.Broker do
       :done ->
         {:halt, nil}
     end
+  end
+
+  defp finish_stream_error(%Mojentic.LLM.CompletionError{} = error, next_cont, config)
+       when not is_nil(config.recovery) or config.preserve_reasoning == true do
+    next_cont.({:halt, nil})
+    {[{:error, error}], :halt}
+  end
+
+  defp finish_stream_error(reason, next_cont, config)
+       when config.preserve_reasoning == true or not is_nil(config.reasoning_profile) or
+              config.reasoning_effort in [:disabled, :enabled, :xhigh] or
+              reason in [
+                :invalid_reasoning_controls,
+                :invalid_reasoning_profile,
+                :unsupported_openai_reasoning_controls
+              ] do
+    next_cont.({:halt, nil})
+    {[{:error, reason}], :halt}
+  end
+
+  defp finish_stream_error(reason, _next_cont, _config) do
+    Logger.error("Streaming error: #{inspect(reason)}")
+    {:halt, nil}
   end
 
   defp handle_stream_end(_broker, _messages, [], _acc_content, _tools, _config, _iterations) do
@@ -618,8 +656,9 @@ defmodule Mojentic.LLM.Broker do
        ) do
     Logger.info("Processing #{length(tool_calls)} tool call(s) in stream")
 
-    response = build_gateway_response(acc_content, tool_calls)
-    new_messages = messages ++ [build_assistant_message(response)]
+    {content, thinking} = acc_content
+    response = %{build_gateway_response(content, tool_calls) | thinking: thinking}
+    new_messages = messages ++ [build_assistant_message(response, config)]
 
     final_messages =
       execute_and_append_tool_results(broker, tool_calls, tools, new_messages, config)
@@ -683,7 +722,7 @@ defmodule Mojentic.LLM.Broker do
       tools ->
         Logger.info("Processing #{length(response.tool_calls)} tool call(s)")
 
-        new_messages = messages ++ [build_assistant_message(response)]
+        new_messages = messages ++ [build_assistant_message(response, config)]
 
         executions =
           response.tool_calls
@@ -760,11 +799,12 @@ defmodule Mojentic.LLM.Broker do
   defp outcome_result(%{ok?: true, result: result}), do: result
   defp outcome_result(%{ok?: false, error: err}), do: {:error, err}
 
-  defp build_assistant_message(response) do
+  defp build_assistant_message(response, config) do
     %Message{
       role: :assistant,
       content: response.content,
-      tool_calls: response.tool_calls
+      tool_calls: response.tool_calls,
+      reasoning_content: if(config.preserve_reasoning, do: response.thinking)
     }
   end
 

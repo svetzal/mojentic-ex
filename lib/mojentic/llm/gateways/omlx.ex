@@ -28,10 +28,12 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   are set. `num_ctx` and `num_predict` are not sent: oMLX sets the context
   length per model.
 
-  `reasoning_effort` goes to the model's chat template, so its effect depends
-  on the model. When it is `nil`, the model's default applies, and Qwen 3
-  models think by default. The model's reasoning arrives in
-  `GatewayResponse.thinking`.
+  `:disabled` and `:enabled` send `enable_thinking: false/true`; named effort
+  levels send their exact `reasoning_effort` string. Omitted effort remains
+  unknown. Select a `ReasoningProfile` explicitly to validate model capabilities.
+  The model's reasoning arrives in `GatewayResponse.thinking`. Native assistant
+  history uses `Message.reasoning_content`. `preserve_reasoning: true` requests
+  `chat_template_kwargs: %{preserve_thinking: true}`; server settings may override it.
 
   ## Truncation
 
@@ -53,8 +55,8 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   Both streaming APIs drop oMLX keep-alive frames (frames whose `model` is
   `"keepalive"`) before parsing. `complete_stream_events/3` follows the
   OpenAI-compatible completion rules and yields no event for reasoning. The
-  legacy `complete_stream/4` drops reasoning too, because it has no thinking
-  chunk.
+  legacy `complete_stream/4` yields separate `{:thinking, text}` chunks.
+  Retention uses validated completion boundaries and excludes failed or halted turns.
 
   ## Examples
 
@@ -85,22 +87,26 @@ defmodule Mojentic.LLM.Gateways.OMLX do
 
   @impl Gateway
   def complete(model, messages, tools, config) do
-    body = chat_body(model, messages, tools, config)
+    with :ok <- Mojentic.LLM.Reasoning.validate(config, messages, :omlx) do
+      body = chat_body(model, messages, tools, config)
 
-    completion_request(body, config, :complete, fn response ->
-      parse_completion(response, structured?(config), config.recovery == nil)
-    end)
+      completion_request(body, config, :complete, fn response ->
+        parse_completion(response, structured?(config), config.recovery == nil)
+      end)
+    end
   end
 
   @impl Gateway
   def complete_object(model, messages, schema, config) do
-    config = %{config | response_format: %{type: :json_object, schema: schema}}
-    body = chat_body(model, messages, nil, config)
+    with :ok <- Mojentic.LLM.Reasoning.validate(config, messages, :omlx) do
+      config = %{config | response_format: %{type: :json_object, schema: schema}}
+      body = chat_body(model, messages, nil, config)
 
-    completion_request(body, config, :complete_object, fn response ->
-      with {:ok, completion} <- parse_completion(response, true, config.recovery == nil),
-           do: parse_object(completion)
-    end)
+      completion_request(body, config, :complete_object, fn response ->
+        with {:ok, completion} <- parse_completion(response, true, config.recovery == nil),
+             do: parse_object(completion)
+      end)
+    end
   end
 
   @impl Gateway
@@ -152,26 +158,43 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   end
 
   @impl Gateway
-  def complete_stream(model, messages, tools, %CompletionConfig{recovery: recovery} = config)
-      when not is_nil(recovery) do
-    body = model |> chat_body(messages, tools, config) |> Map.put(:stream, true)
+  def complete_stream(
+        model,
+        messages,
+        tools,
+        %CompletionConfig{recovery: recovery, preserve_reasoning: preserve} = config
+      )
+      when not is_nil(recovery) or preserve == true do
+    case Mojentic.LLM.Reasoning.validate(config, messages, :omlx) do
+      :ok ->
+        body = model |> chat_body(messages, tools, config) |> Map.put(:stream, true)
 
-    Mojentic.LLM.StreamRecovery.stream(
-      http_client(),
-      url("/chat/completions"),
-      Jason.encode!(body),
-      json_headers(),
-      [recv_timeout: get_timeout()],
-      recovery,
-      :omlx,
-      :legacy
-    )
+        Mojentic.LLM.StreamRecovery.stream(
+          http_client(),
+          url("/chat/completions"),
+          Jason.encode!(body),
+          json_headers(),
+          [recv_timeout: get_timeout()],
+          if(is_nil(recovery), do: [], else: recovery),
+          :omlx,
+          :legacy
+        )
+
+      {:error, reason} ->
+        [{:error, reason}]
+    end
   end
 
   def complete_stream(model, messages, tools, config) do
-    body = model |> chat_body(messages, tools, config) |> Map.put(:stream, true)
+    case Mojentic.LLM.Reasoning.validate(config, messages, :omlx) do
+      :ok ->
+        body = model |> chat_body(messages, tools, config) |> Map.put(:stream, true)
 
-    OpenAILegacyStream.stream(fn -> post_chat_stream(body) end)
+        OpenAILegacyStream.stream(fn -> post_chat_stream(body) end, native_reasoning: true)
+
+      {:error, reason} ->
+        [{:error, reason}]
+    end
   end
 
   @doc """
@@ -187,31 +210,47 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   `Mojentic.LLM.Broker.generate_stream_events/3`.
   """
   @impl Gateway
-  def complete_stream_events(model, messages, %CompletionConfig{recovery: recovery} = config)
-      when not is_nil(recovery) do
-    tools = nil
-    body = model |> chat_body(messages, tools, config) |> Map.put(:stream, true)
-    body = Map.put(body, :stream_options, %{include_usage: true})
+  def complete_stream_events(
+        model,
+        messages,
+        %CompletionConfig{recovery: recovery, preserve_reasoning: preserve} = config
+      )
+      when not is_nil(recovery) or preserve == true do
+    case Mojentic.LLM.Reasoning.validate(config, messages, :omlx) do
+      :ok ->
+        tools = nil
+        body = model |> chat_body(messages, tools, config) |> Map.put(:stream, true)
+        body = Map.put(body, :stream_options, %{include_usage: true})
 
-    Mojentic.LLM.StreamRecovery.stream(
-      http_client(),
-      url("/chat/completions"),
-      Jason.encode!(body),
-      json_headers(),
-      [recv_timeout: get_timeout()],
-      recovery,
-      :omlx,
-      :events
-    )
+        Mojentic.LLM.StreamRecovery.stream(
+          http_client(),
+          url("/chat/completions"),
+          Jason.encode!(body),
+          json_headers(),
+          [recv_timeout: get_timeout()],
+          if(is_nil(recovery), do: [], else: recovery),
+          :omlx,
+          :events
+        )
+
+      {:error, reason} ->
+        [{:error, reason}]
+    end
   end
 
   def complete_stream_events(model, messages, config) do
-    body =
-      model
-      |> chat_body(messages, nil, config)
-      |> Map.merge(%{stream: true, stream_options: %{include_usage: true}})
+    case Mojentic.LLM.Reasoning.validate(config, messages, :omlx) do
+      :ok ->
+        body =
+          model
+          |> chat_body(messages, nil, config)
+          |> Map.merge(%{stream: true, stream_options: %{include_usage: true}})
 
-    OpenAIStream.events(fn -> post_chat_stream(body) end)
+        OpenAIStream.events(fn -> post_chat_stream(body) end)
+
+      {:error, reason} ->
+        [{:error, reason}]
+    end
   end
 
   @doc """
@@ -238,18 +277,24 @@ defmodule Mojentic.LLM.Gateways.OMLX do
   defp chat_body(model, messages, tools, config) do
     %{
       model: model,
-      messages: OpenAIMessagesAdapter.adapt_messages(messages),
+      messages: adapt_messages_with_reasoning(messages),
       temperature: config.temperature
     }
     |> put_set(:max_tokens, config.max_tokens)
     |> put_set(:top_p, config.top_p)
     |> put_set(:top_k, config.top_k)
-    |> put_set(:reasoning_effort, config.reasoning_effort && to_string(config.reasoning_effort))
+    |> Mojentic.LLM.Reasoning.omlx_controls(config)
     |> put_set(
       :response_format,
       OpenAIMessagesAdapter.adapt_response_format(config.response_format)
     )
     |> put_tools(tools)
+  end
+
+  defp adapt_messages_with_reasoning(messages) do
+    messages
+    |> OpenAIMessagesAdapter.adapt_messages()
+    |> Enum.zip_with(messages, &Mojentic.LLM.Reasoning.put_history(&1, &2, :reasoning_content))
   end
 
   defp put_set(body, _key, nil), do: body

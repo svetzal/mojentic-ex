@@ -125,7 +125,10 @@ For a better user experience with longer responses, you can stream the LLM's rep
 
 ```elixir
 {:ok, stream, handle} = ChatSession.send_stream(session, "Tell me a story")
-stream |> Stream.each(&IO.write/1) |> Stream.run()
+stream |> Stream.each(fn
+        text when is_binary(text) -> IO.write(text)
+        {:thinking, _text} -> :ok
+      end) |> Stream.run()
 session = ChatSession.finalize_stream(handle)
 ```
 
@@ -198,3 +201,23 @@ policies have category `:policy` and dispatch no request. Failed streaming handl
 return the same error from `finalize_stream/1`; the original session history
 remains available. See the [typed error migration guidance](broker.md#migrating-typed-policy-and-length-failures)
 for matching error categories and explicitly inspecting retained causes.
+
+## Native reasoning controls
+
+`send/3` and `send_stream/3` accept `reasoning_effort`, `reasoning_profile` and
+`preserve_reasoning` alongside `recovery`. For example:
+
+```elixir
+ChatSession.send(session, "Use the tools to check this",
+  reasoning_effort: :xhigh,
+  reasoning_profile: Mojentic.LLM.ReasoningProfile.qwen3_8(),
+  preserve_reasoning: true
+)
+```
+
+This retains native reasoning inside completed Broker tool continuations.
+Session history remains bounded visible-answer history. Native stream thinking
+arrives separately as `{:thinking, text}` and is excluded from the visible reply
+stored at finalization. Failed or consumer-halted retention streams cannot
+finalize successfully. Use completed `Broker.generate_response/4` results and
+`Message.reasoning_content` when managing native history across outer turns.

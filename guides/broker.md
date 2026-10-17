@@ -575,3 +575,57 @@ Successful recovery-disabled APIs retain their existing behavior, including
 oMLX's ordinary length-limited gateway response. A failed recovery session
 stream yields an error, and `ChatSession.finalize_stream/1` returns that error;
 it cannot turn partial output into a successful assistant message.
+
+## Native reasoning (3.0 migration)
+
+Native reasoning is separate from visible content and tool results. A single
+response from `Broker.generate_response/4` exposes `GatewayResponse.thinking`.
+For manual outer-turn history, copy it to the completed assistant message's
+`reasoning_content`; never construct history from an incomplete response.
+OpenAI rejects this native history extension.
+
+```elixir
+alias Mojentic.LLM.{CompletionConfig, ReasoningProfile}
+
+config = CompletionConfig.new(
+  reasoning_effort: :xhigh,
+  reasoning_profile: ReasoningProfile.qwen3_8(),
+  preserve_reasoning: true
+)
+
+{:ok, answer} = Broker.generate(broker, messages, tools, config)
+```
+
+Profiles are selected by the caller, regardless of the model name. Qwen3.8
+supports exactly `:disabled`, `:low`, `:medium`, `:xhigh` and native history;
+`:enabled` and `:high` are unsupported. Custom profiles specify a name,
+`supported_efforts` and `supports_reasoning_history`. Unsupported controls fail
+before HTTP. Leaving effort `nil` keeps it unknown and sends no effort control.
+
+Retention defaults to off. Enabling it preserves completed assistant reasoning
+alongside content and tool calls in each subsequent Broker tool request; it
+does not enable thinking or change tool execution identity. Failed or cancelled
+streams never execute pending tools or create a continuation. oMLX also requests
+`chat_template_kwargs.preserve_thinking`; forced server settings can override it.
+Ollama sends `thinking` history; oMLX sends `reasoning_content`. OpenAI's history
+format and existing `:low`, `:medium`, `:high` controls remain unchanged; the new
+controls, profiles and retention fail explicitly there.
+
+Local legacy streams yield `{:thinking, text}` separately from visible strings
+at the Broker boundary. Handle these tuples without rendering them as answers.
+Structured output uses the same effort, profile and retention controls.
+ChatSession accepts those options in `send/3` and `send_stream/3` for its Broker
+tool rounds. Its bounded session history stores visible final answers; callers
+managing outer-turn native history should use the response API above.
+
+Run `scripts/verify-native-reasoning-contract` for the versioned production-Req
+contract set. External server and consumer verification is tracked separately in
+`CONFORMANCE-3.0.0.md`; local fixtures alone do not establish paired compatibility.
+
+Reasoning validation returns `{:error, reason}` before HTTP. An incompatible
+profile effort returns `{:unsupported_reasoning_effort, profile_name, effort}`;
+unsupported retention returns `{:unsupported_reasoning_history, profile_name}`.
+Malformed controls/profiles return `:invalid_reasoning_controls` or
+`:invalid_reasoning_profile`. OpenAI returns
+`:unsupported_openai_reasoning_controls` for the new controls or native history.
+Handle these configuration errors directly; they do not dispatch an inference.

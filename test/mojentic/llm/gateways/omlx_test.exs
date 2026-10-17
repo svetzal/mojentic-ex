@@ -524,8 +524,17 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
   end
 
   describe "legacy streaming" do
-    test "a streamed tool call yields one complete tool call" do
+    test "a streamed tool call keeps reasoning separate and yields one complete tool call" do
       expect_stream(chunks("stream_tool_call.sse", 29))
+
+      events =
+        @model
+        |> OMLX.complete_stream(
+          [Message.user("date?")],
+          [ResolveDateTool],
+          CompletionConfig.new()
+        )
+        |> Enum.to_list()
 
       assert [
                {:content, "\n\n"},
@@ -537,14 +546,12 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
                     arguments: %{"relative" => "today"}
                   }
                 ]}
-             ] =
-               @model
-               |> OMLX.complete_stream(
-                 [Message.user("date?")],
-                 [ResolveDateTool],
-                 CompletionConfig.new()
-               )
-               |> Enum.to_list()
+             ] = Enum.reject(events, &match?({:thinking, _}, &1))
+
+      thinking = for {:thinking, text} <- events, into: "", do: text
+
+      assert thinking ==
+               "\nThe user is asking for today's date and wants me to use the resolve_date tool. Let me call it with \"today\" as the relative parameter.\n"
 
       assert_received {:post_stream, _url, body, _headers, _opts}
       assert [%{"function" => %{"name" => "resolve_date"}}] = body["tools"]
@@ -552,13 +559,16 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
       refute Map.has_key?(body, "stream_options")
     end
 
-    test "reasoning is dropped and content is streamed" do
+    test "native reasoning is separate from streamed content" do
       expect_stream(chunks("stream_thinking.sse", 41))
 
-      assert ["\n\nhello"] =
-               Broker.new(@model, OMLX)
-               |> Broker.generate_stream([Message.user("hi")])
-               |> Enum.to_list()
+      events =
+        Broker.new(@model, OMLX)
+        |> Broker.generate_stream([Message.user("hi")])
+        |> Enum.to_list()
+
+      assert Enum.filter(events, &is_binary/1) == ["\n\nhello"]
+      assert {:thinking, "\nWe"} in events
     end
   end
 

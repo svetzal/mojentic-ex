@@ -28,6 +28,16 @@ defmodule Mojentic.LLM.CompletionConfig do
   decoding structured content or executing tools. Broker and ChatSession retain
   the completion error and its cause; see `Mojentic.LLM.CompletionError`.
 
+  `reasoning_effort` accepts `:disabled`, `:enabled`, `:low`, `:medium`, `:high`
+  and `:xhigh`, with exact provider controls. `nil` leaves effort unknown.
+  `reasoning_profile` selects an explicit `Mojentic.LLM.ReasoningProfile`;
+  incompatible efforts or native history fail before HTTP. Model names never
+  select a profile. `preserve_reasoning: true` retains completed native assistant
+  reasoning across Broker tool continuations; its default is `false`. It does
+  not enable thinking. oMLX also requests `preserve_thinking`; server settings
+  can override that request. OpenAI rejects these new controls and native
+  history, while its legacy low/medium/high controls remain available.
+
   Provides settings for temperature, context window size, and token limits.
 
   ## Examples
@@ -48,7 +58,7 @@ defmodule Mojentic.LLM.CompletionConfig do
           schema: map() | nil
         }
 
-  @type reasoning_effort :: :low | :medium | :high
+  @type reasoning_effort :: :disabled | :enabled | :low | :medium | :high | :xhigh
 
   @type t :: %__MODULE__{
           temperature: float(),
@@ -59,11 +69,15 @@ defmodule Mojentic.LLM.CompletionConfig do
           top_k: integer() | nil,
           response_format: response_format() | nil,
           reasoning_effort: reasoning_effort() | nil,
+          reasoning_profile: Mojentic.LLM.ReasoningProfile.t() | nil,
+          preserve_reasoning: boolean(),
           recovery: keyword() | nil,
           max_tool_iterations: non_neg_integer() | :infinity
         }
 
-  defstruct recovery: nil,
+  defstruct reasoning_profile: nil,
+            preserve_reasoning: false,
+            recovery: nil,
             temperature: 1.0,
             num_ctx: 32_768,
             max_tokens: 16_384,

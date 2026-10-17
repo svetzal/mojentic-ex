@@ -1,6 +1,7 @@
-# 3.0.0 recovery conformance (partial)
+# 3.0.0 conformance (partial)
 
-This partial record now also covers the October 12 **Typed errors** guarantee
+The final section records part-2 native reasoning and its external verification gaps.
+This partial recovery record also covers the October 12 **Typed errors** guarantee
 and the **Capabilities** amendment,
 alongside the **oMLX keepalive frames** guarantee,
 the **Retry-After dates** correction, the
@@ -785,3 +786,170 @@ configuration, a clean whitespace diff and nonempty uncommitted source changes.
 Execution logs and proof are Foundry-owned scratch, not committed project
 artifacts. Foundry owns Git finalization; no commit, push, ref change, version
 bump, publication or release was performed.
+
+## Part 2: native reasoning (local implementation; external verification pending)
+
+Binding source: `mojentic-unify/REASONING-PROTOTYPE-2026-10.md`, source revision
+`4b08dcd1d87f520a4c70928c33a2bc84c228093d`, SHA-256
+`0a40f3ad45c593bc779411021e45db569e73d3ecce86c99b201e7f8ebb656809`.
+The initiative brief SHA-256 was verified as
+`ea6a0efa56bfb3cd74b5ce728f80cc33c6fbd853114bec94b8aabe79f5d28e6e`.
+Rust was inspected read-only at `6b5895be44fd9f81196d2004900f2059bc71c3ce`
+(the release brief identifies the original prototype as `67791b7`). No Rust tests
+were run or changed here. Elixir tested base revision:
+`ddb2217c8245b041a20fd25f34f5aa6fbfaee2ce`, plus this uncommitted part-2 patch.
+No version, dependency, runtime or Git ref was changed.
+
+### Executable contract identity
+
+`native-reasoning-v1` reuses the loopback `ScriptedCompletionServer` and production
+Req boundary. `scripts/verify-native-reasoning-contract` prints the version and
+SHA-256 manifest, then runs `test/mojentic/llm/reasoning_wire_test.exs`.
+`test/contracts/native_reasoning_v1.json` supplies the exact control matrix,
+reasoning/content values, tool-call identity/arguments and tool result. Scripted
+responses are derived from those cases. This is a locally verified contract set,
+not an independently verified real model provider. The same tests run in the
+required `test --cover` gate and pinned CI coverage job.
+
+The initial public-boundary probe executed a real oMLX Broker tool continuation.
+Before correction it failed (exit 2): the next HTTP request omitted the completed
+assistant's native reasoning. After correction the same probe passed (exit 0),
+asserting the entire ordered continuation payload, exact tool-call identity and
+arguments, a single execution, and `preserve_thinking` on both requests. Matrix
+expansion and documentation followed that behavioral correction.
+
+### Contract decisions mapped to named executable cases
+
+All names below are in `reasoning_wire_test.exs`; generated names include the
+provider, entrypoint and effort/outcome.
+
+| Contract decision | Named test pattern and semantic assertions |
+| --- | --- |
+| Native reasoning separate from content/tools | `completed native reasoning and exact tool identity survive a real Req continuation`; entire ordered user/assistant/tool payload and exact execution arguments |
+| Six distinct efforts and omitted unknown | `<gateway> <operation> sends exact <effort> control and native history`; all six and nil over ordinary, structured, legacy-stream and terminal-event APIs, exact values and omitted keys |
+| Caller-selected profiles; no name inference | `<gateway> <operation> validates caller-selected profile before HTTP`; zero requests for unsupported effort/history; `invalid reasoning configuration fails before HTTP` |
+| Exact Qwen3.8 capability | `<gateway> Qwen3.8 accepts exact <effort> on an unrelated model name`; nil/disabled/low/medium/xhigh accepted, enabled/high rejected by the profile tests |
+| Opt-in ordinary and streamed tool retention | `<gateway> <operation> tool continuation retains native reasoning only with preserve=<boolean>`; exact full ordered continuation, tools and results, default off and successful on |
+| Completed native history only | `<gateway> <failure> stream never executes tools or fabricates a continuation`; interrupted, length and consumer cancellation after native reasoning is observed through ChatSession, unchanged input history, failed finalization and no tool execution or second request; `<gateway> incomplete ordinary native turn cannot execute tools or retain history` |
+| oMLX preserve_thinking; effort independent of retention | `<gateway> <operation> requests native retention without inventing effort`; exact preserve request on all four entrypoints, effort keys absent; tool-continuation cases check every round |
+| Native stream reasoning | `<gateway> legacy stream exposes native reasoning separately through validated Req`; ordered reasoning/content/tools and exact identity; retained streams use one validated request |
+| Structured controls and response reasoning | `... object sends exact ...`, `... object validates ...` and `... object requests native retention ...` use actual Req and structured decoding; `<gateway> structured response keeps native reasoning outside the JSON object` verifies separate native reasoning in the returned response |
+| OpenAI extension rejection and legacy compatibility | `OpenAI <operation> explicitly rejects new controls and native history before HTTP`; zero dispatch; `OpenAI preserves legacy <effort> effort and history through Req` checks nil/low/medium/high and exact history without local-provider extensions |
+| ChatSession controls and visible history | `ChatSession ordinary and stream paths forward exact controls and validate profiles`; `legacy ChatSession stores visible content separately from native stream reasoning`; finalization excludes thinking from visible content |
+
+Native retention uses the existing validated streaming parser when enabled, even
+without a recovery policy; this is one attempt and never opts into resends.
+Legacy local streams now expose separate thinking tuples. The single-turn
+terminal-event API retains its existing event shape. Manual outer-turn native
+history uses completed `generate_response/4` results; ChatSession retains its
+existing bounded visible-answer history. No native history is synthesized from
+partial/error/cancelled turns. OpenAI history adaptation remains unchanged.
+
+### External verification gaps for coordination
+
+Local adapter/provider verification and Broker/ChatSession consumer verification
+use the same executable set above. They exercise production HTTP serialization,
+parsing and tool execution against contract-derived scripted responses. They do
+not establish that actual Ollama/oMLX servers or external repository consumers
+satisfy this set. No external tested consumer revision or verification command
+result is available. Paired cross-repository verification is unfinished and must
+be assigned separately using `native-reasoning-v1` and its manifest; do not infer
+it from schemas, these fixtures, or Rust's prior prototype tests. In particular,
+forced oMLX server settings may override `preserve_thinking`; this run verifies
+the request, not server enforcement or stochastic model efficacy.
+
+The separately assigned `typed-errors-v1` consumer follow-up is unchanged and is
+not a blocker for this port's native-reasoning implementation. Parts 1 and 3 and
+the other ports retain their own readiness work. This partial record does not
+authorize release; the coordinated hold remains.
+
+### Native-reasoning-v1 manifest for this patch
+
+| Executable contract artifact | SHA-256 |
+| --- | --- |
+| `test/contracts/native_reasoning_v1.json` | `be212ff011125f1d0927e3a65a0d7cd87eedbf9f5ff69e803b4112a80ae6b1f6` |
+| `test/mojentic/llm/reasoning_wire_test.exs` | `67d94c295e52e63649586716c4b3c167549f37c0be757c829accac72c30fdee4` |
+| `test/support/scripted_completion_server.ex` | `d03a3cf93eb25350bd8bf2387e70fbf7786e86e663809f55dfd7180f6e782e07` |
+| `test/support/counting_tool.ex` | `87eed78d78cd23be5082bfe504af1322127019f064f69b9179c4428c923fe194` |
+
+The effort/history and profile-validation matrices run the **same cases** both
+through direct gateway APIs (provider-adapter verification) and through public
+Broker APIs (consumer verification), including structured and both streaming
+APIs. Their generated names include `gateway` or `broker`. The tool-continuation
+checks compare the entire ordered message payload and require every other
+request field to remain identical across rounds. Missing native reasoning stays
+omitted, including with retention enabled.
+
+An additional production-Req characterization found that Ollama structured
+responses dropped `thinking`: the structured-reasoning probe failed (exit 2)
+with `thinking: nil`, then passed (exit 0) after mapping the native response
+field separately from content and the decoded object. oMLX already conformed.
+The probe command was `scripts/recovery-mix test
+test/mojentic/llm/reasoning_wire_test.exs --only structured_reasoning`.
+
+The production source snapshot has manifest digest
+`05b5a5734a4cfff6433ebf5487763eb93c31d1d5cfcee87e39e0124f546837d4`.
+Reproduce it with Bash, from the repository root:
+
+```bash
+sha256sum lib/mojentic/llm/{broker,chat_session,completion_config,message,reasoning,reasoning_profile}.ex \
+  lib/mojentic/llm/gateways/{ollama,omlx,openai,openai_legacy_stream}.ex | sha256sum
+```
+
+This identifies the tested uncommitted implementation on the Elixir base revision
+above; it is not a release commit. External repositories were inspected only as
+read-only references and have no verification result from this execution.
+
+Ollama's recovery-disabled cold legacy stream still re-enumerates its underlying
+HTTP body, as explicitly characterized by the existing immutable-request and
+stream-recovery tests. That unrelated behavior is preserved in this scope.
+Native-retention streams use the existing validated parser with one attempt.
+The Ollama legacy effort matrix selects `recovery: []` (one attempt, no resend)
+to exercise its validated legacy API; the immutable-request tests separately
+verify the changed exact `"high"` control, now including structured output, on
+the recovery-disabled legacy path and identical admitted retry payloads.
+
+### Final native-reasoning verification results
+
+Pinned runtime: Elixir **1.18.5**, Erlang/OTP **28.5.0.7**, selected and checked by
+`scripts/recovery-mix`, matching the existing CI pins. No runtime upgrade was made.
+All commands below completed against the base revision plus the production and
+contract snapshots identified above.
+
+| Command | Result |
+| --- | --- |
+| `scripts/recovery-mix format --check-formatted` | Exit 0 |
+| `scripts/recovery-mix compile --warnings-as-errors` | Exit 0, no project warnings |
+| `MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | Exit 0, no project warnings |
+| `scripts/recovery-mix credo --strict` | Exit 0, zero issues |
+| `scripts/recovery-mix dialyzer` | Exit 0, zero errors/skips |
+| `MIX_ENV=test scripts/recovery-mix dialyzer` | Exit 0, zero errors/skips |
+| `scripts/recovery-mix test` | Exit 0; 22 doctests, 4,779 tests, zero failures, 19 excluded; 628.9 seconds |
+| `scripts/recovery-mix test --cover` | Exit 0; same counts, **90.60%** total coverage against 80% threshold; 558.4 seconds (below the 900-second gate limit) |
+| `scripts/recovery-mix deps.audit` | Exit 0; no vulnerabilities |
+| `scripts/recovery-mix sobelow --config` | Exit 0; no findings |
+| `scripts/recovery-mix hex.audit` | Exit 0; no retired or security advisory packages |
+| `scripts/recovery-mix hex.outdated --all` | Exit 1; available upgrades reported, informational/nonblocking. No advisory was suppressed and no dependencies changed. |
+| `scripts/recovery-mix docs` | Exit 0; existing unresolved links to the sibling release plan, README's LICENSE and dependency usage-rules file remain. Native reasoning guides build. |
+
+The 19 exclusions are the repository's existing integration-tag exclusions;
+this execution does not claim real model-server, registry-install or stochastic
+benchmark verification. No `precommit` alias is defined. CI already caches
+`priv/plts` and runs these tests with its pinned runtime; that configuration was
+preserved. All `.hone-gates.json` commands, including its optional audit and
+Sobelow commands, passed. No advisory suppressions, dependencies, versions or
+Git refs were changed. Changes remain uncommitted for Foundry review.
+
+| Verification side | Tested revision | Same executable set and command | Result |
+| --- | --- | --- | --- |
+| Maintained gateway/provider adapters | Elixir `ddb2217c8245b041a20fd25f34f5aa6fbfaee2ce` plus the source snapshot above | `native-reasoning-v1`; `scripts/verify-native-reasoning-contract` | Exit 0; all 182 named cases passed, including direct gateway control/history and profile matrices |
+| Broker/ChatSession consumers in this repository | Same Elixir base and source snapshot | Same `native-reasoning-v1` command and artifact manifest | Exit 0; all 182 named cases passed, including the identical Broker matrices, tool continuations and session outcomes |
+| Actual model-server producers | No tested revision/version available | Same set must be verified in separately authorized coordination | Not run; external verification gap |
+| External repository consumers | No tested revision available | Same set must be verified in separately authorized coordination | Not run; external verification gap |
+
+The final minimal acceptance command,
+`scripts/recovery-mix test test/mojentic/llm/reasoning_wire_test.exs --only reasoning_proof`,
+also passed (exit 0) on this final snapshot: one selected case, 181 excluded.
+These results establish the declared local adapter/consumer cases only; paired
+external verification remains unfinished. The independent `typed-errors-v1`
+consumer follow-up retains its separate assignment.

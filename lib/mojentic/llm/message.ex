@@ -2,6 +2,10 @@ defmodule Mojentic.LLM.Message do
   @moduledoc """
   Represents a message in an LLM conversation.
 
+  `reasoning_content` carries native assistant reasoning separately from `content`.
+  Ollama serializes it as `thinking`; oMLX uses `reasoning_content`.
+  OpenAI rejects native reasoning history.
+
   Messages can have different roles (system, user, assistant, tool) and
   can contain text content, tool calls, and image references.
 
@@ -17,11 +21,13 @@ defmodule Mojentic.LLM.Message do
 
   alias Mojentic.LLM.ToolCall
 
+  # Native reasoning is never merged into visible content or tool results.
   @type role :: :system | :user | :assistant | :tool
 
   @type t :: %__MODULE__{
           role: role(),
           content: String.t() | nil,
+          reasoning_content: String.t() | nil,
           tool_calls: [ToolCall.t()] | nil,
           image_paths: [String.t()] | nil
         }
@@ -30,6 +36,7 @@ defmodule Mojentic.LLM.Message do
   defstruct [
     :role,
     :content,
+    :reasoning_content,
     :tool_calls,
     :image_paths
   ]

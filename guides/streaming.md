@@ -16,7 +16,7 @@ messages = [Message.user("Tell me a story.")]
 
 stream = Broker.generate_stream(broker, messages)
 
-for {:ok, chunk} <- stream do
+for chunk when is_binary(chunk) <- stream do
   IO.write(chunk)
 end
 ```
@@ -32,9 +32,9 @@ alias Mojentic.LLM.Tools.DateResolver
 tools = [DateResolver]
 stream = Broker.generate_stream(broker, messages, tools)
 
-# The stream will contain text chunks.
+# Render visible text; handle {:thinking, text} separately.
 # Tool execution happens transparently in the background.
-for {:ok, chunk} <- stream do
+for chunk when is_binary(chunk) <- stream do
   IO.write(chunk)
 end
 ```
@@ -117,7 +117,7 @@ connection setup and idle waits between chunks. Applications must also bound the
 entire call, including connection initialization; a streaming provider can emit
 reasoning for a long time before it emits answer content.
 
-Existing `generate_stream` remains a string-stream API for interactive
+Existing `generate_stream` yields visible strings and separate native thinking tuples for interactive
 consumers. It does not provide this terminal proof.
 
 ## Structured output in streaming requests

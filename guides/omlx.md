@@ -50,13 +50,19 @@ length for each model.
 The model's reasoning (`reasoning_content`) is in `GatewayResponse.thinking`.
 Use `Broker.generate_response/4` to get the full gateway response.
 
-`reasoning_effort` goes to the model's chat template. Its effect depends on
-the model. When `reasoning_effort` is `nil`, the model's default applies.
-Qwen 3 models think by default.
+`:disabled` and `:enabled` send `enable_thinking: false/true`. Named levels
+`:low`, `:medium`, `:high` and `:xhigh` send exact `reasoning_effort` strings.
+Omitted effort is unknown. Select `ReasoningProfile.qwen3_8()` explicitly to
+validate disabled/low/medium/xhigh and native history before HTTP; model names
+do not select a profile.
 
-The streaming APIs do not yield reasoning. `Broker.generate_stream_events/3`
-has no thinking event, and the legacy `Broker.generate_stream/4` has no
-thinking chunk.
+`Broker.generate_stream_events/3` has no thinking event. The legacy
+`Broker.generate_stream/4` yields separate `{:thinking, text}` tuples.
+`preserve_reasoning: true` retains native reasoning in completed Broker tool
+continuations and requests `chat_template_kwargs.preserve_thinking: true`.
+Retention defaults to off, does not enable reasoning and excludes failed or
+cancelled streams. Server settings may override the preserve request.
+`Message.reasoning_content` serializes natively without modifying OpenAI history.
 
 ## Truncation
 

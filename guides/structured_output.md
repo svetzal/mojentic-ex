@@ -95,3 +95,15 @@ end
 ## Summary
 
 Structured output turns unstructured text into reliable data structures. By defining Ecto schemas, you can integrate LLM outputs directly into your Elixir application's logic with type safety and validation.
+
+## Native reasoning controls
+
+Pass the same `CompletionConfig` used for ordinary completion to
+`Broker.generate_object/4`. `reasoning_effort`, `reasoning_profile` and
+`preserve_reasoning` apply before structured HTTP dispatch too. Ollama sends
+exact boolean or named `think` values; oMLX sends `enable_thinking` or exact
+`reasoning_effort` and requests `preserve_thinking` when retention is enabled.
+A caller-selected profile rejects unsupported controls before HTTP. Omitted
+effort stays unknown. OpenAI rejects the new local reasoning controls while
+preserving existing low/medium/high behavior. See the Broker guide for profiles
+and native history; reasoning is never merged into the returned JSON object.

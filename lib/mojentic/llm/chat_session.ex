@@ -167,10 +167,7 @@ defmodule Mojentic.LLM.ChatSession do
 
     # Generate response
     config =
-      CompletionConfig.new(
-        temperature: session.temperature,
-        recovery: Keyword.get(opts, :recovery)
-      )
+      session_config(session, opts)
 
     # Extract just the messages (without token lengths) for broker
     messages = Enum.map(session.messages, & &1.message)
@@ -216,7 +213,10 @@ defmodule Mojentic.LLM.ChatSession do
   ## Examples
 
       {:ok, stream, handle} = ChatSession.send_stream(session, "Tell me a story")
-      stream |> Stream.each(&IO.write/1) |> Stream.run()
+      stream |> Stream.each(fn
+        text when is_binary(text) -> IO.write(text)
+        {:thinking, _text} -> :ok
+      end) |> Stream.run()
       session = ChatSession.finalize_stream(handle)
 
   """
@@ -236,8 +236,9 @@ defmodule Mojentic.LLM.ChatSession do
     # Wrap the stream to accumulate chunks
     wrapped_stream =
       broker_stream
-      |> Stream.each(fn chunk ->
-        Agent.update(agent, fn chunks -> chunks ++ [chunk] end)
+      |> Stream.each(fn
+        chunk when is_binary(chunk) -> Agent.update(agent, fn chunks -> chunks ++ [chunk] end)
+        {:thinking, _text} -> :ok
       end)
 
     {:ok, wrapped_stream, {session, agent}}
@@ -245,16 +246,24 @@ defmodule Mojentic.LLM.ChatSession do
 
   @doc "Streams with opt-in recovery; failed or halted streams cannot finalize successfully."
   def send_stream(session, query, opts) do
-    case Keyword.get(opts, :recovery) do
-      nil -> send_stream(session, query)
-      recovery -> recovery_stream(session, query, recovery)
+    case session_config(session, opts) do
+      %CompletionConfig{
+        recovery: nil,
+        reasoning_effort: nil,
+        reasoning_profile: nil,
+        preserve_reasoning: false
+      } ->
+        send_stream(session, query)
+
+      _config ->
+        recovery_stream(session, query, opts)
     end
   end
 
-  defp recovery_stream(session, query, recovery) do
+  defp recovery_stream(session, query, opts) do
     session = insert_message(session, Message.user(query))
     {:ok, agent} = Agent.start_link(fn -> %{chunks: [], status: :running} end)
-    config = CompletionConfig.new(temperature: session.temperature, recovery: recovery)
+    config = session_config(session, opts)
     messages = Enum.map(session.messages, & &1.message)
     stream = Broker.generate_stream(session.broker, messages, session.tools, config)
 
@@ -312,7 +321,10 @@ defmodule Mojentic.LLM.ChatSession do
   ## Examples
 
       {:ok, stream, handle} = ChatSession.send_stream(session, "Tell me a story")
-      stream |> Stream.each(&IO.write/1) |> Stream.run()
+      stream |> Stream.each(fn
+        text when is_binary(text) -> IO.write(text)
+        {:thinking, _text} -> :ok
+      end) |> Stream.run()
       session = ChatSession.finalize_stream(handle)
 
   """
@@ -362,6 +374,13 @@ defmodule Mojentic.LLM.ChatSession do
   end
 
   # Private functions
+
+  defp session_config(session, opts) do
+    opts
+    |> Keyword.take([:recovery, :reasoning_effort, :reasoning_profile, :preserve_reasoning])
+    |> Keyword.put(:temperature, session.temperature)
+    |> CompletionConfig.new()
+  end
 
   defp finalize_chunks(session, chunks) do
     session = ensure_all_messages_are_sized(session)

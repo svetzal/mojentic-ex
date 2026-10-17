@@ -547,7 +547,7 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
       end
 
     body =
-      if gateway == Ollama and operation != :object, do: Map.put(body, "think", true), else: body
+      if gateway == Ollama, do: Map.put(body, "think", "high"), else: body
 
     body =
       if gateway != Ollama and operation in [:legacy, :events],

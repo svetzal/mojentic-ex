@@ -50,83 +50,89 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
   @impl Gateway
   def complete(model, messages, tools, config) do
-    host = get_host()
-    timeout = get_timeout()
+    with :ok <- Mojentic.LLM.Reasoning.validate(config, messages, :ollama) do
+      host = get_host()
+      timeout = get_timeout()
 
-    ollama_messages = adapt_messages(messages)
-    options = extract_options(config)
+      ollama_messages = adapt_messages(messages)
+      options = extract_options(config)
 
-    body = %{
-      model: model,
-      messages: ollama_messages,
-      options: options,
-      stream: false
-    }
+      body = %{
+        model: model,
+        messages: ollama_messages,
+        options: options,
+        stream: false
+      }
 
-    body = maybe_add_tools(body, tools)
-    body = maybe_add_format(body, config)
-    body = maybe_add_thinking(body, config)
+      body = maybe_add_tools(body, tools)
+      body = maybe_add_format(body, config)
+      body = maybe_add_thinking(body, config)
 
-    Mojentic.LLM.CompletionRequest.run(
-      http_client(),
-      "#{host}/api/chat",
-      Jason.encode!(body),
-      [{"Content-Type", "application/json"}],
-      [recv_timeout: timeout, timeout: timeout],
-      config,
-      {:ollama, :complete},
-      fn result ->
-        case result do
-          {:ok, %{status_code: 200, body: response_body}} ->
-            parse_response(response_body)
+      Mojentic.LLM.CompletionRequest.run(
+        http_client(),
+        "#{host}/api/chat",
+        Jason.encode!(body),
+        [{"Content-Type", "application/json"}],
+        [recv_timeout: timeout, timeout: timeout],
+        config,
+        {:ollama, :complete},
+        fn result ->
+          case result do
+            {:ok, %{status_code: 200, body: response_body}} ->
+              parse_response(response_body)
 
-          {:ok, %{status_code: status}} ->
-            {:error, {:http_error, status}}
+            {:ok, %{status_code: status}} ->
+              {:error, {:http_error, status}}
 
-          {:error, reason} ->
-            {:error, {:request_failed, reason}}
+            {:error, reason} ->
+              {:error, {:request_failed, reason}}
+          end
         end
-      end
-    )
+      )
+    end
   end
 
   @impl Gateway
   def complete_object(model, messages, schema, config) do
-    host = get_host()
-    timeout = get_timeout()
+    with :ok <- Mojentic.LLM.Reasoning.validate(config, messages, :ollama) do
+      host = get_host()
+      timeout = get_timeout()
 
-    ollama_messages = adapt_messages(messages)
-    options = extract_options(config)
+      ollama_messages = adapt_messages(messages)
+      options = extract_options(config)
 
-    body = %{
-      model: model,
-      messages: ollama_messages,
-      options: options,
-      format: schema,
-      stream: false
-    }
+      body =
+        %{
+          model: model,
+          messages: ollama_messages,
+          options: options,
+          format: schema,
+          stream: false
+        }
+        |> maybe_add_thinking(config)
 
-    Mojentic.LLM.CompletionRequest.run(
-      http_client(),
-      "#{host}/api/chat",
-      Jason.encode!(body),
-      [{"Content-Type", "application/json"}],
-      [recv_timeout: timeout, timeout: timeout],
-      config,
-      {:ollama, :complete_object},
-      fn result ->
-        case result do
-          {:ok, %{status_code: 200, body: response_body}} ->
-            parse_object_response(response_body)
+      Mojentic.LLM.CompletionRequest.run(
+        http_client(),
+        "#{host}/api/chat",
+        Jason.encode!(body),
+        [{"Content-Type", "application/json"}],
+        [recv_timeout: timeout, timeout: timeout],
+        config,
+        {:ollama, :complete_object},
+        fn result ->
+          case result do
+            {:ok, %{status_code: 200, body: response_body}} ->
+              parse_object_response(response_body)
 
-          {:ok, %{status_code: status}} ->
-            {:error, {:http_error, status}}
+            {:ok, %{status_code: status}} ->
+              {:error, {:http_error, status}}
 
-          {:error, reason} ->
-            {:error, {:request_failed, reason}}
+            {:error, reason} ->
+              {:error, {:request_failed, reason}}
+          end
         end
-      end
-    )
+      )
+    end
   end
 
   @impl Gateway
@@ -193,78 +199,90 @@ defmodule Mojentic.LLM.Gateways.Ollama do
         model,
         messages,
         tools,
-        %Mojentic.LLM.CompletionConfig{recovery: recovery} = config
+        %Mojentic.LLM.CompletionConfig{recovery: recovery, preserve_reasoning: preserve} = config
       )
-      when not is_nil(recovery) do
-    body = stream_request_body(model, messages, tools, config)
+      when not is_nil(recovery) or preserve == true do
+    case Mojentic.LLM.Reasoning.validate(config, messages, :ollama) do
+      :ok ->
+        body = stream_request_body(model, messages, tools, config)
 
-    Mojentic.LLM.StreamRecovery.stream(
-      http_client(),
-      "#{get_host()}/api/chat",
-      Jason.encode!(body),
-      [{"content-type", "application/json"}],
-      [recv_timeout: get_timeout()],
-      recovery,
-      :ollama,
-      :legacy
-    )
+        Mojentic.LLM.StreamRecovery.stream(
+          http_client(),
+          "#{get_host()}/api/chat",
+          Jason.encode!(body),
+          [{"content-type", "application/json"}],
+          [recv_timeout: get_timeout()],
+          if(is_nil(recovery), do: [], else: recovery),
+          :ollama,
+          :legacy
+        )
+
+      {:error, reason} ->
+        [{:error, reason}]
+    end
   end
 
   def complete_stream(model, messages, tools, config) do
-    host = get_host()
-    timeout = get_timeout()
-    body = stream_request_body(model, messages, tools, config)
+    case Mojentic.LLM.Reasoning.validate(config, messages, :ollama) do
+      :ok ->
+        host = get_host()
+        timeout = get_timeout()
+        body = stream_request_body(model, messages, tools, config)
 
-    Stream.resource(
-      fn ->
-        case http_client().post_stream(
-               "#{host}/api/chat",
-               Jason.encode!(body),
-               [{"content-type", "application/json"}],
-               recv_timeout: timeout,
-               timeout: timeout
-             ) do
-          {:ok, stream} ->
-            {:stream, stream, "", []}
+        Stream.resource(
+          fn ->
+            case http_client().post_stream(
+                   "#{host}/api/chat",
+                   Jason.encode!(body),
+                   [{"content-type", "application/json"}],
+                   recv_timeout: timeout,
+                   timeout: timeout
+                 ) do
+              {:ok, stream} ->
+                {:stream, stream, "", []}
 
-          {:error, reason} ->
-            {:error, reason}
-        end
-      end,
-      fn
-        :halt ->
-          {:halt, :halt}
+              {:error, reason} ->
+                {:error, reason}
+            end
+          end,
+          fn
+            :halt ->
+              {:halt, :halt}
 
-        {:error, _reason} = error ->
-          {[error], :halt}
-
-        {:stream, stream, buffer, acc_tool_calls} ->
-          case Enum.take(stream, 1) do
-            [{:data, chunk}] ->
-              rest = Stream.drop(stream, 1)
-              parse_streaming_chunks(chunk, buffer, acc_tool_calls, rest)
-
-            [{:error, _reason} = error] ->
+            {:error, _reason} = error ->
               {[error], :halt}
 
-            [] ->
-              # Stream ended — yield accumulated tool calls if any
-              result =
-                if acc_tool_calls != [] do
-                  [{:tool_calls, Enum.reverse(acc_tool_calls)}]
-                else
-                  []
-                end
+            {:stream, stream, buffer, acc_tool_calls} ->
+              case Enum.take(stream, 1) do
+                [{:data, chunk}] ->
+                  rest = Stream.drop(stream, 1)
+                  parse_streaming_chunks(chunk, buffer, acc_tool_calls, rest)
 
-              {result, :halt}
+                [{:error, _reason} = error] ->
+                  {[error], :halt}
+
+                [] ->
+                  # Stream ended — yield accumulated tool calls if any
+                  result =
+                    if acc_tool_calls != [] do
+                      [{:tool_calls, Enum.reverse(acc_tool_calls)}]
+                    else
+                      []
+                    end
+
+                  {result, :halt}
+              end
+          end,
+          fn
+            :halt -> :ok
+            {:error, _} -> :ok
+            _ -> :ok
           end
-      end,
-      fn
-        :halt -> :ok
-        {:error, _} -> :ok
-        _ -> :ok
-      end
-    )
+        )
+
+      {:error, reason} ->
+        [{:error, reason}]
+    end
   end
 
   @doc """
@@ -293,39 +311,51 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   def complete_stream_events(
         model,
         messages,
-        %Mojentic.LLM.CompletionConfig{recovery: recovery} = config
+        %Mojentic.LLM.CompletionConfig{recovery: recovery, preserve_reasoning: preserve} = config
       )
-      when not is_nil(recovery) do
-    tools = nil
-    body = stream_request_body(model, messages, tools, config)
+      when not is_nil(recovery) or preserve == true do
+    case Mojentic.LLM.Reasoning.validate(config, messages, :ollama) do
+      :ok ->
+        tools = nil
+        body = stream_request_body(model, messages, tools, config)
 
-    Mojentic.LLM.StreamRecovery.stream(
-      http_client(),
-      "#{get_host()}/api/chat",
-      Jason.encode!(body),
-      [{"content-type", "application/json"}],
-      [recv_timeout: get_timeout()],
-      recovery,
-      :ollama,
-      :events
-    )
+        Mojentic.LLM.StreamRecovery.stream(
+          http_client(),
+          "#{get_host()}/api/chat",
+          Jason.encode!(body),
+          [{"content-type", "application/json"}],
+          [recv_timeout: get_timeout()],
+          if(is_nil(recovery), do: [], else: recovery),
+          :ollama,
+          :events
+        )
+
+      {:error, reason} ->
+        [{:error, reason}]
+    end
   end
 
   def complete_stream_events(model, messages, config) do
-    body = stream_request_body(model, messages, nil, config)
-    client = http_client()
-    host = get_host()
-    timeout = get_timeout()
+    case Mojentic.LLM.Reasoning.validate(config, messages, :ollama) do
+      :ok ->
+        body = stream_request_body(model, messages, nil, config)
+        client = http_client()
+        host = get_host()
+        timeout = get_timeout()
 
-    OllamaStream.events(fn ->
-      client.post_stream(
-        "#{host}/api/chat",
-        Jason.encode!(body),
-        [{"content-type", "application/json"}],
-        recv_timeout: timeout,
-        timeout: timeout
-      )
-    end)
+        OllamaStream.events(fn ->
+          client.post_stream(
+            "#{host}/api/chat",
+            Jason.encode!(body),
+            [{"content-type", "application/json"}],
+            recv_timeout: timeout,
+            timeout: timeout
+          )
+        end)
+
+      {:error, reason} ->
+        [{:error, reason}]
+    end
   end
 
   defp stream_request_body(model, messages, tools, config) do
@@ -541,7 +571,7 @@ defmodule Mojentic.LLM.Gateways.Ollama do
   defp maybe_add_thinking(body, config) do
     case config.reasoning_effort do
       nil -> body
-      _ -> Map.put(body, :think, true)
+      effort -> Map.put(body, :think, Mojentic.LLM.Reasoning.ollama_control(effort))
     end
   end
 
@@ -556,7 +586,10 @@ defmodule Mojentic.LLM.Gateways.Ollama do
     }
 
     ollama_msg = maybe_add_images(ollama_msg, message.image_paths)
-    maybe_add_tool_calls(ollama_msg, message.tool_calls)
+
+    ollama_msg
+    |> maybe_add_tool_calls(message.tool_calls)
+    |> Mojentic.LLM.Reasoning.put_history(message, :thinking)
   end
 
   defp role_to_string(:system), do: "system"
@@ -621,10 +654,16 @@ defmodule Mojentic.LLM.Gateways.Ollama do
 
   defp parse_object_response(body) do
     case Jason.decode(body) do
-      {:ok, %{"message" => %{"content" => content}} = reported} ->
+      {:ok, %{"message" => %{"content" => content} = message} = reported} ->
         case Jason.decode(content) do
           {:ok, object} ->
-            {:ok, %{reported_evidence(reported) | content: content, object: object}}
+            {:ok,
+             %{
+               reported_evidence(reported)
+               | content: content,
+                 object: object,
+                 thinking: message["thinking"]
+             }}
 
           {:error, _} ->
             {:error, :invalid_json_object}
@@ -700,6 +739,12 @@ defmodule Mojentic.LLM.Gateways.Ollama do
             # Content chunk
             content = Map.get(message, "content")
             tool_calls = parse_tool_calls(message)
+
+            acc_results =
+              case message["thinking"] do
+                text when is_binary(text) and text != "" -> [{:thinking, text} | acc_results]
+                _ -> acc_results
+              end
 
             new_results =
               if content && content != "" do

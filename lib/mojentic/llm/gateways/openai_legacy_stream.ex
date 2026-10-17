@@ -18,10 +18,10 @@ defmodule Mojentic.LLM.Gateways.OpenAILegacyStream do
   `{:error, reason}`, or `{:error, reason}`.
   """
   @spec stream((-> {:ok, Enumerable.t()} | {:error, term()})) :: Enumerable.t()
-  def stream(start) do
+  def stream(start, opts \\ []) do
     Stream.resource(
       fn -> open(start) end,
-      &process_stream_chunk/1,
+      &process_stream_chunk(&1, Keyword.get(opts, :native_reasoning, false)),
       &cleanup_stream/1
     )
   end
@@ -36,13 +36,13 @@ defmodule Mojentic.LLM.Gateways.OpenAILegacyStream do
     end
   end
 
-  defp process_stream_chunk(:halt), do: {:halt, :halt}
-  defp process_stream_chunk({:error, _reason} = error), do: {[error], :halt}
+  defp process_stream_chunk(:halt, _reasoning?), do: {:halt, :halt}
+  defp process_stream_chunk({:error, _reason} = error, _reasoning?), do: {[error], :halt}
 
-  defp process_stream_chunk({:stream, stream, buffer, tool_calls_acc}) do
+  defp process_stream_chunk({:stream, stream, buffer, tool_calls_acc}, reasoning?) do
     case stream.({:cont, nil}) do
       {:suspended, {:data, chunk}, rest} ->
-        parse_sse_chunks(chunk, buffer, tool_calls_acc, rest)
+        parse_sse_chunks(chunk, buffer, tool_calls_acc, rest, reasoning?)
 
       {:suspended, {:error, _reason} = error, rest} ->
         rest.({:halt, nil})
@@ -73,7 +73,7 @@ defmodule Mojentic.LLM.Gateways.OpenAILegacyStream do
   defp cleanup_stream(_), do: :ok
 
   # Parse SSE chunks from OpenAI streaming response
-  defp parse_sse_chunks(chunk, buffer, tool_calls_acc, rest_stream) do
+  defp parse_sse_chunks(chunk, buffer, tool_calls_acc, rest_stream, reasoning?) do
     new_buffer = buffer <> chunk
 
     # Split on double newlines (SSE format)
@@ -106,7 +106,7 @@ defmodule Mojentic.LLM.Gateways.OpenAILegacyStream do
           else
             case Jason.decode(data) do
               {:ok, json} ->
-                parse_streaming_json(json, acc_results, acc_tools)
+                parse_streaming_json(json, acc_results, acc_tools, reasoning?)
 
               {:error, _} ->
                 Logger.warning("Failed to parse SSE chunk: #{data}")
@@ -121,11 +121,18 @@ defmodule Mojentic.LLM.Gateways.OpenAILegacyStream do
     {Enum.reverse(results), {:stream, rest_stream, remaining_buffer, new_tool_calls_acc}}
   end
 
-  defp parse_streaming_json(json, acc_results, acc_tools) do
+  defp add_reasoning(results, true, text) when is_binary(text) and text != "",
+    do: [{:thinking, text} | results]
+
+  defp add_reasoning(results, _reasoning?, _text), do: results
+
+  defp parse_streaming_json(json, acc_results, acc_tools, reasoning?) do
     case json do
       %{"choices" => [%{"delta" => delta} = choice | _]} ->
         # OpenAI-compatible servers may omit a null finish_reason.
         finish_reason = choice["finish_reason"]
+
+        acc_results = add_reasoning(acc_results, reasoning?, delta["reasoning_content"])
 
         # Handle content
         acc_results =
