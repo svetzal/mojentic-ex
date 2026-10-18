@@ -2,7 +2,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
   use ExUnit.Case, async: false
   alias Mojentic.LLM.{Broker, CompletionConfig, Message}
   alias Mojentic.LLM.Gateways.{OpenAI, OpenAIStream}
-  alias Mojentic.TestSupport.ChunkedHTTPServer
+  alias Mojentic.TestSupport.ChunkedTransport
 
   setup do
     previous = Application.get_env(:mojentic, :http_client)
@@ -42,15 +42,15 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
               }}
            ] = events
 
-    assert_receive {:request, request}
+    assert_receive {:transport_request, request}
     assert request =~ "POST /chat/completions"
     assert request =~ "\"stream\":true"
     assert request =~ "\"include_usage\":true"
     refute request =~ "\"tools\":"
-    refute_receive {:request, _}
+    refute_received {:transport_request, _}
   end
 
-  test "single-turn streaming forwards requested JSON mode in the real HTTP body" do
+  test "single-turn streaming forwards requested JSON mode in the in-process HTTP body" do
     serve([event("{}"), finish("stop"), "data: [DONE]\n\n"])
     config = CompletionConfig.new(response_format: %{type: :json_object})
 
@@ -63,8 +63,8 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
                )
              )
 
-    assert_receive {:request, request}
-    body = ChunkedHTTPServer.request_body(request)
+    assert_receive {:transport_request, request}
+    body = ChunkedTransport.request_body(request)
     assert body["response_format"] == %{"type" => "json_object"}
     refute Map.has_key?(body, "tools")
   end
@@ -84,8 +84,8 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
                )
              )
 
-    assert_receive {:request, request}
-    body = ChunkedHTTPServer.request_body(request)
+    assert_receive {:transport_request, request}
+    body = ChunkedTransport.request_body(request)
 
     assert body["response_format"] == %{
              "type" => "json_schema",
@@ -132,13 +132,13 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
              Enum.to_list(OpenAIStream.events(fn -> {:error, :econnrefused} end))
   end
 
-  test "halting after first chunk cancels real HTTP response" do
+  test "halting after first chunk cancels in-process HTTP response" do
     serve([event("partial")], true)
     assert [{:content, "partial"}] = Enum.take(stream(), 1)
-    assert_receive {:cancel_result, {:error, :closed}}, 2000
+    assert_receive {:transport_closed, _}, 2000
   end
 
-  test "cancelling the consumer process closes its real HTTP request" do
+  test "cancelling the consumer process closes its in-process HTTP request" do
     serve([event("partial")], true)
     owner = self()
     supervisor = start_supervised!(Task.Supervisor)
@@ -150,7 +150,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
 
     assert_receive {:observed, {:content, "partial"}}, 2000
     Task.shutdown(task, :brutal_kill)
-    assert_receive {:cancel_result, {:error, :closed}}, 2000
+    assert_receive {:transport_closed, _}, 2000
   end
 
   test "HTTP errors are observable and are never retried" do
@@ -161,8 +161,8 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
 
     assert is_integer(evidence.metadata.request_duration_ms)
     refute Map.has_key?(evidence.metadata, :first_token_kind)
-    assert_receive {:request, _}
-    refute_receive {:request, _}
+    assert_receive {:transport_request, _}
+    refute_received {:transport_request, _}
   end
 
   test "absolute transport deadline preserves partial response then cancels" do
@@ -180,7 +180,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
     assert evidence.metadata.first_token_kind == :content
     assert is_integer(evidence.metadata.time_to_first_token_ms)
     assert evidence.metadata.request_duration_ms >= evidence.metadata.time_to_first_token_ms
-    assert_receive {:cancel_result, {:error, :closed}}, 2000
+    assert_receive {:transport_closed, _}, 2000
   end
 
   test "missing finish proof, length exhaustion, malformed SSE and native tools fail closed" do
@@ -201,7 +201,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
     end
   end
 
-  test "legacy string broker stream consumes the real HTTP stream once" do
+  test "legacy string broker stream consumes the in-process HTTP stream once" do
     serve([event("one"), event("two"), finish("stop"), "data: [DONE]\n\n"])
 
     assert ["one", "two", {:completed, _}] =
@@ -236,7 +236,7 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
   end
 
   defp serve(chunks, hold \\ false, status \\ 200) do
-    start_supervised!({ChunkedHTTPServer, {self(), chunks, hold, status}})
+    start_supervised!({ChunkedTransport, {self(), chunks, hold, status}})
     assert_receive {:port, port}
     System.put_env("OPENAI_API_ENDPOINT", "http://127.0.0.1:#{port}")
   end

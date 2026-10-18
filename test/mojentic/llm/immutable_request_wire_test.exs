@@ -3,7 +3,7 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
 
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, Message, ToolCall}
   alias Mojentic.LLM.Gateways.{Ollama, OMLX, OpenAI}
-  alias Mojentic.TestSupport.{CountingTool, ScriptedCompletionServer, StubTokenizer}
+  alias Mojentic.TestSupport.{CountingTool, ScriptedTransport, StubTokenizer}
 
   @external_resource "test/contracts/request_fidelity_v1.json"
   @contract Jason.decode!(File.read!(@external_resource))
@@ -147,7 +147,7 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
       [original | additional] = GenServer.call(baseline, :requests) |> Enum.map(&encoded/1)
       assert Enum.all?(additional, &(&1 == original))
       assert Jason.decode!(original) == fidelity_body(@gateway, @operation, @row["config"])
-      stop_supervised!(ScriptedCompletionServer)
+      stop_supervised!(ScriptedTransport)
 
       retry =
         server(@gateway, [
@@ -283,7 +283,7 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
                )
 
       assert_receive {:tool_executed, %{"value" => "next-π"}}
-      refute_receive {:tool_executed, _}
+      refute_received {:tool_executed, _}
       [initial, continuation, replay] = GenServer.call(server, :requests) |> Enum.map(&encoded/1)
       assert continuation == replay
       assert Jason.decode!(initial) == fidelity_body(@gateway, :complete, %{})
@@ -318,7 +318,7 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
                )
 
       assert_receive {:tool_executed, %{"value" => "next-π"}}
-      refute_receive {:tool_executed, _}
+      refute_received {:tool_executed, _}
       [initial, first, second] = GenServer.call(server, :requests) |> Enum.map(&encoded/1)
       expected = expected(@gateway, :complete, "gpt-4o")
       assert Jason.decode!(initial) == expected
@@ -356,8 +356,8 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
       assert first == second
       assert File.read!(path) == @changed
       assert_evidence([initial, first, second], [1, 1, 2])
-      stop_supervised!(ScriptedCompletionServer)
-      drain(:wire_request)
+      stop_supervised!(ScriptedTransport)
+      drain(:transport_request)
       File.write!(path, @original)
       baseline = server(@gateway, [tool_response(@gateway), success(@gateway, :complete)])
 
@@ -371,7 +371,7 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
 
       assert GenServer.call(baseline, :requests) |> Enum.map(&encoded/1) == [initial, first]
       assert_receive {:tool_executed, %{"value" => "next-π"}}
-      refute_receive {:tool_executed, _}
+      refute_received {:tool_executed, _}
     end
   end
 
@@ -399,8 +399,8 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
       assert length(disabled) == 1
       expected = expected(@gateway, @operation, "gpt-4o")
       assert Enum.all?(disabled, &(Jason.decode!(&1) == expected))
-      stop_supervised!(ScriptedCompletionServer)
-      drain(:wire_request)
+      stop_supervised!(ScriptedTransport)
+      drain(:transport_request)
 
       retry =
         server(@gateway, [
@@ -428,8 +428,8 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
       baseline = server(OpenAI, List.duplicate(success(OpenAI, @operation), 2))
       invoke(OpenAI, @operation, history(path), baseline_config, "o3")
       [disabled] = GenServer.call(baseline, :requests) |> Enum.map(&encoded/1)
-      stop_supervised!(ScriptedCompletionServer)
-      drain(:wire_request)
+      stop_supervised!(ScriptedTransport)
+      drain(:transport_request)
 
       retry =
         server(OpenAI, [
@@ -474,8 +474,8 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
 
       session_turn(@gateway, @operation, nil)
       disabled = GenServer.call(baseline, :requests) |> Enum.map(&encoded/1)
-      stop_supervised!(ScriptedCompletionServer)
-      drain(:wire_request)
+      stop_supervised!(ScriptedTransport)
+      drain(:transport_request)
 
       retry =
         server(@gateway, [
@@ -854,8 +854,8 @@ defmodule Mojentic.LLM.ImmutableRequestWireTest do
   end
 
   defp server(gateway, responses) do
-    server = start_supervised!({ScriptedCompletionServer, {self(), responses}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), responses}})
+    assert_receive {:transport_id, port}
     endpoint = "http://127.0.0.1:#{port}"
 
     case gateway do

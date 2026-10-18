@@ -2,7 +2,7 @@ defmodule Mojentic.LLM.PermanentHTTPWireTest do
   use ExUnit.Case, async: false
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, CompletionError, Message}
   alias Mojentic.LLM.Gateways.{OpenAI, Ollama, OMLX}
-  alias Mojentic.TestSupport.ScriptedCompletionServer
+  alias Mojentic.TestSupport.ScriptedTransport
 
   @env_keys [
     "OPENAI_API_ENDPOINT",
@@ -42,8 +42,8 @@ defmodule Mojentic.LLM.PermanentHTTPWireTest do
         "Content-Length: 999"
       )
 
-    server = start_supervised!({ScriptedCompletionServer, {owner, [broken]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {owner, [broken]}})
+    assert_receive {:transport_id, port}
     configure(OpenAI, port)
 
     config =
@@ -73,7 +73,7 @@ defmodule Mojentic.LLM.PermanentHTTPWireTest do
     assert CompletionError.cause(error) ==
              %Finch.TransportError{reason: :closed, source: %Mint.TransportError{reason: :closed}}
 
-    assert_receive {:wire_request, wire}
+    assert_receive {:transport_request, wire}
     assert GenServer.call(server, :requests) == [wire]
     assert_receive {:permanent_event, %{type: :attempt_started, metadata: started}}
     assert_receive {:permanent_event, %{type: :attempt_failed, metadata: failed}}
@@ -128,11 +128,11 @@ defmodule Mojentic.LLM.PermanentHTTPWireTest do
       case body_mode do
         :complete -> response
         :closed -> broken
-        :timeout -> {:stream_hold, broken}
+        :timeout -> {:stream_error, broken, :timeout}
       end
 
-    server = start_supervised!({ScriptedCompletionServer, {owner, [scripted]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {owner, [scripted]}})
+    assert_receive {:transport_id, port}
     configure(gateway, port)
 
     for key <- ["OPENAI_TIMEOUT", "OLLAMA_TIMEOUT", "OMLX_TIMEOUT"],
@@ -141,7 +141,7 @@ defmodule Mojentic.LLM.PermanentHTTPWireTest do
     recovery = permanent_recovery(owner, tracing)
     assert {:error, error} = invoke(gateway, operation, CompletionConfig.new(recovery: recovery))
     assert_permanent_error(error, status, body, body_mode)
-    assert_receive {:wire_request, wire}
+    assert_receive {:transport_request, wire}
     assert GenServer.call(server, :requests) == [wire]
     {started, failed} = assert_permanent_lifecycle(error)
     assert_permanent_payload(gateway, operation, wire)
@@ -356,11 +356,10 @@ defmodule Mojentic.LLM.PermanentHTTPWireTest do
 
     server =
       start_supervised!(
-        {ScriptedCompletionServer,
-         {owner, [response(503, "transient-secret"), response(200, success)]}}
+        {ScriptedTransport, {owner, [response(503, "transient-secret"), response(200, success)]}}
       )
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     configure(OpenAI, port)
 
     config =

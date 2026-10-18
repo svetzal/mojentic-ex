@@ -4,7 +4,7 @@ defmodule Mojentic.LLM.AdmissionWireTest do
 
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, CompletionError, Message}
   alias Mojentic.LLM.Gateways.{OpenAI, Ollama, OMLX}
-  alias Mojentic.TestSupport.ScriptedCompletionServer
+  alias Mojentic.TestSupport.ScriptedTransport
 
   setup do
     client = Application.fetch_env!(:mojentic, :http_client)
@@ -118,8 +118,8 @@ defmodule Mojentic.LLM.AdmissionWireTest do
       if scenario == :nonacceptance do
         refused_then_observed(gateway, entrypoint, recovery, messages, session, response)
       else
-        server = start_supervised!({ScriptedCompletionServer, {owner, [response, response]}})
-        assert_receive {:server_port, port}
+        server = start_supervised!({ScriptedTransport, {owner, [response, response]}})
+        assert_receive {:transport_id, port}
         configure_no_hook(gateway, port)
         config = CompletionConfig.new(recovery: recovery)
 
@@ -130,7 +130,7 @@ defmodule Mojentic.LLM.AdmissionWireTest do
       end
 
     retried = scenario == :nonacceptance or (scenario == :eligible and gateway == OpenAI)
-    wire_count = if scenario == :eligible and gateway == OpenAI, do: 2, else: 1
+    wire_count = if retried, do: 2, else: 1
     assert_wire(server, gateway, entrypoint, wire_count)
     assert session.messages == original_history
     assert error.http_status == status
@@ -178,12 +178,8 @@ defmodule Mojentic.LLM.AdmissionWireTest do
   end
 
   defp refused_then_observed(gateway, entrypoint, recovery, messages, session, response) do
-    # Reserve a real non-listening socket. Req must observe ECONNREFUSED before
-    # the test installs the scripted provider at that exact endpoint.
-    {:ok, socket} = :socket.open(:inet, :stream, :tcp)
-    :ok = :socket.bind(socket, %{family: :inet, addr: {127, 0, 0, 1}, port: 0})
-    on_exit(fn -> :socket.close(socket) end)
-    {:ok, %{port: port}} = :socket.sockname(socket)
+    server = start_supervised!({ScriptedTransport, {self(), [{:error, :econnrefused}, response]}})
+    assert_receive {:transport_id, port}
     configure_no_hook(gateway, port)
     owner = self()
 
@@ -207,9 +203,6 @@ defmodule Mojentic.LLM.AdmissionWireTest do
       end)
 
     assert_receive {:install_provider, worker}, 2000
-    :ok = :socket.close(socket)
-    server = start_supervised!({ScriptedCompletionServer, {owner, [response], port}})
-    assert_receive {:server_port, ^port}
     send(worker, :provider_ready)
     assert {:error, %CompletionError{} = error} = Task.await(task, 2000)
     assert [refused, _] = error.history
@@ -285,8 +278,8 @@ defmodule Mojentic.LLM.AdmissionWireTest do
     response =
       "HTTP/1.1 503 Unavailable\r\nContent-Length: #{byte_size(body)}\r\nConnection: close\r\n\r\n#{body}"
 
-    server = start_supervised!({ScriptedCompletionServer, {owner, [response]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {owner, [response]}})
+    assert_receive {:transport_id, port}
     host = "http://127.0.0.1:#{port}"
 
     case gateway do
@@ -396,7 +389,7 @@ defmodule Mojentic.LLM.AdmissionWireTest do
   end
 
   defp assert_wire(server, gateway, entrypoint, attempts \\ 1) do
-    assert_receive {:wire_request, wire}
+    assert_receive {:transport_request, wire}
     path = if gateway == Ollama, do: "/api/chat", else: "/v1/chat/completions"
     assert wire =~ path
     [_, encoded] = String.split(wire, "\r\n\r\n", parts: 2)
@@ -429,11 +422,11 @@ defmodule Mojentic.LLM.AdmissionWireTest do
     assert payload["stream"] == expected_stream
 
     if attempts == 2 do
-      assert_receive {:wire_request, ^wire}
+      assert_receive {:transport_request, ^wire}
     end
 
     assert GenServer.call(server, :requests) == List.duplicate(wire, attempts)
-    refute_receive {:wire_request, _}
+    refute_received {:transport_request, _}
   end
 
   defp provider(OpenAI), do: :openai

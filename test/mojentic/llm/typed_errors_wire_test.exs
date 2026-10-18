@@ -2,7 +2,7 @@ defmodule Mojentic.LLM.TypedErrorsWireTest do
   use ExUnit.Case, async: false
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, CompletionError, Message}
   alias Mojentic.LLM.Gateways.{OpenAI, Ollama, OMLX}
-  alias Mojentic.TestSupport.ScriptedCompletionServer
+  alias Mojentic.TestSupport.ScriptedTransport
 
   @env_keys [
     "OPENAI_API_ENDPOINT",
@@ -37,8 +37,8 @@ defmodule Mojentic.LLM.TypedErrorsWireTest do
         choices: [%{message: %{content: "partial-secret"}, finish_reason: "length"}]
       })
 
-    server = start_supervised!({ScriptedCompletionServer, {self(), [response(200, body)]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), [response(200, body)]}})
+    assert_receive {:transport_id, port}
     configure(OpenAI, port)
     session = ChatSession.new(Broker.new("gpt-4o", OpenAI))
 
@@ -55,8 +55,8 @@ defmodule Mojentic.LLM.TypedErrorsWireTest do
 
   @tag :policy_proof
   test "invalid session stream policy is a typed policy failure" do
-    server = start_supervised!({ScriptedCompletionServer, {self(), []}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), []}})
+    assert_receive {:transport_id, port}
     configure(OpenAI, port)
     session = ChatSession.new(Broker.new("gpt-4o", OpenAI))
 
@@ -103,8 +103,8 @@ defmodule Mojentic.LLM.TypedErrorsWireTest do
         completion_body(@gateway, @entrypoint, :length)
         |> String.replace("{}", "{")
 
-      server = start_supervised!({ScriptedCompletionServer, {self(), [response(200, body)]}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), [response(200, body)]}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       {messages, session} = conversation(@gateway)
       config = CompletionConfig.new(recovery: [max_attempts: 3])
@@ -122,8 +122,8 @@ defmodule Mojentic.LLM.TypedErrorsWireTest do
     @gateway gateway
     test "#{gateway} legacy ordinary length response remains successful without recovery" do
       body = completion_body(@gateway, :complete, :length)
-      server = start_supervised!({ScriptedCompletionServer, {self(), [response(200, body)]}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), [response(200, body)]}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
 
       assert {:ok, %Mojentic.LLM.GatewayResponse{finish_reason: "length", content: "{}"}} =
@@ -139,8 +139,8 @@ defmodule Mojentic.LLM.TypedErrorsWireTest do
   end
 
   defp assert_boundary(gateway, entrypoint, :policy) do
-    server = start_supervised!({ScriptedCompletionServer, {self(), []}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), []}})
+    assert_receive {:transport_id, port}
     configure(gateway, port)
     {messages, session} = conversation(gateway)
 
@@ -171,15 +171,15 @@ defmodule Mojentic.LLM.TypedErrorsWireTest do
       assert GenServer.call(server, :requests) == []
       refute inspect(error) =~ "policy-secret"
       refute_received {:tool_executed, _}
-      refute_receive {:wire_request, _}, 10
+      refute_received {:transport_request, _}
     end
   end
 
   defp assert_boundary(gateway, entrypoint, scenario) do
     owner = self()
     body = completion_body(gateway, entrypoint, scenario)
-    server = start_supervised!({ScriptedCompletionServer, {owner, [response(200, body)]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {owner, [response(200, body)]}})
+    assert_receive {:transport_id, port}
     configure(gateway, port)
     {messages, session} = conversation(gateway)
     history = session.messages
@@ -227,11 +227,11 @@ defmodule Mojentic.LLM.TypedErrorsWireTest do
     assert_lifecycle(error, scenario)
     refute_received :unexpected_admission
     refute_received {:tool_executed, _}
-    refute_receive {:wire_request, _}, 10
+    refute_received {:transport_request, _}
   end
 
   defp assert_wire(server, entrypoint, messages, history) do
-    assert_receive {:wire_request, wire}
+    assert_receive {:transport_request, wire}
     assert GenServer.call(server, :requests) == [wire]
     assert_receive {:typed_trace, %{type: :request, body: encoded}}
     [_, recorded] = String.split(wire, "\r\n\r\n", parts: 2)

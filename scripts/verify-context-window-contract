@@ -9,7 +9,7 @@ sha256sum lib/mojentic/llm/{gateway,model_context_window,completion_config}.ex \
   lib/mojentic/http/req_client.ex mix.lock
 sha256sum test/contracts/context_window_v1.json test/contracts/request_fidelity_v1.json \
   test/mojentic/llm/{context_window_wire,model_context_window}_test.exs \
-  test/support/{context_window_contract,scripted_completion_server}.ex test/test_helper.exs \
+  test/support/{context_window_contract,scripted_transport}.ex test/test_helper.exs \
   test/mojentic/http/req_client_test.exs
 exec scripts/recovery-mix test test/mojentic/llm/context_window_wire_test.exs \
   test/mojentic/llm/model_context_window_test.exs test/mojentic/http/req_client_test.exs "$@"

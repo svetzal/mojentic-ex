@@ -5,6 +5,6 @@ cd "$(dirname "$0")/.."
 echo 'admission-without-hook-v1'
 sha256sum test/mojentic/llm/admission_wire_test.exs \
   test/mojentic/llm/no_hook_wire_test.exs \
-  test/support/scripted_completion_server.ex
+  test/support/scripted_transport.ex
 exec scripts/recovery-mix test test/mojentic/llm/admission_wire_test.exs \
   test/mojentic/llm/no_hook_wire_test.exs --only no_hook "$@"

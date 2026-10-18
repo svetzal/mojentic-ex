@@ -3,7 +3,7 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
 
   alias Mojentic.LLM.{Broker, CompletionConfig, Message}
   alias Mojentic.LLM.Gateways.{Ollama, OllamaStream}
-  alias Mojentic.TestSupport.ChunkedHTTPServer
+  alias Mojentic.TestSupport.ChunkedTransport
   alias Mojentic.Tracer.TracerEvents.{LLMCallTracerEvent, LLMResponseTracerEvent}
 
   @model "qwen3:32b"
@@ -123,13 +123,13 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
       assert [{:content, "one"}, {:content, "two"}, {:completed, %{finish_reason: "stop"}}] =
                Enum.to_list(stream())
 
-      assert_receive {:request, request}
+      assert_receive {:transport_request, request}
       assert request =~ "POST /api/chat"
-      body = ChunkedHTTPServer.request_body(request)
+      body = ChunkedTransport.request_body(request)
       assert body["stream"] == true
       assert body["model"] == @model
       refute Map.has_key?(body, "tools")
-      refute_receive {:request, _}
+      refute_received {:transport_request, _}
     end
 
     test "the configured format is forwarded" do
@@ -137,14 +137,14 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
       schema = %{"type" => "object"}
       config = CompletionConfig.new(response_format: %{type: :json_object, schema: schema})
       assert [{:completed, _}] = Enum.to_list(stream(config))
-      assert_receive {:request, request}
-      assert ChunkedHTTPServer.request_body(request)["format"] == schema
+      assert_receive {:transport_request, request}
+      assert ChunkedTransport.request_body(request)["format"] == schema
     end
 
     test "halting after the first event cancels the request" do
       serve([content("partial")], true)
       assert [{:content, "partial"}] = Enum.take(stream(), 1)
-      assert_receive {:cancel_result, {:error, :closed}}, 2000
+      assert_receive {:transport_closed, _}, 2000
     end
 
     test "cancelling the consumer process closes its request" do
@@ -159,7 +159,7 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
 
       assert_receive {:observed, {:content, "partial"}}, 2000
       Task.shutdown(task, :brutal_kill)
-      assert_receive {:cancel_result, {:error, :closed}}, 2000
+      assert_receive {:transport_closed, _}, 2000
     end
 
     test "HTTP errors are observable and never retried" do
@@ -170,8 +170,8 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
 
       assert is_integer(evidence.metadata.request_duration_ms)
       refute Map.has_key?(evidence.metadata, :first_token_kind)
-      assert_receive {:request, _}
-      refute_receive {:request, _}
+      assert_receive {:transport_request, _}
+      refute_received {:transport_request, _}
     end
 
     test "the tracer records the call and the response with reported usage" do
@@ -232,7 +232,7 @@ defmodule Mojentic.LLM.Gateways.OllamaStreamTest do
   end
 
   defp serve(chunks, hold \\ false, status \\ 200) do
-    start_supervised!({ChunkedHTTPServer, {self(), chunks, hold, status}})
+    start_supervised!({ChunkedTransport, {self(), chunks, hold, status}})
     assert_receive {:port, port}
     System.put_env("OLLAMA_HOST", "http://127.0.0.1:#{port}")
   end

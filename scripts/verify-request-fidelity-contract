@@ -10,6 +10,6 @@ sha256sum lib/mojentic/llm/completion_config.ex lib/mojentic/llm/chat_session.ex
 sha256sum test/contracts/request_fidelity_v1.json \
   test/mojentic/llm/immutable_request_wire_test.exs \
   test/mojentic/llm/gateways/openai_model_registry_test.exs \
-  test/support/scripted_completion_server.ex test/support/counting_tool.ex
+  test/support/scripted_transport.ex test/support/counting_tool.ex
 exec scripts/recovery-mix test test/mojentic/llm/immutable_request_wire_test.exs \
   test/mojentic/llm/gateways/openai_model_registry_test.exs "$@"

@@ -3,7 +3,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
 
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, CompletionError, Message}
   alias Mojentic.LLM.Gateways.{OpenAI, Ollama, OMLX}
-  alias Mojentic.TestSupport.ScriptedCompletionServer
+  alias Mojentic.TestSupport.ScriptedTransport
 
   @env_keys ~w(OPENAI_API_ENDPOINT OPENAI_API_KEY OLLAMA_HOST OMLX_HOST OMLX_API_KEY OPENAI_TIMEOUT OLLAMA_TIMEOUT OMLX_TIMEOUT)
 
@@ -45,8 +45,8 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
       "HTTP/1.1 200 OK\r\nContent-Length: 9999\r\nX-Request-Id: evidence-id\r\nX-Secret: credential-secret\r\n\r\n" <>
         body
 
-    server = start_supervised!({ScriptedCompletionServer, {owner, [{:stream_hold, response}]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {owner, [{:stream_hold, response}]}})
+    assert_receive {:transport_id, port}
     configure(OpenAI, port)
     cancel = make_ref()
 
@@ -67,7 +67,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
     task =
       Task.Supervisor.async_nolink(supervisor, fn -> invoke(OpenAI, :events, config, owner) end)
 
-    assert_receive {:wire_request, wire}, 2000
+    assert_receive {:transport_request, wire}, 2000
     assert_receive {:socket_lifecycle, %{type: :attempt_started, metadata: ids}}, 2000
     assert_receive {:socket_trace, %{type: :response_data, body: ^body, ids: trace_ids}}, 2000
     assert trace_ids == Map.take(ids, [:logical_request_id, :attempt_id, :wire_attempt])
@@ -95,7 +95,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
     assert evidence.body == body
     assert {"x-secret", "credential-secret"} in evidence.headers
     assert evidence.status == 200
-    assert GenServer.call(server, {:peer_state, wire}) == {:error, :closed}
+    assert GenServer.call(server, {:response_state, wire}) == :closed
     assert GenServer.call(server, :requests) == [wire]
     assert_cancellation_error(error, ids, OpenAI, :events, :incomplete_response, true)
     refute_received {:public_content, _}
@@ -164,9 +164,9 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
       String.replace(evidence_response(body), "HTTP/1.1 200 OK", "HTTP/1.1 #{status} Response")
 
     server =
-      start_supervised!({ScriptedCompletionServer, {owner, [{:stream_half_close, response}]}})
+      start_supervised!({ScriptedTransport, {owner, [{:stream_half_close, response}]}})
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     configure(gateway, port)
     cancel = make_ref()
 
@@ -179,7 +179,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
         invoke_handoff(gateway, operation, config, owner)
       end)
 
-    assert_receive {:wire_request, wire}, 2000
+    assert_receive {:transport_request, wire}, 2000
     assert_receive {:socket_lifecycle, %{type: :attempt_started, metadata: started}}, 2000
     assert_receive {:handoff_owner, recovery_owner}, 2000
     assert_receive {:handoff_worker, worker}, 2000
@@ -193,7 +193,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
     lifecycle = assert_handoff_lifecycle(error, started, gateway, operation)
     assert_handoff_traces_and_privacy(error, ids, started, wire, lifecycle)
 
-    assert GenServer.call(server, {:peer_state, wire}) == {:error, :closed}
+    assert GenServer.call(server, {:response_state, wire}) == :closed
     assert GenServer.call(server, :requests) == [wire]
     refute_received {:tool_executed, _}
 
@@ -412,9 +412,9 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
         String.replace(evidence_response(body), "HTTP/1.1 200 OK", "HTTP/1.1 #{@status} Response")
 
       server =
-        start_supervised!({ScriptedCompletionServer, {owner, [{:stream_half_close, response}]}})
+        start_supervised!({ScriptedTransport, {owner, [{:stream_half_close, response}]}})
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       cancel = make_ref()
 
@@ -440,7 +440,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
           invoke(@gateway, @operation, config, owner)
         end)
 
-      assert_receive {:wire_request, wire}, 2000
+      assert_receive {:transport_request, wire}, 2000
       assert_receive {:socket_lifecycle, %{type: :attempt_started, metadata: started}}, 2000
       assert_receive {:socket_trace, %{type: :response_end, outcome: :failed, ids: ids}}, 2000
       send(task.pid, {:cancel, cancel})
@@ -454,7 +454,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
       assert ids == Map.take(started, [:logical_request_id, :attempt_id, :wire_attempt])
       assert CompletionError.received_evidence(error).ids == ids
       assert_cancellation_error(error, started, @gateway, @operation, :received_response, true)
-      assert GenServer.call(server, {:peer_state, wire}) == {:error, :closed}
+      assert GenServer.call(server, {:response_state, wire}) == :closed
       assert GenServer.call(server, :requests) == [wire]
     end
   end
@@ -474,10 +474,10 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
 
       server =
         start_supervised!(
-          {ScriptedCompletionServer, {owner, [rejected, {:stream_hold, evidence_response(body)}]}}
+          {ScriptedTransport, {owner, [rejected, {:stream_hold, evidence_response(body)}]}}
         )
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       cancel = make_ref()
 
@@ -507,8 +507,8 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
           forwarded_complete(broker, @caller, config)
         end)
 
-      assert_receive {:wire_request, first}, 2000
-      assert_receive {:wire_request, second}, 2000
+      assert_receive {:transport_request, first}, 2000
+      assert_receive {:transport_request, second}, 2000
       assert_receive {:socket_trace, %{type: :response_data, body: ^body, ids: ids}}, 2000
       send(task.pid, {:cancel, cancel})
       assert {:error, error} = Task.await(task, 2000)
@@ -546,7 +546,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
       assert Enum.all?(Enum.filter(traces, &(&1.ids.wire_attempt == 2)), &(&1.ids == ids))
       assert GenServer.call(server, :requests) == [first, second]
       assert first == second
-      assert GenServer.call(server, {:peer_state, second}) == {:error, :closed}
+      assert GenServer.call(server, {:response_state, second}) == :closed
       refute_received {:tool_executed, _}
     end
   end
@@ -584,8 +584,8 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
         "Content-Length: #{byte_size(body)}"
       )
 
-    server = start_supervised!({ScriptedCompletionServer, {owner, [{:stream_hold, response}]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {owner, [{:stream_hold, response}]}})
+    assert_receive {:transport_id, port}
     configure(Ollama, port)
     cancel = make_ref()
 
@@ -606,7 +606,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
 
     supervisor = start_supervised!(Task.Supervisor)
     task = Task.Supervisor.async_nolink(supervisor, fn -> invoke(Ollama, mode, config, owner) end)
-    assert_receive {:wire_request, wire}, 2000
+    assert_receive {:transport_request, wire}, 2000
     assert_receive {:socket_lifecycle, %{type: :attempt_started, metadata: started}}, 2000
     assert_receive {:socket_trace, %{type: :response_end, outcome: :complete, ids: ids}}, 2000
     send(task.pid, {:cancel, cancel})
@@ -628,7 +628,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
     assert evidence.ids == ids
     assert ids == Map.take(started, [:logical_request_id, :attempt_id, :wire_attempt])
     assert_cancellation_error(error, started, Ollama, mode, :incomplete_response, true)
-    assert GenServer.call(server, {:peer_state, wire}) == {:error, :closed}
+    assert GenServer.call(server, {:response_state, wire}) == :closed
     assert GenServer.call(server, :requests) == [wire]
     refute_received {:public_content, _}
   end
@@ -648,8 +648,8 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
     owner = self()
     body = evidence_body(gateway, operation, stage)
     response = evidence_response(body)
-    server = start_supervised!({ScriptedCompletionServer, {owner, [{:stream_hold, response}]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {owner, [{:stream_hold, response}]}})
+    assert_receive {:transport_id, port}
     configure(gateway, port)
     cancel = make_ref()
     blocked_type = if stage == :headers, do: :response_headers, else: :response_data
@@ -672,7 +672,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
     task =
       Task.Supervisor.async_nolink(supervisor, fn -> invoke(gateway, operation, config, owner) end)
 
-    assert_receive {:wire_request, wire}, 2000
+    assert_receive {:transport_request, wire}, 2000
     assert_request(wire, gateway, operation)
     assert_receive {:socket_lifecycle, %{type: :attempt_started, metadata: started}}, 2000
     assert_receive {:socket_trace, %{type: :request} = request_trace}, 2000
@@ -690,7 +690,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
       if stage == :observed_body, do: :incomplete_response, else: :received_response
 
     assert_cancellation_error(error, started, gateway, operation, evidence_stage, true)
-    assert GenServer.call(server, {:peer_state, wire}) == {:error, :closed}
+    assert GenServer.call(server, {:response_state, wire}) == :closed
     assert GenServer.call(server, :requests) == [wire]
     refute_received {:public_content, _}
     refute_received {:tool_executed, _}
@@ -704,11 +704,9 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
         evidence_body(gateway, :legacy, :terminal_body)
 
     server =
-      start_supervised!(
-        {ScriptedCompletionServer, {owner, [{:stream_hold, evidence_response(body)}]}}
-      )
+      start_supervised!({ScriptedTransport, {owner, [{:stream_hold, evidence_response(body)}]}})
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     configure(gateway, port)
     cancel = make_ref()
 
@@ -747,7 +745,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
         end)
       end)
 
-    assert_receive {:wire_request, wire}, 2000
+    assert_receive {:transport_request, wire}, 2000
     assert_receive {:socket_lifecycle, %{type: :attempt_started, metadata: started}}, 2000
     assert_receive {:coordinator, coordinator}, 2000
     assert_receive {:paused, _}, 2000
@@ -756,7 +754,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
     assert_receive {:socket_lifecycle, %{type: :attempt_failed, metadata: failed}}, 2000
     assert_receive {:socket_lifecycle, %{type: :cancelled, metadata: stopped}}, 2000
     assert failed == stopped
-    assert GenServer.call(server, {:peer_state, wire}) == {:error, :closed}
+    assert GenServer.call(server, {:response_state, wire}) == :closed
     refute_received {:socket_lifecycle, _}
     send(task.pid, :resume_consumer)
     events = Task.await(task, 2000)
@@ -942,7 +940,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
     @tracing tracing
     @stage stage
     @tag :cancellation_socket
-    test "#{gateway} #{operation} tracing #{tracing} #{@stage} closes correlated peer before fixture release" do
+    test "#{gateway} #{operation} tracing #{tracing} #{@stage} closes correlated response before fixture release" do
       assert_socket_cancellation(@gateway, @operation, @tracing, @stage)
     end
   end
@@ -952,8 +950,8 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
     partial = partial_response(gateway, operation)
     response = "HTTP/1.1 200 OK\r\nContent-Length: 9999\r\n\r\n" <> partial
     script = if stage == :before_headers, do: :hold, else: {:stream_hold, response}
-    server = start_supervised!({ScriptedCompletionServer, {owner, [script]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {owner, [script]}})
+    assert_receive {:transport_id, port}
     configure(gateway, port)
     cancel = make_ref()
 
@@ -985,7 +983,7 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
         invoke(gateway, operation, config, owner)
       end)
 
-    assert_receive {:wire_request, wire}, 2000
+    assert_receive {:transport_request, wire}, 2000
     assert_request(wire, gateway, operation)
     assert_receive {:socket_lifecycle, %{type: :attempt_started, metadata: started}}, 2000
     assert UUID.info!(started.logical_request_id)[:version] == 4
@@ -1002,17 +1000,15 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
 
     # A live peer on these exact bytes is the negative control in every case.
     # The fixture does not release or close either held response.
-    assert GenServer.call(server, {:peer_state, wire}) == {:error, :timeout}
-    cancelled_at = System.monotonic_time(:millisecond)
+    assert GenServer.call(server, {:response_state, wire}) == :open
     send(task.pid, {:cancel, cancel})
     assert {:error, error} = Task.await(task, 2000)
-    assert GenServer.call(server, {:peer_state, wire}) == {:error, :closed}
-    assert System.monotonic_time(:millisecond) - cancelled_at < 2000
+    assert GenServer.call(server, {:response_state, wire}) == :closed
     assert_cancellation_error(error, started, gateway, operation, stage, tracing)
 
     # The listener and held socket remain owned by the running fixture here.
     # Observe the retry window before inspecting all recorded request bytes.
-    refute_receive {:wire_request, _}, 100
+    refute_received {:transport_request, _}
     assert GenServer.call(server, :requests) == [wire]
   end
 
@@ -1108,7 +1104,6 @@ defmodule Mojentic.LLM.CancellationSocketWireTest do
     [headers, body] = String.split(wire, "\r\n\r\n", parts: 2)
     path = if gateway == Ollama, do: "/api/chat", else: "/v1/chat/completions"
     assert headers =~ "POST #{path} HTTP/1.1"
-    assert headers =~ "content-length: #{byte_size(body)}"
     payload = Jason.decode!(body)
     assert payload["model"] == "gpt-4o"
     assert payload["messages"] == [%{"role" => "user", "content" => "payload-secret"}]

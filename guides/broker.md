@@ -675,9 +675,10 @@ ChatSession accepts those options in `send/3` and `send_stream/3` for its Broker
 tool rounds. Its bounded session history stores visible final answers; callers
 managing outer-turn native history should use the response API above.
 
-Run `scripts/verify-native-reasoning-contract` for the versioned production-Req
+Run `scripts/verify-native-reasoning-contract` for the versioned offline production-Req
 contract set. `ex-readiness-v1` also runs these public cases from source and a
-fresh local Hex payload consumer. See `CONFORMANCE-3.0.0.md` for identities and
+fresh local Hex payload consumer using the same in-process transport and local
+dependencies, without registry access. See `CONFORMANCE-3.0.0.md` for identities and
 results. This establishes the declared library cases; it does not certify a live
 server or model efficacy. Dependents verify upon published-version adoption.
 

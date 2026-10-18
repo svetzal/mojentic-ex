@@ -3,7 +3,7 @@ defmodule Mojentic.LLM.ContextWindowWireTest do
 
   alias Mojentic.LLM.{CompletionConfig, Gateway, Message}
   alias Mojentic.LLM.Gateways.{Ollama, OMLX, OpenAI}
-  alias Mojentic.TestSupport.{ContextWindowContract, ScriptedCompletionServer}
+  alias Mojentic.TestSupport.{ContextWindowContract, ScriptedTransport}
 
   @external_resource "test/contracts/context_window_v1.json"
   @contract ContextWindowContract.contract()
@@ -65,7 +65,7 @@ defmodule Mojentic.LLM.ContextWindowWireTest do
     @gateway gateway
     @boundary boundary
     test "context-window-v1 #{@gateway} #{@boundary} transport failure retains cause" do
-      server(@gateway, [""])
+      transport = server(@gateway, List.duplicate("", if(@gateway == OMLX, do: 4, else: 1)))
 
       result =
         case @boundary do
@@ -74,9 +74,11 @@ defmodule Mojentic.LLM.ContextWindowWireTest do
         end
 
       assert {:error, {:request_failed, %Req.TransportError{reason: :closed}}} = result
-      assert_receive {:wire_request, request}
+      assert_receive {:transport_request, request}
       row = Enum.find(@contract["cases"], &(&1["provider"] == provider(@gateway)))
       assert_discovery_request(request, row)
+      expected_attempts = if @gateway == OMLX, do: 4, else: 1
+      assert GenServer.call(transport, :requests) == List.duplicate(request, expected_attempts)
     end
   end
 
@@ -159,8 +161,8 @@ defmodule Mojentic.LLM.ContextWindowWireTest do
       "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: #{byte_size(body)}\r\nconnection: close\r\n\r\n" <>
         body
 
-    server = start_supervised!({ScriptedCompletionServer, {self(), [response]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), [response]}})
+    assert_receive {:transport_id, port}
     System.put_env("OLLAMA_HOST", "http://127.0.0.1:#{port}")
     assert {:ok, window} = Ollama.get_model_context_window("exact-model")
 
@@ -191,8 +193,8 @@ defmodule Mojentic.LLM.ContextWindowWireTest do
   defp response_provider(_), do: "openai"
 
   defp server(gateway, responses) do
-    server = start_supervised!({ScriptedCompletionServer, {self(), responses}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), responses}})
+    assert_receive {:transport_id, port}
     endpoint = "http://127.0.0.1:#{port}"
 
     case gateway do

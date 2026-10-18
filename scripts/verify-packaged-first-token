@@ -4,6 +4,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 source_root="$PWD"
+export HEX_OFFLINE=1
 mix_runner="${MOJENTIC_MIX:-$source_root/scripts/recovery-mix}"
 mkdir -p "$source_root/.foundry"
 consumer_root="$(mktemp -d "$source_root/.foundry/consumer.XXXXXX")"
@@ -39,6 +40,28 @@ done
 cp -R test/contracts "$consumer_root/consumer/test/"
 cp test/support/*.ex "$consumer_root/consumer/test/support/"
 cp -R test/fixtures "$consumer_root/consumer/test/"
+# Verify the actual extracted provider and copied consumer contract inputs.
+awk '$2 ~ /^lib\// || $2 == "mix.exs" || $2 == "README.md" || $2 == "LICENSE.md" || $2 == ".formatter.exs"' \
+  "$source_root/test/contracts/readiness_v1.manifest.sha256" > "$consumer_root/provider.sha256"
+(cd "$consumer_root/package" && sha256sum --check "$consumer_root/provider.sha256")
 cd "$consumer_root/consumer"
-"$mix_runner" deps.get
+awk '$2 ~ /^test\//' test/contracts/readiness_v1.manifest.sha256 > "$consumer_root/consumer.sha256"
+sha256sum --check "$consumer_root/consumer.sha256"
+# Reuse only locally verified dependency sources and compiled dependencies.
+# The package itself is compiled afresh in this consumer; no registry is consulted.
+cp -a "$source_root/deps" "$consumer_root/consumer/deps"
+mkdir -p "$consumer_root/consumer/_build/test/lib"
+for dependency in "$source_root"/_build/test/lib/*; do
+  if [[ "$(basename "$dependency")" != mojentic ]]; then
+    cp -a "$dependency" "$consumer_root/consumer/_build/test/lib/"
+  fi
+done
+export HEX_OFFLINE=1
 "$mix_runner" test "${contract_tests[@]}" "$@"
+
+MIX_ENV=test "$mix_runner" run --no-compile -e '
+  beam = Mojentic.HTTP.ReqClient |> :code.which() |> to_string() |> Path.expand()
+  expected = Path.join(File.cwd!(), "_build/test/lib/mojentic/")
+  unless String.starts_with?(beam, expected), do: raise("consumer loaded outside payload: #{beam}")
+  IO.puts("Verified packaged provider: #{beam}")
+'

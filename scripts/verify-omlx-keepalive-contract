@@ -6,6 +6,6 @@ echo 'omlx-keepalive-v1'
 sha256sum scripts/verify-omlx-keepalive-contract \
   test/mojentic/llm/omlx_keepalive_wire_test.exs \
   test/mojentic/llm/stream_recovery_wire_test.exs \
-  test/support/scripted_completion_server.ex
+  test/support/scripted_transport.ex
 exec scripts/recovery-mix test test/mojentic/llm/omlx_keepalive_wire_test.exs \
   test/mojentic/llm/stream_recovery_wire_test.exs --only omlx_keepalive_contract "$@"

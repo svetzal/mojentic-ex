@@ -3,7 +3,7 @@ defmodule Mojentic.LLM.NoHookWireTest do
 
   alias Mojentic.LLM.{CompletionConfig, CompletionError, Message}
   alias Mojentic.LLM.Gateways.Ollama
-  alias Mojentic.TestSupport.ScriptedCompletionServer
+  alias Mojentic.TestSupport.ScriptedTransport
 
   @tag :no_hook
   @tag :no_hook_proof
@@ -22,8 +22,8 @@ defmodule Mojentic.LLM.NoHookWireTest do
     response =
       "HTTP/1.1 503 Unavailable\r\nContent-Length: #{byte_size(body)}\r\nConnection: close\r\n\r\n#{body}"
 
-    server = start_supervised!({ScriptedCompletionServer, {self(), [response, response]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), [response, response]}})
+    assert_receive {:transport_id, port}
     System.put_env("OLLAMA_HOST", "http://127.0.0.1:#{port}")
     owner = self()
 
@@ -45,7 +45,7 @@ defmodule Mojentic.LLM.NoHookWireTest do
              )
              |> Enum.to_list()
 
-    assert_receive {:wire_request, wire}
+    assert_receive {:transport_request, wire}
     [_, encoded] = String.split(wire, "\r\n\r\n", parts: 2)
 
     assert Jason.decode!(encoded) == %{
@@ -58,7 +58,7 @@ defmodule Mojentic.LLM.NoHookWireTest do
            }
 
     assert GenServer.call(server, :requests) == [wire]
-    refute_receive {:wire_request, _}
+    refute_received {:transport_request, _}
     assert error.resend_permission == :admission_required
     assert error.acceptance == :unknown
     assert error.retry_eligible

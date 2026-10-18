@@ -13,7 +13,7 @@ Application.put_env(:mojentic, :default_tokenizer_mod, Mojentic.TestSupport.Stub
 ExUnit.configure(exclude: [:integration])
 ExUnit.start()
 
-# Metadata consumers derive responses from context-window-v1, verified on real HTTP.
+# Metadata consumers derive responses from context-window-v1, verified through the in-process Req adapter.
 Mox.defmock(Mojentic.ContextWindowGatewayMock, for: Mojentic.LLM.Gateway)
 
 Mox.defmock(Mojentic.LegacyContextWindowGatewayMock,

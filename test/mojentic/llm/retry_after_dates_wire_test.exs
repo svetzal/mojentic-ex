@@ -3,7 +3,7 @@ defmodule Mojentic.LLM.RetryAfterDatesWireTest do
 
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, CompletionError, Message}
   alias Mojentic.LLM.Gateways.{OpenAI, Ollama, OMLX}
-  alias Mojentic.TestSupport.ScriptedCompletionServer
+  alias Mojentic.TestSupport.ScriptedTransport
 
   setup do
     client = Application.fetch_env!(:mojentic, :http_client)
@@ -34,8 +34,8 @@ defmodule Mojentic.LLM.RetryAfterDatesWireTest do
     reply =
       "HTTP/1.1 429 Result\r\nRetry-After: Thursday, 01-Jan-26 00:00:03 GMT\r\nContent-Length: #{byte_size(body)}\r\nConnection: close\r\n\r\n#{body}"
 
-    server = start_supervised!({ScriptedCompletionServer, {owner, [reply, reply]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {owner, [reply, reply]}})
+    assert_receive {:transport_id, port}
     System.put_env("OPENAI_API_ENDPOINT", "http://127.0.0.1:#{port}/v1")
     System.put_env("OPENAI_API_KEY", "credential-sentinel")
 
@@ -72,15 +72,15 @@ defmodule Mojentic.LLM.RetryAfterDatesWireTest do
     assert first.retry_after == %{kind: :http_date, value: "2026-01-01T00:00:03Z"}
     assert first.logical_request_id == second.logical_request_id
     refute first.attempt_id == second.attempt_id
-    assert_receive {:wire_request, wire}
-    assert_receive {:wire_request, ^wire}
+    assert_receive {:transport_request, wire}
+    assert_receive {:transport_request, ^wire}
     assert wire =~ "POST /v1/chat/completions HTTP/1.1"
     [_, encoded] = String.split(wire, "\r\n\r\n", parts: 2)
     payload = Jason.decode!(encoded)
     assert payload["model"] == "fixture-model"
     assert payload["messages"] == [%{"role" => "user", "content" => "input-sentinel"}]
     assert GenServer.call(server, :requests) == [wire, wire]
-    refute_receive {:wire_request, _}
+    refute_received {:transport_request, _}
   end
 
   @tag :rfc850_rollover
@@ -215,8 +215,8 @@ defmodule Mojentic.LLM.RetryAfterDatesWireTest do
     reply =
       "HTTP/1.1 429 Result\r\n#{date_header}Content-Length: #{byte_size(body)}\r\nConnection: close\r\n\r\n#{body}"
 
-    server = start_supervised!({ScriptedCompletionServer, {self(), [reply, reply]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), [reply, reply]}})
+    assert_receive {:transport_id, port}
     configure(gateway, port)
 
     wall =
@@ -404,7 +404,7 @@ defmodule Mojentic.LLM.RetryAfterDatesWireTest do
   end
 
   defp assert_wire(server, gateway, entrypoint, attempts) do
-    assert_receive {:wire_request, wire}
+    assert_receive {:transport_request, wire}
     path = if gateway == Ollama, do: "/api/chat", else: "/v1/chat/completions"
     assert wire =~ path
     [_, encoded] = String.split(wire, "\r\n\r\n", parts: 2)
@@ -448,11 +448,11 @@ defmodule Mojentic.LLM.RetryAfterDatesWireTest do
     assert payload["stream"] == expected_stream
 
     if attempts == 2 do
-      assert_receive {:wire_request, ^wire}
+      assert_receive {:transport_request, ^wire}
     end
 
     assert GenServer.call(server, :requests) == List.duplicate(wire, attempts)
-    refute_receive {:wire_request, _}
+    refute_received {:transport_request, _}
     encoded
   end
 

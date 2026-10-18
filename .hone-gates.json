@@ -18,8 +18,7 @@
     {
       "name": "test",
       "command": "scripts/recovery-mix test --cover",
-      "required": true,
-      "timeout": 900
+      "required": true
     },
     {
       "name": "deps-audit",
@@ -34,20 +33,17 @@
     {
       "name": "first-token-contract",
       "command": "scripts/verify-first-token-contract",
-      "required": true,
-      "timeout": 900
+      "required": true
     },
     {
       "name": "readiness-contract",
       "command": "scripts/verify-readiness-contract",
-      "required": true,
-      "timeout": 900
+      "required": true
     },
     {
       "name": "packaged-first-token",
       "command": "scripts/verify-packaged-first-token",
-      "required": true,
-      "timeout": 900
+      "required": true
     }
   ]
 }

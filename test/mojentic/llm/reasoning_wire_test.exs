@@ -11,7 +11,7 @@ defmodule Mojentic.LLM.ReasoningWireTest do
   }
 
   alias Mojentic.LLM.Gateways.{Ollama, OMLX, OpenAI}
-  alias Mojentic.TestSupport.{CountingTool, ScriptedCompletionServer}
+  alias Mojentic.TestSupport.{CountingTool, ScriptedTransport}
 
   @external_resource "test/contracts/native_reasoning_v1.json"
   @contract Jason.decode!(File.read!(@external_resource))
@@ -62,8 +62,8 @@ defmodule Mojentic.LLM.ReasoningWireTest do
       )
 
     last = reply(%{content: "answer", reasoning_content: "final thought"}, "stop")
-    server = start_supervised!({ScriptedCompletionServer, {self(), [first, last]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), [first, last]}})
+    assert_receive {:transport_id, port}
     System.put_env("OMLX_HOST", "http://127.0.0.1:#{port}")
     config = %CompletionConfig{preserve_reasoning: true}
 
@@ -76,7 +76,7 @@ defmodule Mojentic.LLM.ReasoningWireTest do
              )
 
     assert_receive {:tool_executed, %{"value" => 7}}
-    refute_receive {:tool_executed, _}
+    refute_received {:tool_executed, _}
     assert [initial, continuation] = GenServer.call(server, :requests) |> Enum.map(&body/1)
     assert initial["messages"] == [%{"role" => "user", "content" => "question"}]
     assert Map.delete(continuation, "messages") == Map.delete(initial, "messages")
@@ -260,7 +260,7 @@ defmodule Mojentic.LLM.ReasoningWireTest do
       end
 
       assert_receive {:tool_executed, %{"value" => 7}}
-      refute_receive {:tool_executed, _}
+      refute_received {:tool_executed, _}
       assert [first, next] = requests(server)
       assert first["messages"] == [%{"role" => "user", "content" => "question"}]
       assert Map.delete(next, "messages") == Map.delete(first, "messages")
@@ -322,7 +322,7 @@ defmodule Mojentic.LLM.ReasoningWireTest do
         assert {:error, %CompletionError{}} = ChatSession.finalize_stream(handle)
       end
 
-      refute_receive {:tool_executed, _}
+      refute_received {:tool_executed, _}
       assert [_initial] = requests(server)
       assert Enum.all?(ChatSession.messages(session), &(&1.message.reasoning_content == nil))
     end
@@ -457,7 +457,7 @@ defmodule Mojentic.LLM.ReasoningWireTest do
                  config
                )
 
-      refute_receive {:tool_executed, _}
+      refute_received {:tool_executed, _}
       assert [_request] = requests(server)
     end
   end
@@ -555,8 +555,8 @@ defmodule Mojentic.LLM.ReasoningWireTest do
   defp history_key(OMLX), do: "reasoning_content"
 
   defp server(gateway, responses) do
-    server = start_supervised!({ScriptedCompletionServer, {self(), responses}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), responses}})
+    assert_receive {:transport_id, port}
     host = "http://127.0.0.1:#{port}"
 
     case gateway do

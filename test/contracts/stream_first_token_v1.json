@@ -7,11 +7,11 @@
     ],
     "commit": "54171796a2b02c0f0170d0758d2e3c693ad027c9",
     "sha256": "9b64e037af8ee375a6344b94f4f66992f867357a32b8db360042a8eff4f12eca",
-    "file": "test/contracts/reference/ts-stream-first-token-v2.test.ts",
+    "artifact": "ts-stream-first-token-v2",
     "v1": {
       "commit": "b8db5d59c02297e39335ba1deed83fa04e1b8f11",
       "sha256": "e94d4f53928b3ea519eceedcb0f7e7a41ae2eb5da52076369d92374108b3d2a8",
-      "file": "test/contracts/reference/ts-stream-first-token-v1.test.ts"
+      "artifact": "ts-stream-first-token-v1"
     }
   },
   "milestones": {

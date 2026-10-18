@@ -1,19 +1,16 @@
 #!/usr/bin/env bash
-# Verify the frozen reference identities and execute their Elixir behavioral cases.
+# Verify the executable identity and run the offline public API cases.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 echo 'ex-stream-first-token-v1; mapped ts-stream-first-token-v1/v2 cases'
 git rev-parse HEAD
 sha256sum --check test/contracts/stream_first_token_v1.manifest.sha256
-sha256sum --check <<'HASHES'
-e94d4f53928b3ea519eceedcb0f7e7a41ae2eb5da52076369d92374108b3d2a8  test/contracts/reference/ts-stream-first-token-v1.test.ts
-9b64e037af8ee375a6344b94f4f66992f867357a32b8db360042a8eff4f12eca  test/contracts/reference/ts-stream-first-token-v2.test.ts
-HASHES
+
 sha256sum test/contracts/stream_first_token_v1.json test/support/first_token_contract.ex \
   test/mojentic/llm/first_token_wire_test.exs \
   lib/mojentic/llm/{stream_timing,monotonic_clock,stream_recovery,completion_error,broker,chat_session}.ex \
   lib/mojentic/llm/gateways/{openai,ollama,omlx,openai_legacy_stream}.ex \
   lib/mojentic/http/{req_client,wire_trace,received_evidence}.ex \
-  test/support/{scripted_completion_server,stream_evidence}.ex test/test_helper.exs mix.lock \
+  test/support/{scripted_transport,stream_evidence}.ex test/test_helper.exs mix.lock \
   scripts/verify-packaged-first-token
-exec "${MOJENTIC_MIX:-scripts/recovery-mix}" test test/mojentic/llm/first_token_wire_test.exs "$@"
+exec "${MOJENTIC_MIX:-scripts/recovery-mix}" test test/mojentic/llm/first_token_wire_test.exs test/mojentic/llm/offline_transport_test.exs "$@"

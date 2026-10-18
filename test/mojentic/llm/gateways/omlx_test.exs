@@ -7,7 +7,7 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
 
   alias Mojentic.LLM.{Broker, CompletionConfig, GatewayResponse, Message, ToolCall}
   alias Mojentic.LLM.Gateways.OMLX
-  alias Mojentic.TestSupport.ChunkedHTTPServer
+  alias Mojentic.TestSupport.ChunkedTransport
 
   setup :verify_on_exit!
 
@@ -496,7 +496,7 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
     end
   end
 
-  describe "single-turn stream events over real HTTP" do
+  describe "single-turn stream events over in-process HTTP" do
     setup do
       previous = Application.get_env(:mojentic, :http_client)
       Application.put_env(:mojentic, :http_client, Mojentic.HTTP.ReqClient)
@@ -511,14 +511,14 @@ defmodule Mojentic.LLM.Gateways.OMLXTest do
           Jason.encode!(%{model: @model, choices: [%{index: 0, delta: %{content: "partial"}}]}) <>
           "\n\n"
 
-      start_supervised!({ChunkedHTTPServer, {self(), [keepalive_frame(), frame], true, 200}})
+      start_supervised!({ChunkedTransport, {self(), [keepalive_frame(), frame], true, 200}})
       assert_receive {:port, port}
       System.put_env("OMLX_HOST", "http://127.0.0.1:#{port}")
 
       assert [{:content, "partial"}] = Enum.take(events(), 1)
-      assert_receive {:request, request}
+      assert_receive {:transport_request, request}
       assert request =~ "POST /v1/chat/completions"
-      assert_receive {:cancel_result, {:error, :closed}}, 2000
+      assert_receive {:transport_closed, _}, 2000
     end
   end
 

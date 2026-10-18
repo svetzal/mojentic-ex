@@ -3,7 +3,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
 
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, CompletionError, Message}
   alias Mojentic.LLM.Gateways.{OpenAI, Ollama, OMLX}
-  alias Mojentic.TestSupport.ScriptedCompletionServer
+  alias Mojentic.TestSupport.ScriptedTransport
 
   setup do
     client = Application.fetch_env!(:mojentic, :http_client)
@@ -69,8 +69,8 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     [request] = GenServer.call(server, :requests)
     assert body(request)["messages"] == [%{"role" => "user", "content" => "sentinel-input"}]
     assert body(request)["stream_options"] == %{"include_usage" => true}
-    assert_receive {:wire_request, ^request}
-    refute_receive {:wire_request, _}
+    assert_receive {:transport_request, ^request}
+    refute_received {:transport_request, _}
   end
 
   for mode <- [:events, :legacy] do
@@ -259,7 +259,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       assert error.progress.delivered.completed_tool_calls == 0
       assert {done, _} = rest.({:cont, nil})
       assert done in [:done, :halted]
-      assert GenServer.call(server, :closed_sockets) == [:closed]
+      assert GenServer.call(server, :closed_responses) == [:closed]
       assert length(GenServer.call(server, :requests)) == 1
     end
 
@@ -387,7 +387,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       refute first.logical_request_id == second.logical_request_id
       assert error.progress.delivered.completed_tool_calls == 0
       assert_receive {:tool_executed, %{"value" => "sentinel-tool"}}
-      refute_receive {:tool_executed, _}
+      refute_received {:tool_executed, _}
       assert length(GenServer.call(server, :requests)) == 2
     end
   end
@@ -530,8 +530,8 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
   test "exact trace retains streaming HTTP failure bytes and capture failure prevents resend" do
     owner = self()
     body = "response-sentinel-secret"
-    server = start_supervised!({ScriptedCompletionServer, {self(), [http(503, body)]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), [http(503, body)]}})
+    assert_receive {:transport_id, port}
     System.put_env("OPENAI_API_ENDPOINT", "http://127.0.0.1:#{port}/v1")
     System.put_env("OPENAI_API_KEY", "credential-sentinel-secret")
 
@@ -811,8 +811,8 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     response =
       "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: #{byte_size(frame) + 100}\r\nConnection: close\r\n\r\n#{frame}"
 
-    server = start_supervised!({ScriptedCompletionServer, {self(), [response]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), [response]}})
+    assert_receive {:transport_id, port}
     System.put_env("OPENAI_API_ENDPOINT", "http://127.0.0.1:#{port}/v1")
     System.put_env("OPENAI_API_KEY", "sentinel-credential")
     config = CompletionConfig.new(recovery: [max_attempts: 3, base_delay: 0])
@@ -942,7 +942,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       )
 
       assert_failure_lifecycle(error, collect_events())
-      refute_receive {:tool_executed, _}
+      refute_received {:tool_executed, _}
     end
   end
 
@@ -1054,7 +1054,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       )
 
       assert_failure_lifecycle(error, collect_events())
-      refute_receive {:tool_executed, _}
+      refute_received {:tool_executed, _}
     end
   end
 
@@ -1252,7 +1252,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
             |> semantic_events()
           end)
 
-        assert_receive {:wire_request, first}, 2000
+        assert_receive {:transport_request, first}, 2000
 
         case @phase do
           :admission -> assert_receive {:pending, _}, 2000
@@ -1295,7 +1295,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
             |> semantic_events()
           end)
 
-        assert_receive {:wire_request, first}, 2000
+        assert_receive {:transport_request, first}, 2000
         assert_receive {:pending, context}, 2000
         assert context.next_attempt == 2
         assert context.failure.wire_attempt == 1
@@ -1605,7 +1605,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
         assert Enum.map(error.history, & &1.http_status) == [503, 200]
         assert List.last(error.history).progress == error.progress
         assert_receive {:tool_executed, %{"value" => "sentinel-tool"}}
-        refute_receive {:tool_executed, _}
+        refute_received {:tool_executed, _}
         [first, second, third] = requests = GenServer.call(server, :requests)
         assert second == third
         initial = body(first)["messages"]
@@ -1658,7 +1658,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
                |> semantic_events()
 
       assert_receive {:tool_executed, %{"value" => "sentinel-tool"}}
-      refute_receive {:tool_executed, _}
+      refute_received {:tool_executed, _}
       [_, second, third] = GenServer.call(server, :requests)
       assert second == third
     end
@@ -1679,7 +1679,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
         assert [{:content, "sentinel-output"}] =
                  semantic_invoke(@gateway, @mode, config()) |> Enum.take(1)
 
-        assert GenServer.call(server, :closed_sockets) == [:closed]
+        assert GenServer.call(server, :closed_responses) == [:closed]
         assert length(GenServer.call(server, :requests)) == 1
       end
     end
@@ -1772,7 +1772,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       assert error.progress.observed == semantic_progress(:content, true)
       assert error.progress.delivered == semantic_progress(:content, true)
       assert error.progress.raw_bytes == byte_size(frame)
-      assert GenServer.call(server, :closed_sockets) == [:closed]
+      assert GenServer.call(server, :closed_responses) == [:closed]
       assert length(GenServer.call(server, :requests)) == 1
     end
 
@@ -1865,7 +1865,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
              }
 
       assert error.progress.raw_bytes == byte_size(frame)
-      refute_receive {:tool_executed, _}
+      refute_received {:tool_executed, _}
       assert length(GenServer.call(server, :requests)) == 1
     end
   end
@@ -1886,7 +1886,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
   for gateway <- [OpenAI, Ollama, OMLX], mode <- [:legacy, :events] do
     @gateway gateway
     @mode mode
-    test "#{gateway} #{mode} consuming process death closes its live socket" do
+    test "#{gateway} #{mode} consuming process death closes its correlated response" do
       frame = partial(@gateway, :content)
 
       response =
@@ -1912,7 +1912,9 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
       monitor = Process.monitor(task.pid)
       Process.exit(task.pid, :kill)
       assert_receive {:DOWN, ^monitor, :process, _, :killed}
-      assert GenServer.call(server, :closed_sockets) == [:closed]
+      assert_receive {:transport_request, request}
+      assert_receive {:transport_closed, ^request}, 2000
+      assert GenServer.call(server, :closed_responses) == [:closed]
       assert length(GenServer.call(server, :requests)) == 1
     end
 
@@ -1927,7 +1929,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
           semantic_invoke(@gateway, @mode, config) |> Enum.to_list() |> semantic_events()
         end)
 
-      assert_receive {:wire_request, request}, 2000
+      assert_receive {:transport_request, request}, 2000
       Agent.update(clock, fn _ -> 1000 end)
       assert :ok = GenServer.call(server, {:release, success(@gateway)})
       assert hd(semantic_events(Task.await(task, 2000))) == {:content, "answer"}
@@ -2085,7 +2087,7 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     assert_receive {:output, [{:completed, _}, "sentinel-output", {:error, error}]}
     assert error.reason == :stream_interrupted
     assert_receive {:tool_executed, %{"value" => "sentinel-tool"}}
-    refute_receive {:tool_executed, _}
+    refute_received {:tool_executed, _}
     assert_tool_followup(server)
     records = Mojentic.Tracer.get_events(tracer)
     assert records == []
@@ -2169,8 +2171,8 @@ defmodule Mojentic.LLM.StreamRecoveryWireTest do
     do: gateway.complete_stream("gpt-4o", [Message.user("sentinel-input")], nil, config)
 
   defp server(gateway, responses) do
-    server = start_supervised!({ScriptedCompletionServer, {self(), responses}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), responses}})
+    assert_receive {:transport_id, port}
     host = "http://127.0.0.1:#{port}"
 
     case gateway do

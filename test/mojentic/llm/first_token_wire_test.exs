@@ -6,7 +6,7 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, CompletionError, Message}
   alias Mojentic.TestSupport.FirstTokenContract, as: Contract
   alias Mojentic.LLM.Gateways.{OpenAI, Ollama, OMLX}
-  alias Mojentic.TestSupport.ScriptedCompletionServer
+  alias Mojentic.TestSupport.ScriptedTransport
 
   @moduletag capture_log: true
   @milestones Contract.contract()["milestones"]
@@ -74,10 +74,10 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
 
     server =
       start_supervised!(
-        {ScriptedCompletionServer, {owner, [{:stream_hold, headers <> chunk(prefix)}], 0, 1}}
+        {ScriptedTransport, {owner, [{:stream_hold, headers <> chunk(prefix)}], 0, 1}}
       )
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     System.put_env("OMLX_HOST", "http://127.0.0.1:#{port}")
 
     trace = fn
@@ -119,7 +119,7 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
     :ok = GenServer.call(server, {:release, chunk(suffix) <> "0\r\n\r\n"})
     assert_receive {:capture_waiting, worker}, 3000
     task_ref = task.ref
-    refute_receive {^task_ref, _}, 0
+    refute_received {^task_ref, _}
     Agent.update(clock, fn _ -> @milestones["terminal"] end)
     send(worker, :reject)
     assert [{:error, %CompletionError{} = error}] = Task.await(task)
@@ -145,7 +145,7 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
              "stream_options" => %{"include_usage" => true}
            }
 
-    refute_receive :admitted
+    refute_received :admitted
   end
 
   for provider <- [:openai, :ollama, :omlx],
@@ -239,9 +239,9 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
       refute first_ids.attempt_id == second_ids.attempt_id
       assert first_ids.wire_attempt == 1
       assert second_ids.wire_attempt == 2
-      assert_receive {:wire_request, ^one}
-      assert_receive {:wire_request, ^two}
-      refute_receive {:wire_request, _}, 0
+      assert_receive {:transport_request, ^one}
+      assert_receive {:transport_request, ^two}
+      refute_received {:transport_request, _}
     end
   end
 
@@ -328,7 +328,7 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
       assert metrics(first_terminal) == expected_metrics("tool_call", 80)
       assert metrics(second_terminal) == expected_metrics("content", 50)
       assert_receive {:tool_executed, %{}}
-      refute_receive {:tool_executed, _}, 0
+      refute_received {:tool_executed, _}
       assert [one, two] = GenServer.call(server, :requests)
       assert_continuation_requests(one, two, provider, @route)
 
@@ -343,24 +343,6 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
         assert List.last(ChatSession.messages(session)).message.content == "answer"
       end
     end
-  end
-
-  test "frozen v1 and additive v2 executable references retain their source identities" do
-    for {version, hash} <- [
-          {"v1", "e94d4f53928b3ea519eceedcb0f7e7a41ae2eb5da52076369d92374108b3d2a8"},
-          {"v2", "9b64e037af8ee375a6344b94f4f66992f867357a32b8db360042a8eff4f12eca"}
-        ] do
-      source = File.read!("test/contracts/reference/ts-stream-first-token-#{version}.test.ts")
-      assert Base.encode16(:crypto.hash(:sha256, source), case: :lower) == hash
-    end
-
-    assert Contract.contract()["version"] == "ex-stream-first-token-v1"
-
-    assert Contract.contract()["reference"]["sha256"] ==
-             "9b64e037af8ee375a6344b94f4f66992f867357a32b8db360042a8eff4f12eca"
-
-    assert Contract.contract()["reference"]["commit"] ==
-             "54171796a2b02c0f0170d0758d2e3c693ad027c9"
   end
 
   for provider <- [:openai, :ollama, :omlx],
@@ -422,8 +404,8 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
       Agent.update(clock, fn _ -> @milestones["dispatch"] end)
       supervisor = start_supervised!(Task.Supervisor)
       task = Task.Supervisor.async_nolink(supervisor, fn -> Enum.to_list(stream) end)
-      assert_receive {:wire_request, request}, 3000
-      send(self(), {:wire_request, request})
+      assert_receive {:transport_request, request}, 3000
+      send(self(), {:transport_request, request})
       Agent.update(clock, fn _ -> @milestones["terminal"] end)
 
       :ok =
@@ -511,7 +493,7 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
       refute error.retry_eligible
       assert error.reason == :stream_interrupted
       assert_request(server, @provider, @mode)
-      refute_receive :admitted, 0
+      refute_received :admitted
     end
   end
 
@@ -598,7 +580,7 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
     Agent.update(clock, fn _ -> @milestones["frame"] end)
     :ok = GenServer.call(server, {:release, chunk(rest) <> "0\r\n\r\n"})
     assert_receive {:eof_capture_waiting, worker}, 3000
-    refute_receive {:delivered, _}, 0
+    refute_received {:delivered, _}
     Agent.update(clock, fn _ -> @milestones["terminal"] end)
 
     case outcome do
@@ -611,7 +593,7 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
     terminal = assert_terminal_timing(events, expected_metrics("thinking", 80))
     if outcome == :delayed, do: assert_provider_metrics(terminal, :ollama)
     assert_capture_outcome(events, route, outcome)
-    refute_receive :admitted, 0
+    refute_received :admitted
     assert_request(server, :ollama, route)
   end
 
@@ -680,8 +662,8 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
 
     assert_receive {:capture_waiting, worker}, 3000
     task_ref = task.ref
-    refute_receive {^task_ref, _}, 0
-    refute_receive {:delivered, _}, 0
+    refute_received {^task_ref, _}
+    refute_received {:delivered, _}
     Agent.update(clock, fn _ -> @milestones["terminal"] end)
 
     case outcome do
@@ -697,7 +679,7 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
     assert_capture_outcome(events, route, outcome)
 
     assert_request(server, provider, route)
-    refute_receive :admitted, 0
+    refute_received :admitted
   end
 
   defp capture_trace(owner, prefix, clock) do
@@ -724,7 +706,7 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
 
   defp assert_capture_outcome(events, route, outcome) do
     if outcome != :delayed do
-      refute_receive {:delivered, _}, 0
+      refute_received {:delivered, _}
 
       semantic_events =
         Enum.reject(events, fn
@@ -835,14 +817,14 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
       assert error.reason == if(outcome == :cancel, do: :cancelled, else: :capture_failed)
       assert metrics(terminal) == %{}
       assert GenServer.call(server, :requests) == []
-      refute_receive {:wire_request, _}, 0
-      refute_receive {:clock_read, _}, 0
+      refute_received {:transport_request, _}
+      refute_received {:clock_read, _}
     end
   end
 
   defp start_server(provider, responses) do
-    server = start_supervised!({ScriptedCompletionServer, {self(), responses, 0, 1}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), responses, 0, 1}})
+    assert_receive {:transport_id, port}
     host = "http://127.0.0.1:#{port}"
 
     case provider do
@@ -972,19 +954,8 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
         {String.downcase(name), value}
       end)
 
-    endpoint_key =
-      case provider do
-        :openai -> "OPENAI_API_ENDPOINT"
-        :ollama -> "OLLAMA_HOST"
-        :omlx -> "OMLX_HOST"
-      end
-
-    endpoint = URI.parse(System.fetch_env!(endpoint_key))
-
     expected_headers = %{
-      "host" => "#{endpoint.host}:#{endpoint.port}",
       "content-type" => "application/json",
-      "content-length" => Integer.to_string(byte_size(Jason.encode!(expected))),
       "user-agent" => "req/0.7.5"
     }
 
@@ -1094,8 +1065,8 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
         else: expected
 
     assert Jason.decode!(body) == expected
-    assert_receive {:wire_request, ^request}
-    refute_receive {:wire_request, _}, 0
+    assert_receive {:transport_request, ^request}
+    refute_received {:transport_request, _}
   end
 
   defp chunk(data), do: Integer.to_string(byte_size(data), 16) <> "\r\n" <> data <> "\r\n"

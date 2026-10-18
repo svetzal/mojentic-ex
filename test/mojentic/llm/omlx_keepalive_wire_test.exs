@@ -3,7 +3,7 @@ defmodule Mojentic.LLM.OMLXKeepaliveWireTest do
 
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, Message}
   alias Mojentic.LLM.Gateways.OMLX
-  alias Mojentic.TestSupport.ScriptedCompletionServer
+  alias Mojentic.TestSupport.ScriptedTransport
 
   @moduletag :omlx_keepalive_contract
   @entrypoints [:events, :legacy, :broker_events, :broker_legacy, :session]
@@ -477,8 +477,8 @@ defmodule Mojentic.LLM.OMLXKeepaliveWireTest do
         else: expected
 
     assert payload == expected
-    for _ <- 1..attempts, do: assert_receive({:wire_request, ^request})
-    refute_receive {:wire_request, _}
+    for _ <- 1..attempts, do: assert_receive({:transport_request, ^request})
+    refute_received {:transport_request, _}
   end
 
   defp messages, do: [Message.system("prior-system"), Message.user("user-input")]
@@ -497,8 +497,8 @@ defmodule Mojentic.LLM.OMLXKeepaliveWireTest do
   end
 
   defp server(responses) do
-    server = start_supervised!({ScriptedCompletionServer, {self(), responses}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), responses}})
+    assert_receive {:transport_id, port}
     System.put_env("OMLX_HOST", "http://127.0.0.1:#{port}")
     server
   end

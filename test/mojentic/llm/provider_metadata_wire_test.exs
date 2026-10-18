@@ -5,7 +5,7 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
 
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, CompletionError, Message}
   alias Mojentic.LLM.Gateways.{Ollama, OMLX, OpenAI}
-  alias Mojentic.TestSupport.ScriptedCompletionServer
+  alias Mojentic.TestSupport.ScriptedTransport
   alias Mojentic.Tracer.TracerSystem
 
   @env_keys ~w(OPENAI_API_ENDPOINT OPENAI_API_KEY OLLAMA_HOST OMLX_HOST OMLX_API_KEY)
@@ -92,8 +92,8 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
       response(body, request_id)
       |> String.replace("Content-Length: #{byte_size(body)}", "Content-Length: 9999")
 
-    server = start_supervised!({ScriptedCompletionServer, {self(), [{:stream_hold, reply}]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), [{:stream_hold, reply}]}})
+    assert_receive {:transport_id, port}
     configure(gateway, port, "credential-control")
     tracer = start_supervised!({TracerSystem, []})
     supervisor = start_supervised!(Task.Supervisor)
@@ -117,12 +117,12 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
         invoke(gateway, operation, prompt, config, tracer)
       end)
 
-    assert_receive {:wire_request, wire}, 2000
+    assert_receive {:transport_request, wire}, 2000
     assert_receive {:metadata_exact, %{type: :response_data, body: ^body}}, 2000
     send(task.pid, {:cancel, cancel})
     assert {:error, error} = Task.await(task, 2000)
     assert_cancelled_metadata(error, body, expected_code)
-    assert GenServer.call(server, {:peer_state, wire}) == {:error, :closed}
+    assert GenServer.call(server, {:response_state, wire}) == :closed
     assert GenServer.call(server, :requests) == [wire]
     events = for _ <- 1..3, do: receive_lifecycle()
     assert Enum.map(events, & &1.type) == [:attempt_started, :attempt_failed, :cancelled]
@@ -169,8 +169,8 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
           decoded = Jason.encode!(%{"error" => provider_error})
           frame = if @gateway == Ollama, do: decoded <> "\n", else: "data: " <> decoded <> "\n\n"
           reply = response(frame, request_id) |> String.replace("503 Result", "200 Result")
-          server = start_supervised!({ScriptedCompletionServer, {self(), [reply]}})
-          assert_receive {:server_port, port}
+          server = start_supervised!({ScriptedTransport, {self(), [reply]}})
+          assert_receive {:transport_id, port}
           configure(@gateway, port, "credential-control")
           owner = self()
           tracer = start_supervised!({TracerSystem, []})
@@ -198,7 +198,7 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
           assert {"x-request-id", request_id} in evidence.headers
           assert Jason.decode!(evidence.body) == %{"error" => provider_error}
           assert_receive {:metadata_exact, %{type: :response_data, body: ^frame}}
-          assert_receive {:wire_request, wire}
+          assert_receive {:transport_request, wire}
           assert GenServer.call(server, :requests) == [wire]
           assert_private(error, secret, tracer, CompletionError.safe_metadata(error))
         end)
@@ -242,8 +242,8 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
          else: secret
 
     reply = response(body, request_id)
-    server = start_supervised!({ScriptedCompletionServer, {self(), [reply, reply]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), [reply, reply]}})
+    assert_receive {:transport_id, port}
     configure(gateway, port, credential)
     tracer = start_supervised!({TracerSystem, []})
     owner = self()
@@ -333,14 +333,14 @@ defmodule Mojentic.LLM.ProviderMetadataWireTest do
   end
 
   defp assert_wire(server, gateway, prompt, credential) do
-    assert_receive {:wire_request, first}, 2000
-    assert_receive {:wire_request, second}, 2000
+    assert_receive {:transport_request, first}, 2000
+    assert_receive {:transport_request, second}, 2000
     assert first == second
     assert GenServer.call(server, :requests) == [first, second]
     [headers, body] = String.split(first, "\r\n\r\n", parts: 2)
     assert Enum.any?(Jason.decode!(body)["messages"], &(&1["content"] == prompt))
     if gateway != Ollama, do: assert(headers =~ "Bearer #{credential}")
-    refute_received {:wire_request, _}
+    refute_received {:transport_request, _}
     {headers, body}
   end
 

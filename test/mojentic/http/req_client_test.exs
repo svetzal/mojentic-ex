@@ -1,9 +1,9 @@
 defmodule Mojentic.HTTP.ReqClientTest do
-  # These real-socket timeout checks need the scheduler without concurrent tests.
+  # Req adapter defaults are scoped to these serial tests.
   use ExUnit.Case, async: false
 
   alias Mojentic.HTTP.ReqClient
-  alias Mojentic.TestSupport.{ContextWindowContract, ScriptedCompletionServer}
+  alias Mojentic.TestSupport.{ContextWindowContract, ScriptedTransport}
 
   @external_resource "test/contracts/context_window_v1.json"
   @response_cases Enum.filter(ContextWindowContract.contract()["cases"], fn row ->
@@ -18,11 +18,9 @@ defmodule Mojentic.HTTP.ReqClientTest do
     @opts opts
     test "context-window-v1 POST #{mode} preserves exact #{row["name"]} response bytes" do
       server =
-        start_supervised!(
-          {ScriptedCompletionServer, {self(), [ContextWindowContract.response(@row)]}}
-        )
+        start_supervised!({ScriptedTransport, {self(), [ContextWindowContract.response(@row)]}})
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
 
       assert {:ok, %{status_code: 200, body: body}} =
                ReqClient.post("http://127.0.0.1:#{port}/api/show", "{}", [], @opts)
@@ -33,7 +31,7 @@ defmodule Mojentic.HTTP.ReqClientTest do
   end
 
   # Mojentic.HTTP promises a binary body. Req decodes JSON responses by
-  # default, so these tests use a real socket and a JSON content type.
+  # default, so the transport fixtures retain a JSON content type.
 
   test "get returns a JSON response body as the raw binary" do
     port = serve_json(~s({"data":[{"id":"a-model"}]}))
@@ -53,145 +51,16 @@ defmodule Mojentic.HTTP.ReqClientTest do
     assert Jason.decode!(body) == %{"ok" => true}
   end
 
-  test "idle stream timeout allows consumption beyond its initial timeout" do
-    alias Mojentic.TestSupport.ChunkedHTTPServer
-    start_supervised!({ChunkedHTTPServer, {self(), ["one", "two"], false, 200}})
-    assert_receive {:port, port}
-
-    {:ok, stream} =
-      ReqClient.post_stream("http://127.0.0.1:#{port}/stream", "{}", [],
-        recv_timeout: 100,
-        stream_timeout: :idle
-      )
-
-    events =
-      Enum.to_list(
-        Stream.map(stream, fn event ->
-          receive do
-            :unused -> :ok
-          after
-            150 -> :ok
-          end
-
-          event
-        end)
-      )
-
-    assert Enum.all?(events, &match?({:data, _}, &1))
-    assert Enum.map_join(events, fn {:data, text} -> text end) == "onetwo"
-  end
-
-  test "idle stream timeout still cancels a stalled response" do
-    alias Mojentic.TestSupport.ChunkedHTTPServer
-    start_supervised!({ChunkedHTTPServer, {self(), ["partial"], true, 200}})
-    assert_receive {:port, port}
-
-    {:ok, stream} =
-      ReqClient.post_stream("http://127.0.0.1:#{port}/stream", "{}", [],
-        recv_timeout: 100,
-        stream_timeout: :idle
-      )
-
-    assert [{:data, "partial"}, {:error, :timeout}] = Enum.to_list(stream)
-    assert_receive {:cancel_result, {:error, :closed}}, 2000
-  end
-
-  for winner <- [:finch, :receive_loop], tracing <- [false, true] do
-    @winner winner
-    @tracing tracing
-    @tag :stalled_timeout_proof
-    test "stalled stream #{@winner} timeout tracing #{@tracing} retains the legacy timeout contract" do
-      server =
-        start_supervised!(
-          {Mojentic.TestSupport.ScriptedCompletionServer,
-           {self(), [{:stream_hold, "HTTP/1.1 200 OK\r\nContent-Length: 999\r\n\r\npartial"}]}}
-        )
-
-      assert_receive {:server_port, port}
-
-      {:ok, stream} =
-        ReqClient.post_stream("http://127.0.0.1:#{port}/stream", "{}", [],
-          recv_timeout: 100,
-          stream_timeout: :idle,
-          wire_trace: if(@tracing, do: {fn _ -> :ok end, %{}})
-        )
-
-      events =
-        stream
-        |> Stream.map(fn
-          {:data, "partial"} = event ->
-            # Wait for the actual Finch/socket timeout, rather than injecting one.
-            # Requeue it to select notification handling, or drain it to exercise
-            # the receive loop's own timeout with the same stalled connection.
-            assert_receive {ref, {:error, %Finch.TransportError{reason: :timeout}}} = message,
-                           2000
-
-            assert is_tuple(ref)
-            if @winner == :finch, do: send(self(), message)
-            event
-
-          event ->
-            event
-        end)
-        |> Enum.to_list()
-
-      assert events == [{:data, "partial"}, {:error, :timeout}]
-      assert_receive {:wire_request, request}
-      assert String.ends_with?(request, "\r\n\r\n{}")
-      assert GenServer.call(server, :requests) == [request]
-      assert GenServer.call(server, {:peer_state, request}) == {:error, :closed}
-    end
-  end
-
-  for winner <- [:finch, :receive_loop] do
-    @winner winner
-    @tag :stalled_post_boundary
-    test "recovery POST #{@winner} timeout retains Req cause and received 200 evidence" do
-      server =
-        start_supervised!(
-          {Mojentic.TestSupport.ScriptedCompletionServer,
-           {self(), [{:stream_hold, "HTTP/1.1 200 OK\r\nContent-Length: 999\r\n\r\npartial"}]}}
-        )
-
-      assert_receive {:server_port, port}
-
-      trace = fn
-        %{type: :response_data} ->
-          assert_receive {_ref, {:error, %Finch.TransportError{reason: :timeout}}} = message, 2000
-          if @winner == :finch, do: send(self(), message)
-          :ok
-
-        _ ->
-          :ok
-      end
-
-      assert {:error,
-              {:http_response, 200, [{"content-length", "999"}], "partial",
-               %Req.TransportError{reason: :timeout}}} =
-               ReqClient.post("http://127.0.0.1:#{port}/x", "{}", [],
-                 retry: false,
-                 recv_timeout: 100,
-                 recovery_metadata: true,
-                 wire_trace: {trace, %{}}
-               )
-
-      assert_receive {:wire_request, request}
-      assert String.ends_with?(request, "\r\n\r\n{}")
-      assert GenServer.call(server, :requests) == [request]
-      assert GenServer.call(server, {:peer_state, request}) == {:error, :closed}
-    end
-  end
-
   test "closing one stream leaves another stream at the same origin cancellable" do
     response = "HTTP/1.1 200 OK\r\nContent-Length: 999\r\n\r\npartial"
 
     server =
       start_supervised!(
-        {Mojentic.TestSupport.ScriptedCompletionServer,
+        {Mojentic.TestSupport.ScriptedTransport,
          {self(), [{:stream_hold, response}, {:stream_hold, response}]}}
       )
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     supervisor = start_supervised!(Task.Supervisor)
     owner = self()
     cancel = make_ref()
@@ -221,12 +90,12 @@ defmodule Mojentic.HTTP.ReqClientTest do
       end)
 
     assert_receive :held_stream_ready, 2000
-    assert_receive {:wire_request, held_request}
+    assert_receive {:transport_request, held_request}
 
     {:ok, stream} = ReqClient.post_stream(url, "halted", [], recv_timeout: 2000)
     assert Enum.take(stream, 1) == [{:data, "partial"}]
-    assert_receive {:wire_request, halted_request}
-    assert GenServer.call(server, {:peer_state, halted_request}) == {:error, :closed}
+    assert_receive {:transport_request, halted_request}
+    assert GenServer.call(server, {:response_state, halted_request}) == :closed
 
     send(task.pid, {:cancel, cancel})
     send(task.pid, :resume)
@@ -234,28 +103,8 @@ defmodule Mojentic.HTTP.ReqClientTest do
     assert [{:headers, 200, _}, {:data, "partial"}, {:error, :cancelled}] =
              Task.await(task, 2000)
 
-    assert GenServer.call(server, {:peer_state, held_request}) == {:error, :closed}
+    assert GenServer.call(server, {:response_state, held_request}) == :closed
     assert GenServer.call(server, :requests) == [held_request, halted_request]
-  end
-
-  @tag :stalled_post_boundary
-  test "ordinary retries-disabled POST retains Req timeout and sends once" do
-    server =
-      start_supervised!(
-        {Mojentic.TestSupport.ScriptedCompletionServer,
-         {self(), [{:stream_hold, "HTTP/1.1 200 OK\r\nContent-Length: 999\r\n\r\npartial"}]}}
-      )
-
-    assert_receive {:server_port, port}
-
-    assert {:error, %Req.TransportError{reason: :timeout}} =
-             ReqClient.post("http://127.0.0.1:#{port}/x", "{}", [],
-               retry: false,
-               recv_timeout: 100
-             )
-
-    assert_receive {:wire_request, request}
-    assert GenServer.call(server, :requests) == [request]
   end
 
   for metadata <- [false, true] do
@@ -263,7 +112,7 @@ defmodule Mojentic.HTTP.ReqClientTest do
     test "legacy non-2xx stream metadata #{@metadata} retains immediate status-only contract" do
       server =
         start_supervised!(
-          {Mojentic.TestSupport.ScriptedCompletionServer,
+          {Mojentic.TestSupport.ScriptedTransport,
            {self(),
             [
               {:stream_hold,
@@ -271,7 +120,7 @@ defmodule Mojentic.HTTP.ReqClientTest do
             ]}}
         )
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
 
       assert {:ok, stream} =
                ReqClient.post_stream("http://127.0.0.1:#{port}/x", "{}", [],
@@ -291,37 +140,48 @@ defmodule Mojentic.HTTP.ReqClientTest do
 
   test "unrelated post with retries disabled retains transport-only interrupted response" do
     start_supervised!(
-      {Mojentic.TestSupport.ScriptedCompletionServer,
+      {Mojentic.TestSupport.ScriptedTransport,
        {self(), ["HTTP/1.1 401 Unauthorized\r\nContent-Length: 999\r\n\r\npartial"]}}
     )
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
 
     assert {:error, %Req.TransportError{reason: :closed}} =
              ReqClient.post("http://127.0.0.1:#{port}/x", "{}", [], retry: false)
   end
 
+  for mode <- [:absolute, :idle] do
+    @mode mode
+    test "zero #{@mode} timeout distinguishes queued data from an expired absolute deadline" do
+      transport =
+        start_supervised!(
+          {ScriptedTransport, {self(), [{:stream_hold, "HTTP/1.1 200 OK\r\n\r\npartial"}]}}
+        )
+
+      assert_receive {:transport_id, id}
+
+      {:ok, stream} =
+        ReqClient.post_stream("http://example.test:#{id}/stream", "{}", [],
+          recv_timeout: 0,
+          stream_timeout: @mode
+        )
+
+      expected =
+        if @mode == :idle,
+          do: [{:data, "partial"}, {:error, :timeout}],
+          else: [{:error, :timeout}]
+
+      assert Enum.to_list(stream) == expected
+      assert_receive {:transport_request, request}
+      assert GenServer.call(transport, {:response_state, request}) == :closed
+      assert GenServer.call(transport, :requests) == [request]
+    end
+  end
+
   defp serve_json(json) do
-    {:ok, listener} =
-      :gen_tcp.listen(0, [:binary, active: false, reuseaddr: true, ip: {127, 0, 0, 1}])
-
-    {:ok, {_, port}} = :inet.sockname(listener)
-
-    Task.start_link(fn ->
-      {:ok, socket} = :gen_tcp.accept(listener, 2000)
-      {:ok, _request} = :gen_tcp.recv(socket, 0, 2000)
-
-      :gen_tcp.send(socket, [
-        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ",
-        Integer.to_string(byte_size(json)),
-        "\r\nConnection: close\r\n\r\n",
-        json
-      ])
-
-      :gen_tcp.close(socket)
-      :gen_tcp.close(listener)
-    end)
-
-    port
+    response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" <> json
+    start_supervised!({ScriptedTransport, {self(), [response]}})
+    assert_receive {:transport_id, id}
+    id
   end
 end

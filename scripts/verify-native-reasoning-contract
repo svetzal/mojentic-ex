@@ -5,6 +5,6 @@ cd "$(dirname "$0")/.."
 echo 'native-reasoning-v1'
 sha256sum test/contracts/native_reasoning_v1.json \
   test/mojentic/llm/reasoning_wire_test.exs \
-  test/support/scripted_completion_server.ex \
+  test/support/scripted_transport.ex \
   test/support/counting_tool.ex
 exec scripts/recovery-mix test test/mojentic/llm/reasoning_wire_test.exs "$@"

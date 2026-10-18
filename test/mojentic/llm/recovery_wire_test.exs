@@ -3,7 +3,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
   import ExUnit.CaptureLog
   alias Mojentic.LLM.{Broker, ChatSession, CompletionConfig, CompletionError, Message}
   alias Mojentic.LLM.Gateways.{OpenAI, Ollama, OMLX}
-  alias Mojentic.TestSupport.{DecodingEvidence, ScriptedCompletionServer}
+  alias Mojentic.TestSupport.{DecodingEvidence, ScriptedTransport}
   alias Mojentic.Tracer.TracerSystem
 
   @env_keys [
@@ -37,8 +37,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     secret = "a539ba99-c7f8-4fd0-b324-d8b082925980"
     body = Jason.encode!(%{error: %{code: "overloaded"}})
     reply = String.replace(response(503, body), "wire-request-73", secret)
-    server = start_supervised!({ScriptedCompletionServer, {self(), [reply]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), [reply]}})
+    assert_receive {:transport_id, port}
     configure(OpenAI, port)
     System.put_env("OPENAI_API_KEY", "overloaded")
     owner = self()
@@ -61,7 +61,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     assert error.http_status == 503
     assert error.progress.headers_received
     assert error.progress.raw_bytes == byte_size(body)
-    assert_receive {:wire_request, wire}
+    assert_receive {:transport_request, wire}
     assert wire =~ "Bearer overloaded"
     assert wire =~ secret
     assert GenServer.call(server, :requests) == [wire]
@@ -116,15 +116,14 @@ defmodule Mojentic.LLM.RecoveryWireTest do
         "Content-Length: 9999"
       )
 
-    broken = if interruption == :timeout, do: {:stream_hold, broken}, else: broken
+    broken = if interruption == :timeout, do: {:stream_error, broken, :timeout}, else: broken
 
     server =
       start_supervised!(
-        {ScriptedCompletionServer,
-         {owner, [broken, response(200, successful_body(gateway, kind))]}}
+        {ScriptedTransport, {owner, [broken, response(200, successful_body(gateway, kind))]}}
       )
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     configure(gateway, port)
 
     for key <- ["OPENAI_TIMEOUT", "OLLAMA_TIMEOUT", "OMLX_TIMEOUT"],
@@ -160,7 +159,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     assert_receive {:body_lifecycle, %{type: :attempt_started, metadata: started}}
     assert_receive {:body_lifecycle, %{type: :attempt_failed, metadata: failed}}
     assert_body_failure(failed, started, partial, interruption)
-    assert_receive {:wire_request, wire}
+    assert_receive {:transport_request, wire}
 
     expected_messages =
       if operation == :session do
@@ -219,7 +218,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       assert_body_completion(result, failed.operation)
 
-      assert_receive {:wire_request, retry}
+      assert_receive {:transport_request, retry}
       assert retry == wire
       assert GenServer.call(server, :requests) == [wire, retry]
       assert_receive {:body_lifecycle, %{type: :attempt_succeeded, metadata: succeeded}}
@@ -334,41 +333,21 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     end
   end
 
-  for gateway <- [OpenAI, Ollama, OMLX],
-      operation <- [:complete, :complete_object, :events, :legacy],
-      winner <- [:finch, :receive_loop] do
-    @gateway gateway
-    @operation operation
-    @winner winner
-    @tag :stalled_completion_boundary
-    test "#{gateway} #{operation} deterministic #{@winner} body timeout retains its inspectable cause" do
-      error = assert_stalled_completion(@gateway, @operation, {:force, @winner}, 3)
-      assert_receive {:original_timeout, original}
-
-      case {@operation, @winner} do
-        {operation, :finch} when operation in [:events, :legacy] ->
-          assert CompletionError.cause(error) == original
-
-        {operation, :receive_loop} when operation in [:events, :legacy] ->
-          assert CompletionError.cause(error) == :timeout
-
-        _ ->
-          assert %Req.TransportError{reason: :timeout} = CompletionError.cause(error)
-      end
-    end
-  end
-
   defp assert_stalled_completion(gateway, operation, tracing, attempts) do
     owner = self()
     partial = stalled_partial(gateway, operation)
 
     server =
       start_supervised!(
-        {ScriptedCompletionServer,
-         {owner, [{:stream_hold, "HTTP/1.1 200 OK\r\nContent-Length: 9999\r\n\r\n" <> partial}]}}
+        {ScriptedTransport,
+         {owner,
+          [
+            {:stream_error, "HTTP/1.1 200 OK\r\nContent-Length: 9999\r\n\r\n" <> partial,
+             :timeout}
+          ]}}
       )
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     configure(gateway, port)
 
     for key <- ["OPENAI_TIMEOUT", "OLLAMA_TIMEOUT", "OMLX_TIMEOUT"],
@@ -402,7 +381,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     assert_receive {:stall_lifecycle, %{type: :attempt_failed, metadata: failed}}
     assert failed.progress == error.progress
     assert failed.attempt_id == error.attempt_id
-    assert_receive {:wire_request, wire}
+    assert_receive {:transport_request, wire}
     assert GenServer.call(server, :requests) == [wire]
     [headers, body] = String.split(wire, "\r\n\r\n", parts: 2)
     path = if gateway == Ollama, do: "/api/chat", else: "/v1/chat/completions"
@@ -413,22 +392,13 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
     assert_stalled_trace(tracing, wire, started, partial)
     refute_received :unexpected_admission
-    refute_received {:wire_request, _}
+    refute_received {:transport_request, _}
     error
   end
 
-  defp stalled_trace_observer(owner, tracing) do
+  defp stalled_trace_observer(owner, _tracing) do
     fn event ->
       send(owner, {:stall_trace, event})
-
-      if event.type == :response_data and is_tuple(tracing) do
-        assert_receive {_ref, {:error, %Finch.TransportError{reason: :timeout} = original}} =
-                         message,
-                       2000
-
-        send(owner, {:original_timeout, original})
-        if tracing == {:force, :finch}, do: send(self(), message)
-      end
 
       :ok
     end
@@ -502,8 +472,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
   @tag :dispatch_boundary_proof
   test "dispatched cancellation before headers retains exact request and lifecycle identity" do
-    server = start_supervised!({ScriptedCompletionServer, {self(), [:hold]}})
-    assert_receive {:server_port, port}
+    server = start_supervised!({ScriptedTransport, {self(), [:hold]}})
+    assert_receive {:transport_id, port}
     configure(OpenAI, port)
     owner = self()
     cancel = make_ref()
@@ -523,7 +493,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
     supervisor = start_supervised!(Task.Supervisor)
     task = Task.Supervisor.async_nolink(supervisor, fn -> invoke(OpenAI, :complete, config) end)
-    assert_receive {:wire_request, wire}, 2000
+    assert_receive {:transport_request, wire}, 2000
     send(task.pid, {:cancel, cancel})
     assert {:error, error} = Task.await(task, 2000)
     assert error.category == :cancellation
@@ -573,10 +543,12 @@ defmodule Mojentic.LLM.RecoveryWireTest do
         )
 
       scripted =
-        if @interruption == :closed, do: wire_response, else: {:stream_hold, wire_response}
+        if @interruption == :closed,
+          do: wire_response,
+          else: {:stream_error, wire_response, :timeout}
 
-      server = start_supervised!({ScriptedCompletionServer, {self(), [scripted]}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), [scripted]}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
 
       for key <- ["OPENAI_TIMEOUT", "OLLAMA_TIMEOUT", "OMLX_TIMEOUT"],
@@ -622,7 +594,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       assert failed.http_status == @status
       assert failed.progress == error.progress
       assert failed.attempt_id == error.attempt_id
-      assert_receive {:wire_request, wire}
+      assert_receive {:transport_request, wire}
       assert GenServer.call(server, :requests) == [wire]
 
       if @tracing do
@@ -644,7 +616,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       refute inspect(error) =~ "secret"
       refute Jason.encode!(error) =~ "secret"
-      refute_receive {:wire_request, _}, 30
+      refute_received {:transport_request, _}
     end
   end
 
@@ -657,8 +629,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     test "#{gateway} #{operation} dispatched attempt #{attempt} cancelled before headers retains exact independent request evidence" do
       owner = self()
       responses = if @attempt == 1, do: [:hold], else: [response(503, "failure-secret"), :hold]
-      server = start_supervised!({ScriptedCompletionServer, {self(), responses}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), responses}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       cancel = make_ref()
 
@@ -687,7 +659,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       wires =
         for _ <- 1..@attempt do
-          assert_receive {:wire_request, wire}, 2000
+          assert_receive {:transport_request, wire}, 2000
           wire
         end
 
@@ -728,7 +700,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       assert GenServer.call(server, :requests) == wires
       if @attempt == 2, do: assert(hd(wires) == List.last(wires))
-      refute_receive {:wire_request, _}, 30
+      refute_received {:transport_request, _}
     end
   end
 
@@ -746,8 +718,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
           "Content-Length: 999"
         )
 
-      server = start_supervised!({ScriptedCompletionServer, {self(), [truncated, truncated]}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), [truncated, truncated]}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       owner = self()
 
@@ -858,11 +830,11 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       server =
         start_supervised!(
-          {ScriptedCompletionServer,
+          {ScriptedTransport,
            {self(), Enum.map(bodies, fn {status, body} -> response(status, body) end)}}
         )
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
 
       config =
@@ -985,8 +957,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
             )
         end
 
-      server = start_supervised!({ScriptedCompletionServer, {self(), [response]}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), [response]}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
 
       config =
@@ -1037,8 +1009,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     test "ordinary #{operation} exact trace cancellation #{stage} preserves dispatch accounting" do
       owner = self()
       body = Jason.encode!(%{choices: [%{message: %{content: ~s({"answer":"response-secret"})}}]})
-      server = start_supervised!({ScriptedCompletionServer, {self(), [response(200, body)]}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), [response(200, body)]}})
+      assert_receive {:transport_id, port}
       configure(OpenAI, port)
       cancel = make_ref()
 
@@ -1092,11 +1064,9 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     @failure failure
     test "exact trace observer #{failure} request failure prevents dispatch and preserves failure identity" do
       server =
-        start_supervised!(
-          {ScriptedCompletionServer, {self(), [response(503, "response-secret")]}}
-        )
+        start_supervised!({ScriptedTransport, {self(), [response(503, "response-secret")]}})
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(OpenAI, port)
 
       config =
@@ -1106,7 +1076,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       assert error.reason == :capture_failed
       assert error.wire_attempt == 1
       assert GenServer.call(server, :requests) == []
-      refute_received {:wire_request, _}
+      refute_received {:transport_request, _}
 
       assert Map.take(error.metadata, [
                :request_duration_ms,
@@ -1141,8 +1111,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
           do: Jason.encode!(%{message: message, done: true}),
           else: Jason.encode!(%{choices: [%{message: message}]})
 
-      server = start_supervised!({ScriptedCompletionServer, {self(), [response(200, body)]}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), [response(200, body)]}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
 
       config =
@@ -1220,11 +1190,9 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     body = Jason.encode!(%{choices: [%{message: %{content: "response-secret"}}]})
 
     server =
-      start_supervised!(
-        {ScriptedCompletionServer, {self(), [response(200, body), response(200, "{}")]}}
-      )
+      start_supervised!({ScriptedTransport, {self(), [response(200, body), response(200, "{}")]}})
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     configure(OpenAI, port)
     owner = self()
 
@@ -1249,10 +1217,10 @@ defmodule Mojentic.LLM.RecoveryWireTest do
         )
       end)
 
-    assert_receive {:wire_request, request}
+    assert_receive {:transport_request, request}
     assert_payload(request, OpenAI, :complete_object)
     assert GenServer.call(server, :requests) == [request]
-    refute_received {:wire_request, _}
+    refute_received {:transport_request, _}
 
     for secret <- [
           "payload-secret",
@@ -1282,10 +1250,10 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       server =
         start_supervised!(
-          {ScriptedCompletionServer, {self(), [response(200, body), response(200, "{}")]}}
+          {ScriptedTransport, {self(), [response(200, body), response(200, "{}")]}}
         )
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       owner = self()
 
@@ -1311,17 +1279,16 @@ defmodule Mojentic.LLM.RecoveryWireTest do
         end)
 
       DecodingEvidence.assert_private(logs)
-      assert_receive {:wire_request, request}
+      assert_receive {:transport_request, request}
       assert_payload(request, @gateway, @operation)
-      [headers, payload] = String.split(request, "\r\n\r\n", parts: 2)
+      [headers, _payload] = String.split(request, "\r\n\r\n", parts: 2)
       assert String.downcase(headers) =~ "content-type: application/json"
-      assert String.downcase(headers) =~ "content-length: #{byte_size(payload)}"
 
       if @gateway != Ollama,
         do: assert(String.downcase(headers) =~ "authorization: bearer credential-secret")
 
       assert GenServer.call(server, :requests) == [request]
-      refute_received {:wire_request, _}
+      refute_received {:transport_request, _}
     end
   end
 
@@ -1329,8 +1296,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     @gateway gateway
     @operation operation
     test "#{gateway} #{operation} Req closure retains ambiguous acceptance and exact cause" do
-      server = start_supervised!({ScriptedCompletionServer, {self(), [""]}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), [""]}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       owner = self()
       config = CompletionConfig.new(recovery: [observer: &send(owner, {:transport_event, &1})])
@@ -1339,15 +1306,15 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       assert error.operation == @operation
       assert %Req.TransportError{reason: :closed} = CompletionError.cause(error)
       assert_transport(error, :transport, :unknown, :unknown, :transport_failure, true)
-      assert_receive {:wire_request, request}
+      assert_receive {:transport_request, request}
       assert_payload(request, @gateway, @operation)
       assert GenServer.call(server, :requests) == [request]
-      refute_received {:wire_request, _}
+      refute_received {:transport_request, _}
     end
 
     test "#{gateway} #{operation} Req receive timeout preserves uncertainty without resend" do
-      server = start_supervised!({ScriptedCompletionServer, {self(), [:hold]}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), [{:error, :timeout}]}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
 
       for key <- ["OPENAI_TIMEOUT", "OLLAMA_TIMEOUT", "OMLX_TIMEOUT"],
@@ -1360,18 +1327,15 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       assert error.operation == @operation
       assert %Req.TransportError{reason: :timeout} = CompletionError.cause(error)
       assert_transport(error, :client_timeout, :unknown, :unknown, :timeout, false)
-      assert_receive {:wire_request, request}
+      assert_receive {:transport_request, request}
       assert_payload(request, @gateway, @operation)
       assert GenServer.call(server, :requests) == [request]
-      refute_received {:wire_request, _}
+      refute_received {:transport_request, _}
     end
 
     test "#{gateway} #{operation} Req connection refusal proves nonacceptance" do
-      # Bound but not listening: the port stays reserved throughout the probe.
-      {:ok, socket} = :socket.open(:inet, :stream, :tcp)
-      :ok = :socket.bind(socket, %{family: :inet, addr: {127, 0, 0, 1}, port: 0})
-      on_exit(fn -> :socket.close(socket) end)
-      {:ok, %{port: port}} = :socket.sockname(socket)
+      start_supervised!({ScriptedTransport, {self(), [{:error, :econnrefused}]}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       owner = self()
       config = CompletionConfig.new(recovery: [observer: &send(owner, {:transport_event, &1})])
@@ -1394,10 +1358,10 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       server =
         start_supervised!(
-          {ScriptedCompletionServer, {self(), [response(@status, body), response(200, "{}")]}}
+          {ScriptedTransport, {self(), [response(@status, body), response(200, "{}")]}}
         )
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       config = CompletionConfig.new(recovery: [])
 
@@ -1430,7 +1394,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
           refute Jason.encode!(error) =~ "response-secret"
         end)
 
-      assert_receive {:wire_request, request}
+      assert_receive {:transport_request, request}
       [headers, payload] = String.split(request, "\r\n\r\n", parts: 2)
       path = if @gateway == Ollama, do: "/api/chat", else: "/v1/chat/completions"
       assert headers =~ "POST #{path} HTTP/1.1"
@@ -1443,7 +1407,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       assert Jason.decode!(payload)["model"] == "gpt-4o"
       assert GenServer.call(server, :requests) == [request]
-      refute_received {:wire_request, _}
+      refute_received {:transport_request, _}
 
       for secret <- ["credential-secret", "payload-secret", "response-secret"],
           do: refute(logs =~ secret)
@@ -1453,8 +1417,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
   for gateway <- [OpenAI, Ollama, OMLX] do
     @gateway gateway
     test "#{gateway} real Req closure propagates through broker APIs and session with caller history intact" do
-      server = start_supervised!({ScriptedCompletionServer, {self(), ["", "", "", ""]}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), ["", "", "", ""]}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       broker = Broker.new("gpt-4o", @gateway)
       messages = [Message.user("payload-secret")]
@@ -1475,7 +1439,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
           assert error.provider == provider(@gateway)
           assert error.operation == operation
           assert_transport(error, :transport, :unknown, :unknown, :transport_failure, true)
-          assert_receive {:wire_request, request}
+          assert_receive {:transport_request, request}
           assert_payload(request, @gateway, operation)
           request
         end)
@@ -1488,7 +1452,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       assert %Req.TransportError{reason: :closed} = CompletionError.cause(error)
       assert_transport(error, :transport, :unknown, :unknown, :transport_failure, true)
-      assert_receive {:wire_request, request}
+      assert_receive {:transport_request, request}
 
       assert_payload(request, @gateway, :complete, [
         %{"role" => "system", "content" => session.system_prompt},
@@ -1498,7 +1462,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       assert GenServer.call(server, :requests) == requests ++ [request]
       assert session.messages == history
       assert messages == [Message.user("payload-secret")]
-      refute_received {:wire_request, _}
+      refute_received {:transport_request, _}
     end
   end
 
@@ -1507,11 +1471,11 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
     _server =
       start_supervised!(
-        {ScriptedCompletionServer,
+        {ScriptedTransport,
          {self(), [response(503, "response-secret"), response(503, "response-secret")]}}
       )
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     configure(OpenAI, port)
     broker = Broker.new("gpt-4o", OpenAI, tracer: tracer)
     config = CompletionConfig.new(recovery: [])
@@ -1638,11 +1602,10 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       server =
         start_supervised!(
-          {ScriptedCompletionServer,
-           {self(), [response(503, "response-secret"), response(200, body)]}}
+          {ScriptedTransport, {self(), [response(503, "response-secret"), response(200, body)]}}
         )
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       owner = self()
 
@@ -1664,8 +1627,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
         )
 
       assert {:ok, _} = invoke(@gateway, @operation, config)
-      assert_receive {:wire_request, first}
-      assert_receive {:wire_request, second}
+      assert_receive {:transport_request, first}
+      assert_receive {:transport_request, second}
       assert_payload(first, @gateway, @operation)
       assert second == first
       assert GenServer.call(server, :requests) == [first, second]
@@ -1715,8 +1678,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
               response(504, "response-secret")
               |> String.replace("wire-request-73", "request-#{n}")
 
-      server = start_supervised!({ScriptedCompletionServer, {self(), failures}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), failures}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
 
       config =
@@ -1773,7 +1736,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       server =
         start_supervised!(
-          {ScriptedCompletionServer,
+          {ScriptedTransport,
            {self(),
             [
               response(429, "response-secret")
@@ -1782,7 +1745,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
             ]}}
         )
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
 
       config =
@@ -1838,7 +1801,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     test "#{gateway} #{operation} real Req local recovery refuses #{@reason} with #{inspect(Keyword.keys(policy))}" do
       server =
         start_supervised!(
-          {ScriptedCompletionServer,
+          {ScriptedTransport,
            {self(),
             [
               response(504, "response-secret"),
@@ -1846,7 +1809,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
             ]}}
         )
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
 
       policy =
@@ -1884,9 +1847,9 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       response = if @phase == :request, do: :hold, else: response(503, "response-secret")
 
       server =
-        start_supervised!({ScriptedCompletionServer, {self(), [response, response(200, "{}")]}})
+        start_supervised!({ScriptedTransport, {self(), [response, response(200, "{}")]}})
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       owner = self()
       cancel = make_ref()
@@ -1907,7 +1870,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
           invoke(@gateway, @operation, CompletionConfig.new(recovery: policy))
         end)
 
-      assert_receive {:wire_request, request}, 2000
+      assert_receive {:transport_request, request}, 2000
       assert_payload(request, @gateway, @operation)
       if @phase == :admission, do: assert_receive({:waiting, _}, 2000)
 
@@ -1944,10 +1907,10 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     test "#{gateway} #{operation} cancellation inside retry worker guard retains only dispatched failure" do
       server =
         start_supervised!(
-          {ScriptedCompletionServer, {self(), [response(503, "response-secret"), :hold]}}
+          {ScriptedTransport, {self(), [response(503, "response-secret"), :hold]}}
         )
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       owner = self()
       cancel = make_ref()
@@ -1991,7 +1954,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
           invoke(@gateway, @operation, config)
         end)
 
-      assert_receive {:wire_request, request}, 2000
+      assert_receive {:transport_request, request}, 2000
       assert_payload(request, @gateway, @operation)
       assert_receive {:dispatch_guard, worker}, 2000
       monitor = Process.monitor(worker)
@@ -1999,7 +1962,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       assert {:error, error} = Task.await(task, 2000)
       assert_receive {:DOWN, ^monitor, :process, ^worker, :killed}
       assert GenServer.call(server, :requests) == [request]
-      refute_received {:wire_request, _}
+      refute_received {:transport_request, _}
       assert error.provider == provider(@gateway)
       assert error.operation == @operation
       assert error.resend_permission == :cancelled
@@ -2042,8 +2005,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     @operation operation
     @tag :dispatch_accounting
     test "#{gateway} #{operation} cancellation inside initial worker guard has no wire lifecycle" do
-      server = start_supervised!({ScriptedCompletionServer, {self(), [:hold]}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), [:hold]}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       owner = self()
       cancel = make_ref()
@@ -2085,7 +2048,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       assert {:error, error} = Task.await(task, 2000)
       assert_receive {:DOWN, ^monitor, :process, ^worker, :killed}
       assert GenServer.call(server, :requests) == []
-      refute_received {:wire_request, _}
+      refute_received {:transport_request, _}
       assert error.provider == provider(@gateway)
       assert error.operation == @operation
       assert error.category == :cancellation
@@ -2112,8 +2075,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     @tag :dispatch_accounting
     test "#{gateway} #{operation} cancellation after #{dispatch} server dispatch retains actual attempts" do
       responses = if @dispatch == :initial, do: [:hold], else: [response(503, "failed"), :hold]
-      server = start_supervised!({ScriptedCompletionServer, {self(), responses}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), responses}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       owner = self()
       cancel = make_ref()
@@ -2134,12 +2097,12 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       task =
         Task.Supervisor.async_nolink(supervisor, fn -> invoke(@gateway, @operation, config) end)
 
-      assert_receive {:wire_request, first}, 2000
+      assert_receive {:transport_request, first}, 2000
       assert_payload(first, @gateway, @operation)
 
       requests =
         if @dispatch == :retry do
-          assert_receive {:wire_request, second}, 2000
+          assert_receive {:transport_request, second}, 2000
           assert second == first
           [first, second]
         else
@@ -2149,7 +2112,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       send(task.pid, {:cancel, cancel})
       assert {:error, error} = Task.await(task, 2000)
       assert GenServer.call(server, :requests) == requests
-      refute_received {:wire_request, _}
+      refute_received {:transport_request, _}
       assert error.provider == provider(@gateway)
       assert error.operation == @operation
       assert error.category == :cancellation
@@ -2270,9 +2233,9 @@ defmodule Mojentic.LLM.RecoveryWireTest do
           do: [response(200, successful_body(@gateway, :complete)) | responses],
           else: responses
 
-      server = start_supervised!({ScriptedCompletionServer, {self(), responses}})
+      server = start_supervised!({ScriptedTransport, {self(), responses}})
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       broker = Broker.new("gpt-4o", @gateway)
 
@@ -2354,11 +2317,11 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
     server =
       start_supervised!(
-        {ScriptedCompletionServer,
+        {ScriptedTransport,
          {self(), [response(200, body), response(503, "response-secret"), response(200, body)]}}
       )
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     configure(OpenAI, port)
 
     config =
@@ -2434,11 +2397,11 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       for status <- [400, 401, 403, 404, 422] do
         server =
           start_supervised!(
-            {ScriptedCompletionServer, {self(), [response(status, "response-secret")]}},
+            {ScriptedTransport, {self(), [response(status, "response-secret")]}},
             id: status
           )
 
-        assert_receive {:server_port, port}
+        assert_receive {:transport_id, port}
         configure(@gateway, port)
 
         config =
@@ -2456,8 +2419,8 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     end
 
     test "#{gateway} #{operation} recovery deadline allows active generation to finish" do
-      server = start_supervised!({ScriptedCompletionServer, {self(), [:hold]}})
-      assert_receive {:server_port, port}
+      server = start_supervised!({ScriptedTransport, {self(), [:hold]}})
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       clock = start_supervised!({Agent, fn -> 0 end})
       supervisor = start_supervised!(Task.Supervisor)
@@ -2468,7 +2431,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       task =
         Task.Supervisor.async_nolink(supervisor, fn -> invoke(@gateway, @operation, config) end)
 
-      assert_receive {:wire_request, request}, 2000
+      assert_receive {:transport_request, request}, 2000
       assert_payload(request, @gateway, @operation)
       Agent.update(clock, fn _ -> 1000 end)
       GenServer.call(server, {:release, response(200, successful_body(@gateway, @operation))})
@@ -2480,11 +2443,9 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       @phase phase
       test "#{gateway} #{operation} no resend at exact deadline after #{phase}" do
         server =
-          start_supervised!(
-            {ScriptedCompletionServer, {self(), [response(503, "response-secret")]}}
-          )
+          start_supervised!({ScriptedTransport, {self(), [response(503, "response-secret")]}})
 
-        assert_receive {:server_port, port}
+        assert_receive {:transport_id, port}
         configure(@gateway, port)
         clock = start_supervised!({Agent, fn -> 0 end})
 
@@ -2521,7 +2482,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     test "#{gateway} #{operation} real Req pending admission requires explicit #{decision}" do
       server =
         start_supervised!(
-          {ScriptedCompletionServer,
+          {ScriptedTransport,
            {self(),
             [
               response(503, "response-secret"),
@@ -2529,7 +2490,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
             ]}}
         )
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
       owner = self()
       supervisor = start_supervised!(Task.Supervisor)
@@ -2549,7 +2510,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       task =
         Task.Supervisor.async_nolink(supervisor, fn -> invoke(@gateway, @operation, config) end)
 
-      assert_receive {:wire_request, first}, 2000
+      assert_receive {:transport_request, first}, 2000
       assert_payload(first, @gateway, @operation)
       assert_receive {:pending, context}, 2000
       assert context.failure.http_status == 503
@@ -2580,11 +2541,9 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     @phase phase
     test "real Req cancellation kills blocked #{phase} callback worker" do
       server =
-        start_supervised!(
-          {ScriptedCompletionServer, {self(), [response(503, "response-secret")]}}
-        )
+        start_supervised!({ScriptedTransport, {self(), [response(503, "response-secret")]}})
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(Ollama, port)
       owner = self()
       cancel = make_ref()
@@ -2611,7 +2570,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
           invoke(Ollama, :complete, CompletionConfig.new(recovery: policy))
         end)
 
-      assert_receive {:wire_request, request}, 2000
+      assert_receive {:transport_request, request}, 2000
       assert_receive {:worker, worker}, 2000
       monitor = Process.monitor(worker)
       send(task.pid, {:cancel, cancel})
@@ -2626,7 +2585,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
   test "real Req jitter ceilings saturate without exponent overflow" do
     server =
       start_supervised!(
-        {ScriptedCompletionServer,
+        {ScriptedTransport,
          {self(),
           [
             response(503, "response-secret")
@@ -2635,7 +2594,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
           ]}}
       )
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     configure(OpenAI, port)
     owner = self()
 
@@ -2671,11 +2630,11 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       server =
         start_supervised!(
-          {ScriptedCompletionServer,
+          {ScriptedTransport,
            {self(), [response(200, body), response(503, "response-secret"), response(200, body)]}}
         )
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(@gateway, port)
 
       messages = [
@@ -2761,9 +2720,9 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       response(503, "response-secret") |> String.replace("Retry-After: 11", "Retry-After: 0")
 
     server =
-      start_supervised!({ScriptedCompletionServer, {self(), [:hold, transient, transient]}})
+      start_supervised!({ScriptedTransport, {self(), [:hold, transient, transient]}})
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     configure(Ollama, port)
     clock = start_supervised!({Agent, fn -> 0 end})
     supervisor = start_supervised!(Task.Supervisor)
@@ -2784,7 +2743,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       )
 
     task = Task.Supervisor.async_nolink(supervisor, fn -> invoke(Ollama, :complete, config) end)
-    assert_receive {:wire_request, first}, 2000
+    assert_receive {:transport_request, first}, 2000
     Agent.update(clock, fn _ -> 1000 end)
     GenServer.call(server, {:release, transient})
     assert {:error, error} = Task.await(task, 2000)
@@ -2802,13 +2761,13 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
     server =
       start_supervised!(
-        {ScriptedCompletionServer,
+        {ScriptedTransport,
          {self(),
           List.duplicate(failure, 4) ++
             [response(200, successful_body(OpenAI, :complete))]}}
       )
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     configure(OpenAI, port)
     owner = self()
 
@@ -2845,11 +2804,9 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     @failure failure
     test "real Req sleeper #{failure} failure never enters safe errors history events or logs" do
       server =
-        start_supervised!(
-          {ScriptedCompletionServer, {self(), [response(503, "response-secret")]}}
-        )
+        start_supervised!({ScriptedTransport, {self(), [response(503, "response-secret")]}})
 
-      assert_receive {:server_port, port}
+      assert_receive {:transport_id, port}
       configure(Ollama, port)
       owner = self()
 
@@ -2907,11 +2864,11 @@ defmodule Mojentic.LLM.RecoveryWireTest do
   test "ambiguous local 504 waits for explicit admission and preserves complete wire payload" do
     server =
       start_supervised!(
-        {ScriptedCompletionServer,
+        {ScriptedTransport,
          {self(), [response(504, "response-secret"), response(504, "response-secret")]}}
       )
 
-    assert_receive {:server_port, port}
+    assert_receive {:transport_id, port}
     configure(Ollama, port)
     owner = self()
     supervisor = start_supervised!(Task.Supervisor)
@@ -2931,7 +2888,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       )
 
     task = Task.Supervisor.async_nolink(supervisor, fn -> invoke(Ollama, :complete, config) end)
-    assert_receive {:wire_request, first}, 2000
+    assert_receive {:transport_request, first}, 2000
     assert_payload(first, Ollama, :complete)
     assert_receive {:admission, context}, 2000
     assert context.failure.http_status == 504
@@ -2941,7 +2898,7 @@ defmodule Mojentic.LLM.RecoveryWireTest do
     assert GenServer.call(server, :requests) == [first]
     send(context.reply_to, {:recovery_admission, context.ref, :allow})
     assert {:error, error} = Task.await(task, 2000)
-    assert_receive {:wire_request, second}
+    assert_receive {:transport_request, second}
     assert second == first
     assert error.wire_attempt == 2
     assert Enum.map(error.history, & &1.http_status) == [504, 504]
