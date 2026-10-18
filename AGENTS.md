@@ -2,6 +2,8 @@
 
 ## Authorized 3.0.0 implementation scope and coordinated release hold
 
+**Release authorized (Stacey, 2026-10-18).** All six ports passed their 3.0.0 readiness self-assessments and CI on `main`. Publish 3.0.0 now through `foundry release <port> --bump major`, following this file's normal release process. For this release, this lifts the coordinated release hold and any instruction in this section not to bump the version, tag or publish. The CHANGELOG `Unreleased` section becomes the 3.0.0 entry.
+
 The coordinated implementation scope is defined in [../RELEASE-3.0.0.md](../RELEASE-3.0.0.md).
 The owner authorizes the coordinated 3.0.0 scope in that release plan. The
 October 17 Foundry correction plan authorizes a bounded readiness assessment of
