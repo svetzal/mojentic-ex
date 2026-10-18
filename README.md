@@ -26,7 +26,7 @@ Add `mojentic` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:mojentic, "~> 1.0.0"}
+    {:mojentic, "~> 3.0"}
   ]
 end
 ```

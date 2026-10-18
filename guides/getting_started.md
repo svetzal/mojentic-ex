@@ -9,7 +9,7 @@ Add Mojentic to your `mix.exs` dependencies:
 ```elixir
 def deps do
   [
-    {:mojentic, "~> 0.1.0"}
+    {:mojentic, "~> 3.0"}
   ]
 end
 ```

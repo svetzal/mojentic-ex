@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-18
+
 ### Added — completion recovery and readiness verification
 
 - Opt-in completion recovery for OpenAI, Ollama and oMLX, across ordinary,
@@ -25,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fresh consumer of the extracted local Hex payload: recovery, native reasoning,
   context discovery, request fidelity and timing. This establishes the declared
   library cases under the October 17 self-validation policy. Dependent adoption
-  follows publication; the coordinated release hold remains.
+  follows publication.
 
 ### Fixed — stream dispatch timing
 
@@ -61,7 +63,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The local `ex-stream-first-token-v1` matrix maps the designated TypeScript v1
   and v2 references through production Req, direct adapters, Broker and ChatSession.
   Readiness follows October 17 library self-validation; dependent adoption follows
-  publication. The coordinated release hold remains.
+  publication.
 
 ### Fixed — context-window response decoding
 
