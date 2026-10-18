@@ -1,4 +1,250 @@
-# 3.0.0 conformance (partial)
+# 3.0.0 conformance
+
+## October 17 bounded readiness assessment
+
+This is the current assessment of RELEASE-3.0.0 parts 1–5, starting from
+`f42c5c8d7e9fa9070fe7d86d6d4874dff07ff3b4`, with the uncommitted readiness
+verification and documentation changes identified by `ex-readiness-v1` below.
+Production implementation is unchanged from that commit. Earlier execution
+records follow under **Historical implementation evidence**; their partial-scope
+qualifications, test totals and external-pairing gaps are historical, not the
+current readiness assessment.
+
+The binding root contracts were read and their SHA-256 identities verified:
+
+| Document | SHA-256 |
+| --- | --- |
+| RELEASE-3.0.0 / initiative brief | `ea6a0efa56bfb3cd74b5ce728f80cc33c6fbd853114bec94b8aabe79f5d28e6e` |
+| TRANSIENT-RECOVERY-2026-10, including October 12 amendment | `a53a3a4eb118fa4687dd703d6ce918dd40dd6cb4eda796abc6c429a6e932e7a3` |
+| REASONING-PROTOTYPE-2026-10 | `0a40f3ad45c593bc779411021e45db569e73d3ecce86c99b201e7f8ebb656809` |
+| MODEL-METADATA-2026-10, including October 17 decisions | `d9945dca45ce09e2163843263a75b5e93028b00ee1baf191fc3ff13396830e9c` |
+
+The local recovery contract predates the root amendment; the mapping here uses
+the binding root hash. No new ambiguity was found. Library readiness follows the
+October 17 self-validation policy: the same versioned executable cases consume
+public APIs from source and from the local Hex payload. TypeScript snapshots are
+provenance. Dependents verify on published-version adoption; this assessment does
+not require or claim unreleased dependent adoption, external port execution, live
+model efficacy or external provider implementation verification. No running
+service boundary is changed by this assessment.
+
+## Shared executable contract and distribution boundary
+
+`test/contracts/readiness_v1.files` selects **ex-readiness-v1**, reusing the existing
+ExUnit cases and scripted TCP provider mechanism. Its companion
+`readiness_v1.manifest.sha256` identifies all selected cases, fixtures, support,
+production modules, package inputs and verification scripts. Both commands check
+that same manifest before running those same test files:
+
+- Source public consumers: `scripts/verify-readiness-contract`.
+- Fresh extracted Hex payload consumer: `scripts/verify-packaged-first-token`.
+
+The second command retains its historical name for gate compatibility. It builds
+with `mix hex.build`, records the tar SHA-256, extracts the actual contents, creates
+a fresh Mix project with a path dependency on those extracted contents, and
+compiles/runs against that package rather than the source tree. Only the support
+harness, fixtures and executable tests are copied from the source checkout. The
+consumer uses its own build and dependency directory. It does not publish.
+
+The preserved versioned sets are `recovery-capabilities-v1`,
+`admission-without-hook-v1`, `admission-without-decision-v1`,
+`retry-after-dates-v2`, `omlx-keepalive-v1`, `typed-errors-v1`,
+`native-reasoning-v1`, `context-window-v1`, `request-fidelity-v1` and
+`ex-stream-first-token-v1` (TypeScript v1 plus additive v2 provenance at
+`54171796a2b02c0f0170d0758d2e3c693ad027c9`). The aggregate freezes their actual
+executable definitions, not just identifiers or schemas. Wire suites install
+production `Mojentic.HTTP.ReqClient` and compare full decoded request bodies,
+replay bytes, semantic results and typed failure evidence. Capability declarations
+and pure context helpers supplement these wire checks. Mox doubles in pure
+metadata-consumer checks derive expected results from `context-window-v1`; their
+responses are exercised independently through real Req in the wire suite.
+
+Before expanding verification, a fresh-payload sensitivity probe temporarily
+changed oMLX native history serialization from `reasoning_content` to `thinking`.
+`ReasoningWireTest`'s **completed native reasoning and exact tool identity survive
+a real Req continuation** rejected the actual recorded continuation body (exit 2).
+Restoring the original source passed (exit 0): final `answer`, exactly one tool
+execution, native reasoning separate from visible content, exact tool ID and JSON
+result, and `preserve_thinking` on both requests. This was fault injection to prove
+the verification boundary, not a newly discovered production omission.
+
+## Part 1: recovery decision-to-test mapping
+
+Paths below are under `test/mojentic/llm/`. Names containing `<...>` denote the
+actual generated named cases for every applicable gateway/entrypoint. All are in
+the shared source/payload set. The ordinary, structured, event and legacy paths,
+Broker and ChatSession cover OpenAI, Ollama and oMLX, the maintained completion
+adapters. Embeddings and realtime are explicitly outside completion recovery.
+
+| Binding decision | Named behavioral evidence |
+| --- | --- |
+| Stable error category/provider/operation, status, optional code/request ID/Retry-After, phase, acceptance, progress, identity, bounded history and private cause | `recovery_test.exs`: `<gateway> <operation> HTTP status matrix preserves exact metadata and safe lifecycle`; `recovery_wire_test.exs`: `<gateway> <operation> real Req persistent 504 exhausts with ordered exact evidence`; `provider_metadata_wire_test.exs`: `<gateway> <operation> <fixture> preserves safe metadata and immutable wire retries` |
+| Default recovery off; one attempt; legacy success/error compatibility; opt-in APIs | `recovery_test.exs`: `<gateway> <operation> opt in success matches legacy successful response and payload`, `retains legacy HTTP and transport errors`; `admission_wire_test.exs`: `<gateway> <entrypoint> no hook <scenario> preserves wire and lifecycle contract` |
+| Eligible transport and 429/500/502/503/504, caller category/status selection, permanent/protocol veto | `recovery_wire_test.exs`: `<gateway> <operation> real Req 503 recovers with identical full payload and correlated lifecycle`, `real Req permanent failure does not retry under bounded recovery`; `permanent_http_wire_test.exs`: `<gateway> <operation> selected <status> <body_mode> tracing <tracing> remains permanent`; `stream_recovery_wire_test.exs`: interrupted public streams and selected-status truncated failures |
+| Full jitter exponential ceiling and saturation, Retry-After minimum, ceiling/budget refusal, budget begins at first failure; active generation may finish | `recovery_wire_test.exs`: `real Req exponential full jitter doubles and saturates at the configured ceiling`, `real Req monotonic budget begins at first failure and never resets on later failures`, `<gateway> <operation> recovery deadline allows active generation to finish`; `retry_after_dates_wire_test.exs`: `<gateway> <entrypoint> <form> <scenario> normalizes metadata and enforces wire recovery limits` |
+| Admission distinguishes eligibility from permission; pending is not an attempt; no timeout proves remote termination | `recovery_wire_test.exs`: `ambiguous local 504 waits for explicit admission and preserves complete wire payload`, `<gateway> <operation> real Req pending admission requires explicit <decision>` |
+| Cancellation during request/admission/backoff; no later dispatch; observed versus delivered evidence; paused-consumer cleanup | `recovery_wire_test.exs`: `<gateway> <operation> real Req cancellation during <phase> is authoritative and sends no retry`; `cancellation_socket_wire_test.exs`: `<gateway> <operation> tracing <tracing> <stage> closes correlated peer before fixture release`, `paused consumer cancels a buffered terminal before success` |
+| Immutable messages/native history/tools/schema/model/sampling/limits on retries, including file inputs | `immutable_request_wire_test.exs`: `fidelity-v1 <gateway> <boundary> <operation> <row> exact body and admitted replay`; `recovery_wire_test.exs`: `<gateway> <operation> recovery freezes legacy adaptation of history schema tools and controls` |
+| Semantic reasoning/content/tool fragments or completed calls forbid replay; bounded failure/exhaustion never completes a session | `stream_recovery_wire_test.exs`: `<gateway> <mode> cancellation after delivery preserves exact semantic and raw progress`, `<gateway> completed tool deltas followed by wire failure expose progress without execution`; `typed_errors_wire_test.exs`: `<gateway> <entrypoint> <scenario> retains typed cause and forbids replay` |
+| Tools execute once; retry does not restart agent/Broker or replenish depth | `recovery_wire_test.exs`: `<gateway> <caller> real Req recovers after exact tool result without tool replay`, `real Req recovery does not replenish broker tool depth`; `stream_recovery_wire_test.exs`: `<gateway> broker recovery does not replenish streaming tool depth` |
+| Ordered lifecycle transitions with safe fields and actual wire counts; admission/backoff consume no model/tool budget | `recovery_wire_test.exs`: `<gateway> <operation> real Req 503 recovers with identical full payload and correlated lifecycle`, `cancellation inside initial worker guard has no wire lifecycle`; `stream_recovery_wire_test.exs`: `<gateway> <mode> recovers 503 with immutable full payload and exact lifecycle` |
+| Opt-in exact request/response traces, including partial/error responses; capture failure never succeeds or resends; observe before capture | `cancellation_socket_wire_test.exs`: `blocked body capture retains observed semantic evidence before public delivery`; `recovery_wire_test.exs`: `<gateway> <operation> incomplete 200 <interruption> tracing <tracing> admitted <admitted> retains exact body evidence`; `first_token_wire_test.exs`: `split-frame observation survives rejected capture without output or resend` |
+| Safe Inspect, JSON, logs and lifecycle exclude credentials/payload/cause text; explicit private inspection | `provider_metadata_wire_test.exs`: `public OpenAI ordinary errors omit decorated short alphabetic prompt echoes`; `recovery_wire_test.exs`: `recognized provider code and UUID request ID echoes cannot enter public recovery metadata`, `real Req sleeper <failure> failure never enters safe errors history events or logs` |
+| October 12 admission without hook: remote eligible retries; local requires admission unless acceptance no | `admission_wire_test.exs`: `<gateway> <entrypoint> no hook <scenario> preserves wire and lifecycle contract`; `no_hook_wire_test.exs`: `local event stream without admission never resends an ambiguous failure` |
+| October 12 admission without decision has its own reason; no resend | `admission_wire_test.exs`: `<gateway> <entrypoint> admission <outcome> preserves terminal identity and never resends` (explicit rejection, undecided return, raise/throw/exit, worker death) |
+| October 12 five documented capabilities, endpoint/date citations, all exact-attempt termination unknown | `recovery_capabilities_test.exs`: `v1 <provider> <capability> declares <value> with exact inspected evidence`, `<provider> retains atom values and unknown exact-attempt termination` |
+| October 12 provider metadata: allowlisted codes, IDs cannot echo outbound secrets; provider field names | `provider_metadata_wire_test.exs`: `<gateway> <operation> <fixture> preserves safe metadata and immutable wire retries`, `<gateway> <operation> <fixture> semantic provider errors retain sensitive evidence privately` |
+| October 12 all HTTP dates and complete RFC 850 50-year rollover | `retry_after_dates_wire_test.exs`: `RFC 850 December 2076 rolls back to 1976 through real Req`, `<gateway> <entrypoint> RFC 850 <label> <scenario> compares the complete 50-year cutoff through Req`, plus the form/minimum cases above |
+| October 12 closed provider/operation types and typed policy/capture/length errors through public consumers | `typed_errors_wire_test.exs`: `<gateway> <entrypoint> <scenario> retains typed cause and forbids replay`, `<gateway> <object|broker_object> truncated JSON retains length rather than a parser error`, `session retains typed length failure through the real Req boundary` |
+| October 12 oMLX keepalives are raw-only; no frame/usage/model changes | `stream_recovery_wire_test.exs`: `oMLX recovery ignores coalesced keepalives around real provider completion`; `omlx_keepalive_wire_test.exs`: `<entrypoint> <layout> keepalives preserve exact output metadata and progress`, `<mode> minimal keepalive cannot supply completion evidence`, `<mode> capture failure on keepalive retains raw bytes without semantic progress` |
+| October 12 public-boundary evidence for partial reasoning/content/tool interruption, safe lifecycle, selection and HTTP 500/502 | `stream_recovery_wire_test.exs`, `recovery_wire_test.exs`, `typed_errors_wire_test.exs` generated Broker/session cases compare failure, progress, final history, no tool execution and no successful terminal event |
+
+Provider capability tables and recovery migration examples are in
+`guides/broker.md` and the gateway guides. These tests establish local library
+behavior; local socket closure does not prove remote inference termination.
+
+## Part 2: native reasoning decision-to-test mapping
+
+All rows use `reasoning_wire_test.exs` and `native-reasoning-v1` through Req.
+
+| Binding decision | Named behavioral evidence |
+| --- | --- |
+| Native history separate from visible/tool content, Ollama `thinking`, oMLX `reasoning_content`; exact six efforts without conflation; omitted effort unknown | `<gateway> <boundary> <operation> sends exact <effort> control and native history`; `<gateway> <operation> retention leaves absent native reasoning omitted` |
+| Explicit profiles, no name guessing, supported efforts/history; Qwen3.8 disabled/low/medium/xhigh | `<gateway> <boundary> <operation> validates caller-selected profile before HTTP`; `<gateway> Qwen3.8 accepts exact <effort> on an unrelated model name`; `invalid reasoning configuration fails before HTTP` |
+| Opt-in Broker retention, ordinary/streamed completed turns only, no fabricated history after failure/cancellation | `<gateway> <operation> tool continuation retains native reasoning only with preserve=<boolean>`; `<gateway> <failure> stream never executes tools or fabricates a continuation`; `<gateway> incomplete ordinary native turn cannot execute tools or retain history` |
+| oMLX `chat_template_kwargs.preserve_thinking`, including unset effort | `completed native reasoning and exact tool identity survive a real Req continuation`; `<gateway> <operation> requests native retention without inventing effort` |
+| Structured controls equal ordinary/stream controls; reasoning outside JSON | effort matrix above and `<gateway> structured response keeps native reasoning outside the JSON object` |
+| OpenAI explicitly rejects new extensions; legacy behavior preserved | `OpenAI <operation> explicitly rejects new controls and native history before HTTP`; `OpenAI preserves legacy <effort> effort and history through Req` |
+| Public ChatSession forwarding and visible history | `ChatSession ordinary and stream paths forward exact controls and validate profiles`; `legacy ChatSession stores visible content separately from native stream reasoning` |
+
+## Part 3: metadata and request-fidelity decision-to-test mapping
+
+| Binding decision | Named behavioral evidence |
+| --- | --- |
+| Optional gateway callback, legacy not-advertised fallback; positive capacity with provenance, optional model num_ctx; errors distinct from missing | `context_window_wire_test.exs`: `context-window-v1 <boundary> <provider> <row> exact wire and result`; `model_context_window_test.exs`: `legacy gateway without optional callback returns not advertised without dispatch` |
+| Authenticated configured oMLX GET exact ID; Ollama POST architecture suffix, parameters and 404; invalid/malformed shapes and transport errors | wire fixture matrix above; `<gateway> <boundary> transport failure retains cause`; rows include missing entries/fields, nonpositive/noninteger capacities, string-wrapped JSON and multiple architecture prefixes |
+| OpenAI exact registry only, no heuristic guess/HTTP, old capability fallback intact | `context-window-v1 registry <model> performs no HTTP`; `model_context_window_test.exs`: `registry metadata does not alter capability or pattern fallback`, `registry entries without a positive known capacity never invent a window` |
+| Pure effective capacity: caller then model num_ctx, clamp above/below/equal, no capacity remains unknown; discovery no request/session side effects | `context-window-v1 effective precedence and clamping <index>`; `Ollama discovery separates advertised and effective windows through production Req`; `<gateway> discovery leaves subsequent <operation> request unchanged`; configured lookup before/after discovery cases |
+| Monotonic dispatch start after preparation/capture; pre-dispatch rejection/cancellation gives no traffic/timing; response observed before capture | `first_token_wire_test.exs`: `<provider> <route> blocked request capture <outcome> excludes pre-dispatch time and evidence`; `split-frame observation survives rejected capture without output or resend` |
+| First token only; thinking > content > nonempty tool arguments; empty/name/keepalive ignored; empty/error terminals and provider metrics retained | `<provider> <route> <row> without recovery measures the production dispatch`; split-capture matrix; `<provider> recovery <mode> HTTP rejection has duration without a first token`; disconnect/error cases and Ollama final frame without newline cases |
+| One clock across admitted retries; each tool continuation resets; terminal evidence on legacy/events/Broker/ChatSession | `<provider> <route> admitted retry spans one dispatch clock and repeats exact wire request`; `tool continuation starts a fresh clock and executes once`; `<provider> default session forwards timing and finalizes successful history` |
+| Optional temperature/num_ctx/max_tokens, no invented fallback; removed public num_predict; set controls once with native names; no client-only fields | `immutable_request_wire_test.exs`: `fidelity-v1 <gateway> <boundary> <operation> <row> exact body and admitted replay`; seven fixture rows, default and individually set controls including zero; same suites across continuations and legacy APIs |
+| OpenAI fixed temperature adaptation and warning/drop of unsupported effort, nil-safe registry | fidelity matrix plus `gateways/openai_model_registry_test.exs`; `context_window_wire_test.exs` configured registry lookup preservation |
+| ChatSession forwards per-send controls, zero temperature, no implicit context/default; tool requests/retries identical | `fidelity-v1 <gateway> <boundary> legacy tool continuation <row> exact bodies and admitted replay` (Broker/session); context discovery no-side-effects cases |
+| Required-provider exception | oMLX omits unset max_tokens, verified by the fidelity matrix; Anthropic is not a maintained Elixir adapter, so its required-limit fallback does not apply |
+
+Nonstream request duration is optional in the contract. Capacity discovery does
+not change trimming or guess server residency. Guides for Broker, ChatSession,
+streaming, oMLX and OpenAI registry describe these public operations and migration.
+
+## Parts 4–5 and changes since 2.1.0
+
+Part 4 removes Kotlin iOS targets; Elixir has no Kotlin targets, so no local change
+applies. Part 5's Python Anthropic assistant-message filter and Rust negative
+num_predict cast are absent in Elixir. The TypeScript zero-temperature defect has
+an applicable semantic analogue: the request-fidelity matrix explicitly preserves
+zero temperature through ChatSession, gateway bodies, continuations and retries.
+No sibling repository was changed or certified.
+
+The diff from tag `v2.1.0` was reviewed against Unreleased and the existing guides.
+The missing broad completion-recovery introduction/migration example was added;
+stale claims that timing or external library pairing remained pending were
+removed. Existing entries cover typed errors, admission, capabilities, HTTP-date
+forms, keepalive handling, native reasoning, context discovery, nil defaults,
+num_predict removal, stream terminal tuples and FileManager path containment.
+No production omission was demonstrated by this bounded audit. No dependency,
+runtime, version, retry policy or release-ref change was made.
+
+## Current execution results
+
+The source implementation tested is commit
+`f42c5c8d7e9fa9070fe7d86d6d4874dff07ff3b4`; production files and `mix.lock` remain
+byte-identical. The uncommitted executable set is **ex-readiness-v1**, aggregate
+manifest SHA-256
+`7fd2c9bdf6a4d99399522dc054f6473907e4af3a16de22b528bf6c0bf1388874`.
+The fresh consumer's local Hex tar SHA-256 is
+`dd230d182c0752781be475c38a7ff32ffe63420e244a38b235b8fc2916e43c08`.
+Package metadata deliberately remains 2.1.0 during the coordinated version hold;
+this is local candidate validation, with no registry publication.
+
+The first timing-verifier attempt detected the old packaged-script checksum after
+that script was expanded. Only that manifest entry was updated, to identify the
+new verifier rather than weaken its check. The timing manifest SHA-256 is now
+`c24c65996e5e2ed845ac72d1823d909082163d03bcb414a9b077bf42769a19ff`;
+TypeScript provenance hashes, production hashes and timing cases are unchanged.
+The dedicated timing verifier passed after this correction; final gates were
+rerun against the corrected manifest.
+
+Fresh packaged consumption: `scripts/verify-packaged-first-token`, exit **0**,
+**5,329 tests, zero failures**, 732.0 seconds of final test execution plus fresh build
+and dependency installation. Public gateway, Broker and ChatSession consumers use
+the extracted package in their own Mix project; the same adapter production code
+and the same versioned executable cases establish the two local perspectives.
+
+Hosted CI evidence: [Validate, Test, and Publish run 39068014936](https://github.com/svetzal/mojentic-ex/actions/runs/39068014936),
+created 2026-10-17 20:44:48 UTC, completed **success** at the exact starting commit
+`f42c5c8d7e9fa9070fe7d86d6d4874dff07ff3b4`. Setup, format, compilation, tests,
+Credo, security audit and Dialyzer succeeded; release/publish/deploy jobs were
+skipped. Queried with `gh run list --repo svetzal/mojentic-ex --commit
+f42c5c8d7e9fa9070fe7d86d6d4874dff07ff3b4 --limit 5 --json
+databaseId,headSha,status,conclusion,url,createdAt,name` and `gh run view 39068014936
+--repo svetzal/mojentic-ex --json jobs,headSha,conclusion,url`, both exit 0.
+The uncommitted readiness changes have no hosted CI run. The CI test job now
+includes the shared source verifier and expanded fresh-payload verifier, retaining
+the exact Elixir 1.18.5 / OTP 28.5.0.7 pins and existing `priv/plts/` cache.
+
+Current final command results (unchanged runtime and quality thresholds):
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `scripts/recovery-mix format --check-formatted` | 0 | Formatted |
+| `scripts/recovery-mix compile --warnings-as-errors` | 0 | Development compilation |
+| `env MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | Test compilation |
+| `scripts/recovery-mix credo --strict` | 0 | Zero issues |
+| `scripts/recovery-mix test --cover` | 0 | Final isolated run: 22 doctests, 6,122 tests, zero failures, 19 existing integration exclusions; **91.13%** coverage above the unchanged **80%** floor; 682.7 seconds |
+| `scripts/verify-first-token-contract` | 0 | 864 cases; corrected manifest and frozen reference hashes verified |
+| `scripts/verify-readiness-contract` | 0 | Same 5,329 public-API cases; zero failures; 755.6 seconds |
+| `scripts/verify-packaged-first-token` | 0 | Same 5,329 cases in a fresh payload consumer; zero failures; 732.0 seconds plus fresh build/install |
+| `scripts/recovery-mix dialyzer` | 0 | Zero errors/skips |
+| `env MIX_ENV=test scripts/recovery-mix dialyzer` | 0 | Zero errors/skips |
+| `scripts/recovery-mix deps.audit` | 0 | No vulnerabilities |
+| `scripts/recovery-mix hex.audit` | 0 | No retired/advisory packages |
+| `scripts/recovery-mix sobelow --config` | 0 | Scan complete; existing non-Phoenix router notice and quoted-lockfile-key diagnostics |
+| `scripts/recovery-mix hex.outdated --all` | 1 | Informational available updates, nonblocking; no dependencies or suppressions changed |
+| `scripts/recovery-mix docs` | 0 | Generated; existing LICENSE, parent release-plan and dependency-rule link warnings |
+
+The first full coverage run passed: 22 doctests, 6,122 tests, zero failures,
+19 existing integration exclusions, **91.16%** coverage (unchanged **80%** floor).
+A subsequent parallel rerun reported one failure in the existing realtime
+`tool batch dispatch function_call items are executed and outputs submitted`
+test at `test/mojentic/realtime/session_test.exs:338`: no output had been submitted
+when its fixed 200 ms sleep elapsed. That test is outside parts 1–5 and was not
+changed. Its focused rerun passed (exit 0, one selected case). The final full
+coverage run without competing verification workloads passed (exit 0), with the
+complete 22-doctest / 6,122-test suite, zero failures, 19 existing integration
+exclusions and 91.13% coverage in 682.7 seconds. The parallel failure is retained
+as evidence of the existing sleep-based test's load sensitivity; improving
+realtime test synchronization is outside this bounded parts 1–5 assessment.
+
+No precommit alias is defined. CI already caches the ignored `priv/plts/` path.
+The outdated check lists ex_ast, finch, makeup, rustler_precompiled, sourceror and
+spitfire updates, with rustler outside its current constraint. The security audits
+report no advisories; these available-version notices are not advisory waivers.
+
+All required local gates pass on the final executable inputs. No implementation
+or declared-library contract-verification gap remains for Elixir parts 1–5;
+no contract ambiguity needs owner resolution. Source and fresh payload consumers
+establish the declared cases under the October 17 policy. Existing documentation
+link diagnostics and the observed realtime test load sensitivity are recorded
+above. Foundry owns finalization of these uncommitted changes and subsequent
+hosted CI; no Git refs were modified. For Elixir's release, coordinated release
+authorization is the remaining release step. The six-port hold remains in force.
+
+## Historical implementation evidence
+
+The following record is retained for provenance. Current scope, policy and
+readiness results above supersede its historical partial assessments.
+
 
 The final section records the cycle-14 dispatch-clock correction and current
 library self-validation results. The October 17 owner policy supersedes historical
@@ -18,7 +264,7 @@ Earlier sections preserve their execution evidence; the capabilities section
 records that correction; the typed-errors section records this execution. This does not establish full
 3.0.0 readiness. The coordinated release hold remains.
 
-## Contract identity and execution boundary
+### Contract identity and execution boundary
 
 Binding source: `mojentic-unify/TRANSIENT-RECOVERY-2026-10.md`, October 12 amendment,
 source repository revision `4b08dcd1d87f520a4c70928c33a2bc84c228093d`, SHA-256
@@ -35,7 +281,7 @@ provider observations, not proof that a real provider or another repository's
 consumer satisfies the same executable contracts. The script is not a double
 derived from a jointly verified producer/consumer contract set.
 
-## Named admission checks
+### Named admission checks
 
 Preserved admission checks (originally `admission-without-decision-v1`), implemented in
 `test/mojentic/llm/admission_wire_test.exs`, SHA-256
@@ -66,7 +312,7 @@ failed on the original source (`:rejected`, exit 2). The same probe passed after
 the admission-only source correction (exit 0). Full matrix expansion followed
 this red/green probe.
 
-## Preservation checks
+### Preservation checks
 
 Existing `recovery_wire_test.exs` cases include:
 
@@ -88,7 +334,7 @@ immutable retry payloads, tool execution and stream terminal behavior. Shared
 during the admission corrections. The date correction below changes date normalization and the reference-clock
 configuration passed to it.
 
-## Admission without a hook executable set
+### Admission without a hook executable set
 
 Local set `admission-without-hook-v1` runs with `scripts/verify-no-hook-contract`.
 It prints these SHA-256 identities before executing the tagged cases:
@@ -131,7 +377,7 @@ passed (exit 0). This is a source-regression probe through real Req, not evidenc
 of a previously failing production policy. No production policy correction was
 needed; source changes document the established guarantee.
 
-## Prior admission verification and coordination gaps
+### Prior admission verification and coordination gaps
 
 Tested base: `ffa67b1b05b06ad4ae429016a103e3b90b2d772f`, with the uncommitted
 changes identified above. Production `lib/mojentic/llm/recovery.ex` SHA-256:
@@ -185,7 +431,7 @@ reasoning, model metadata/request fidelity, and the rest of the initiative's
 per-port readiness requirements. None is implemented or certified by this task.
 
 
-## Retry-After dates executable set v2 (2026-10-16)
+### Retry-After dates executable set v2 (2026-10-16)
 
 Local executable set **`retry-after-dates-v2`** extends the preserved v1 set with
 RFC 850 full-timestamp cutoff regressions. All v1 three-form, malformed-date,
@@ -219,7 +465,7 @@ matching the earlier conformance record. Corrected production source SHA-256:
 No package, dependency or runtime version changed. Elixir 1.18.5 and OTP
 28.5.0.7 remain selected by `scripts/recovery-mix` and pinned in CI.
 
-### Production Req regression and named checks
+#### Production Req regression and named checks
 
 The recipient requirement and complete 50-year rule come from
 [RFC 9110 section 5.6.7](https://www.rfc-editor.org/rfc/rfc9110.html#section-5.6.7).
@@ -272,7 +518,7 @@ and budget refusals, seconds/absent/invalid headers, invalid calendar/time/weekd
 previous-century dates and ordinary/structured success. The full suite also runs
 both landed admission guarantees and explicit decisions without modifying them.
 
-### Current verification results
+#### Current verification results
 
 All commands below use `scripts/recovery-mix` with Elixir 1.18.5 and OTP
 28.5.0.7 unless another executable is named. Every discovered `.hone-gates.json`
@@ -306,7 +552,7 @@ not an unfiltered audit. ExDoc's existing warnings concern README `LICENSE`, the
 absent relative sibling `../RELEASE-3.0.0.md`, and the
 `deps/igniter/usage-rules.md` link. No unrelated fixes or upgrades were made.
 
-### Historical external verification status (policy superseded)
+#### Historical external verification status (policy superseded)
 
 `retry-after-dates-v2` is a **local** executable-set identity, not a jointly
 verified contract. Local consumer-side verification exercises gateway, Broker
@@ -320,7 +566,7 @@ required gates. This task does not establish cross-repository compatibility,
 full 3.0.0 conformance or release readiness. The coordinated release hold remains;
 Foundry owns finalization and these changes remain uncommitted.
 
-## oMLX keepalive frames: current execution
+### oMLX keepalive frames: current execution
 
 The owner-authorized objective supersedes the earlier date-only execution
 restriction. Only demonstrated keepalive gaps were corrected. The binding source
@@ -401,7 +647,7 @@ probe demonstrated ghost semantic progress on capture failure, corrected in
 fallback evidence reconstruction. Keepalive bytes are counted before filtering;
 OpenAI/Ollama parsing, admission and Retry-After code were not changed.
 
-### Current verification results
+#### Current verification results
 
 `Elixir 1.18.5`, `OTP 28.5.0.7`, selected by the existing
 `scripts/recovery-mix`; CI pins and runtime requirements are unchanged.
@@ -431,7 +677,7 @@ OpenAI/Ollama parsing, admission and Retry-After code were not changed.
 - No `precommit` alias is defined. CI already pins the runtime and caches
   `priv/plts/`, which is already ignored.
 
-### Paired provider verification: coordination gap
+#### Paired provider verification: coordination gap
 
 This is a versioned **local consumer executable set**, not a jointly verified
 cross-repository contract. oMLX provider revision: **not verified**. Provider-side
@@ -446,9 +692,9 @@ verification remains unfinished initiative work. Full 3.0.0 readiness and releas
 remain on hold.
 
 
-## October 16 capabilities correction (partial)
+### October 16 capabilities correction (partial)
 
-### Scope and inspected evidence
+#### Scope and inspected evidence
 
 Binding amendment and initiative brief hashes remain those recorded above; both
 were freshly checked against their supplied SHA-256 values. Tested source starts
@@ -491,7 +737,7 @@ recovery behavior are preserved. Other amendments, reasoning and metadata are
 outside this execution. Earlier capability assessments describe historical
 observations; the current cited declarations supersede them.
 
-### Executable identity and proof
+#### Executable identity and proof
 
 Local executable set: **recovery-capabilities-v1**.
 
@@ -514,7 +760,7 @@ without replacing the old representation. Unknown facilities never establish
 resend permission or exact remote termination. Wire integration tests still cover
 the user's completion journey separately from these declaration assertions.
 
-### Historical external verification status (policy superseded)
+#### Historical external verification status (policy superseded)
 
 This is a **local declaration contract**, not jointly verified provider/consumer
 compatibility. For OpenAI, Ollama and oMLX, provider implementation revision tested:
@@ -533,7 +779,7 @@ This historical prerequisite is superseded for library readiness by the
 October 17 policy; live-service compatibility remains unclaimed. The six-port release
 hold remains; this correction does not establish complete 3.0.0 readiness.
 
-### Current quality checks
+#### Current quality checks
 
 All commands use `scripts/recovery-mix` and the existing pinned runtime.
 Fresh command results (zero means pass):
@@ -579,7 +825,7 @@ was taken. Proof JSON field types, actual red/green exit codes, referenced log
 existence and executable fixture/verifier hashes were validated. Execution logs
 and proof remain Foundry-owned scratch, not project artifacts.
 
-## October 16 typed errors correction (partial)
+### October 16 typed errors correction (partial)
 
 Only the October 12 **Typed errors** guarantee is addressed by this execution.
 The binding source revision `4b08dcd1d87f520a4c70928c33a2bc84c228093d` was read
@@ -591,7 +837,7 @@ Tested Elixir source is base commit
 `b85a27ab37bd16e6ee82950ea08f00c5356c5075` plus the uncommitted changes in this
 execution. No refs, versions, runtime pins or dependencies were changed.
 
-### Characterization and corrections
+#### Characterization and corrections
 
 The production-Req probe `session retains typed length failure through the real
 Req boundary` rejected the original implementation (exit 2): ChatSession returned
@@ -630,7 +876,7 @@ legacy oMLX ordinary length responses. Existing admission, capability, Retry-Aft
 keepalive, cancellation and bounded-history suites remain required preservation
 checks. Reasoning, metadata and other amendments remain outside this objective.
 
-### Executable boundary contract and verification limits
+#### Executable boundary contract and verification limits
 
 Local executable set: **typed-errors-v1**, implemented in
 `test/mojentic/llm/typed_errors_wire_test.exs`. It reuses the existing
@@ -708,7 +954,7 @@ set returned **exit 0: 110 tests, zero failures** under its normal test command.
 This additional comparison supplements, rather than replaces, the initial
 before-correction red/green proof.
 
-### Fresh execution quality results
+#### Fresh execution quality results
 
 All Mix commands below use `scripts/recovery-mix`, which verifies the existing
 CI pins: Elixir **1.18.5**, Erlang/OTP **28.5.0.7**. CI already caches project
@@ -798,7 +1044,7 @@ Execution logs and proof are Foundry-owned scratch, not committed project
 artifacts. Foundry owns Git finalization; no commit, push, ref change, version
 bump, publication or release was performed.
 
-## Part 2: native reasoning (local implementation; historical external status)
+### Part 2: native reasoning (local implementation; historical external status)
 
 Binding source: `mojentic-unify/REASONING-PROTOTYPE-2026-10.md`, source revision
 `4b08dcd1d87f520a4c70928c33a2bc84c228093d`, SHA-256
@@ -811,7 +1057,7 @@ were run or changed here. Elixir tested base revision:
 `ddb2217c8245b041a20fd25f34f5aa6fbfaee2ce`, plus this uncommitted part-2 patch.
 No version, dependency, runtime or Git ref was changed.
 
-### Executable contract identity
+#### Executable contract identity
 
 `native-reasoning-v1` reuses the loopback `ScriptedCompletionServer` and production
 Req boundary. `scripts/verify-native-reasoning-contract` prints the version and
@@ -829,7 +1075,7 @@ asserting the entire ordered continuation payload, exact tool-call identity and
 arguments, a single execution, and `preserve_thinking` on both requests. Matrix
 expansion and documentation followed that behavioral correction.
 
-### Contract decisions mapped to named executable cases
+#### Contract decisions mapped to named executable cases
 
 All names below are in `reasoning_wire_test.exs`; generated names include the
 provider, entrypoint and effort/outcome.
@@ -856,7 +1102,7 @@ history uses completed `generate_response/4` results; ChatSession retains its
 existing bounded visible-answer history. No native history is synthesized from
 partial/error/cancelled turns. OpenAI history adaptation remains unchanged.
 
-### External verification gaps for coordination
+#### External verification gaps for coordination
 
 Local adapter/provider verification and Broker/ChatSession consumer verification
 use the same executable set above. They exercise production HTTP serialization,
@@ -874,7 +1120,7 @@ not a blocker for this port's native-reasoning implementation. Parts 1 and 3 and
 the other ports retain their own readiness work. This partial record does not
 authorize release; the coordinated hold remains.
 
-### Native-reasoning-v1 manifest for this patch
+#### Native-reasoning-v1 manifest for this patch
 
 | Executable contract artifact | SHA-256 |
 | --- | --- |
@@ -920,7 +1166,7 @@ to exercise its validated legacy API; the immutable-request tests separately
 verify the changed exact `"high"` control, now including structured output, on
 the recovery-disabled legacy path and identical admitted retry payloads.
 
-### Final native-reasoning verification results
+#### Final native-reasoning verification results
 
 Pinned runtime: Elixir **1.18.5**, Erlang/OTP **28.5.0.7**, selected and checked by
 `scripts/recovery-mix`, matching the existing CI pins. No runtime upgrade was made.
@@ -966,7 +1212,7 @@ dependent verification follows published adoption under the October 17 policy.
 The independent `typed-errors-v1`
 consumer follow-up retains its separate assignment.
 
-## Request fidelity — partial part 3 evidence
+### Request fidelity — partial part 3 evidence
 
 The request-fidelity correction implemented only MODEL-METADATA-2026-10 sections 3–3.6
 (SHA-256 `a085da1c0d110f9d587a24ace6ac2854b653e1ac28905b3829d94d665b2c906e`).
@@ -985,7 +1231,7 @@ timing were not implemented by that correction. Context discovery is recorded be
 This mapping does not assert
 complete part 3 or coordinated release readiness.
 
-## Context-window discovery — preserved cycle-11 evidence
+### Context-window discovery — preserved cycle-11 evidence
 
 This correction implements only MODEL-METADATA-2026-10 section 1 (SHA-256
 `a085da1c0d110f9d587a24ace6ac2854b653e1ac28905b3829d94d665b2c906e`).
@@ -995,7 +1241,7 @@ Landed request fidelity, recovery and reasoning remain intact. First-token timin
 is outside this correction; complete part 3 and coordinated release readiness
 remain **partial**, including external contract verification below.
 
-### Characterized boundary and executable identity
+#### Characterized boundary and executable identity
 
 Before implementation, `Gateway` exposed model listing but no context discovery.
 Ollama used configured `OLLAMA_HOST` for `/api/tags` and `/api/chat`; oMLX used
@@ -1033,7 +1279,7 @@ through production Req` in
   Completion success frames reuse `request-fidelity-v1` rather than introducing
   independent completion doubles.
 
-### Named conformance cases
+#### Named conformance cases
 
 | Requirement | Executable test names / declared cases |
 | --- | --- |
@@ -1062,7 +1308,7 @@ models, or alter ChatSession history trimming. Malformed discovery returns
 `:invalid_response`; non-2xx returns `{:http_error, status}`; transport failures
 retain the native cause under `{:request_failed, cause}`.
 
-### Counterpart status and initiative finding
+#### Counterpart status and initiative finding
 
 | Verification side | Tested identity | Command / result |
 | --- | --- | --- |
@@ -1084,7 +1330,7 @@ supplied TypeScript first-token regression finding and post-release typed-error
 consumer assignments retain their separate scope. No release, Git finalization,
 dependency change or runtime upgrade is authorized here.
 
-### Context discovery quality results
+#### Context discovery quality results
 
 Pinned Elixir **1.18.5**, Erlang/OTP **28.5.0.7**, selected by
 `scripts/recovery-mix`; CI pins and PLT caching remain unchanged.
@@ -1117,7 +1363,7 @@ gate also passed before that strengthening (650.1 seconds, 90.80%). No new
 integration exclusions or coverage suppressions were introduced.
 
 
-## Cycle-12 correction: reject double-decoded Ollama metadata
+### Cycle-12 correction: reject double-decoded Ollama metadata
 
 This section supersedes the cycle-11 snapshot identity and quality results above
 for context-window discovery. Tested source is preserved commit
@@ -1179,7 +1425,7 @@ Only the demonstrated response-decoding defect is corrected. No first-token,
 recovery, dependency, runtime, version or release changes were made. Git
 finalization belongs to Foundry; this candidate remains uncommitted.
 
-### Cycle-12 quality results
+#### Cycle-12 quality results
 
 Pinned Elixir 1.18.5 and OTP 28.5.0.7 remain unchanged, as do CI PLT caching
 and the 80% coverage threshold. Final-candidate results:
@@ -1209,7 +1455,7 @@ requires a dependency change. Gate evidence and behavioral failure/pass logs are
 retained by Foundry for review; they are execution scratch, not package sources.
 
 
-## Model metadata section 2: client first-token timing (October 17 correction)
+### Model metadata section 2: client first-token timing (October 17 correction)
 
 This section supersedes earlier cycle-specific timing deferrals. The coordinated
 3.0.0 release hold remains. Context-window discovery, effective-window clamping,
@@ -1217,7 +1463,7 @@ registry fallback, request fidelity and native reasoning retain their existing
 contracts and implementation. No dependency/runtime/version or Git-ref changes
 are part of this correction.
 
-### Binding sources and executable identities
+#### Binding sources and executable identities
 
 - Initiative brief: verified SHA-256
   `ea6a0efa56bfb3cd74b5ce728f80cc33c6fbd853114bec94b8aabe79f5d28e6e`.
@@ -1246,7 +1492,7 @@ are part of this correction.
 Tested Elixir source is base `df29a1c36f6b4b172b3ff352d40201d6583a9890` plus
 this uncommitted correction. Exact local fixture/test hashes and gate results are recorded below. Foundry owns Git finalization.
 
-### Characterized boundary and implementation
+#### Characterized boundary and implementation
 
 `ReqClient.post_stream/4` constructs a cold stream. Enumeration enters
 `WireTrace`, starts the measurement at authorized HTTP dispatch, and advances
@@ -1275,7 +1521,7 @@ each turn’s evidence, then starts a new completion for a tool continuation.
 ChatSession forwards evidence while accumulating only visible text and refuses
 successful finalization after a stream failure.
 
-### Named executable checks and reference case mapping
+#### Named executable checks and reference case mapping
 
 All local cases use production `ReqClient`, loopback TCP and the existing
 `ScriptedCompletionServer` mechanism. Only the monotonic clock boundary is
@@ -1329,7 +1575,7 @@ older fixtures retain their existing 50 ms default. This removes idle test-contr
 waits without changing response bytes, virtual clock milestones, or production
 HTTP dispatch/capture paths.
 
-### Reference provenance and current library validation policy
+#### Reference provenance and current library validation policy
 
 The local matrix maps the identified v1/v2 behaviors into Elixir’s existing
 executable mechanism. Frozen source hashes provide provenance; production Req
@@ -1344,7 +1590,7 @@ TypeScript run against an Elixir executable snapshot or unreleased dependent
 adoption. Bedrock and bedrock-workshop verify when adopting the published library
 in separately authorized work. No external repository was changed or finalized.
 
-### Final local verification
+#### Final local verification
 
 Runtime: Elixir **1.18.5**, OTP **28.5.0.7**, selected and asserted by the unchanged `scripts/recovery-mix`. No `precommit` alias is defined. The complete discovered project gates and applicable additional checks ran through Foundry capture.
 
@@ -1395,7 +1641,7 @@ d77cb743856a8b46ced5c96658a7945fb497440c164c2b2ede88c25b284f08b6  test/support/s
 
 Both behavioral proofs have validated JSON, actual rejecting exit 2 / corrected exit 0, and complete existing logs. All changes remain uncommitted for Foundry review. No version bump, tag, publish, push, merge, rebase or ref modification occurred. The coordinated release remains held; external dependent verification occurs when adopting the published library.
 
-## Cycle 14: production dispatch-clock correction (October 17)
+### Cycle 14: production dispatch-clock correction (October 17)
 
 This corrects the preserved cycle-13 implementation at base commit
 `e2c4558bc6af2234b8a7553d2106983b98e233c2`; it does not rebuild first-token timing.
@@ -1411,7 +1657,7 @@ dispatch and exact-request regressions identified by that manifest. The frozen
 TypeScript v1/v2 sources and their hashes remain unchanged as provenance. They
 are not cross-library verification prerequisites under the October 17 policy.
 
-### Behavior and consumer-perspective cases
+#### Behavior and consumer-perspective cases
 
 `ReqClient` starts timing in the final Req request step, after request capture,
 pool setup and request preparation, immediately before the production adapter.
@@ -1451,7 +1697,7 @@ terminal/error identity, admission and bounded-history cases remain in the same
 executable suite. Context discovery, reasoning and request fidelity remain
 covered by the complete project tests.
 
-### Distribution self-validation policy and source identity
+#### Distribution self-validation policy and source identity
 
 The owner’s October 17 library self-validation policy supersedes historical
 external-pairing and reference-snapshot prerequisites in this document, AGENTS
@@ -1503,7 +1749,7 @@ wire-attempt identity 1 and the original privacy checks. This follows the author
 pre-dispatch correction; recovery policy and failure identity were not changed.
 The source manifest also identifies this supplementary full-suite regression file.
 
-### Final quality checks for cycle 14
+#### Final quality checks for cycle 14
 
 All commands use the unchanged pinned runtime. The corrected compatibility tests
 were rerun before the complete suites. Required gates include both timing

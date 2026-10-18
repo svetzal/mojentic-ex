@@ -71,7 +71,9 @@ broker
 end)
 ```
 
-The OpenAI and Ollama gateways support this API. Their completion rules:
+OpenAI, oMLX and Ollama support this API. oMLX follows the OpenAI-compatible
+column, with native reasoning and keepalive handling described below. Completion
+rules:
 
 | Outcome | OpenAI-compatible | Ollama |
 | ------- | ----------------- | ------ |
@@ -620,4 +622,7 @@ an implementation or Mox mock. Custom HTTP clients must honor `:stream_timing`
 through the same dispatch/observation boundary to provide measurements; the
 production Req path is verified by `scripts/verify-first-token-contract`.
 The frozen TypeScript v1/v2 references and local case mapping are identified in
-`CONFORMANCE-3.0.0.md`; external paired verification is still pending.
+`CONFORMANCE-3.0.0.md`. Under the October 17 library self-validation policy,
+`ex-readiness-v1` verifies these cases through public APIs from source and a fresh
+consumer of the local Hex payload. Dependents verify when adopting the published
+version; the coordinated release hold remains.

@@ -3,31 +3,37 @@
 ## Authorized 3.0.0 implementation scope and coordinated release hold
 
 The coordinated implementation scope is defined in [../RELEASE-3.0.0.md](../RELEASE-3.0.0.md).
-The owner authorizes the coordinated 3.0.0 scope in that release plan. This
-execution is authorized by the owner's current Foundry correction plan to implement
-**client first-token timing only** (part 3), under `MODEL-METADATA-2026-10.md`
-section 2, SHA-256
+The owner authorizes the coordinated 3.0.0 scope in that release plan. The
+October 17 Foundry correction plan authorizes a bounded readiness assessment of
+parts 1–5 starting from `f42c5c8`, fixing only demonstrated omissions. Complete
+`CONFORMANCE-3.0.0.md` with named behavioral tests for every binding parts 1–3
+decision and applicability of parts 4–5. Reconcile Unreleased notes and migration
+instructions against changes since 2.1.0. Reuse the existing executable contracts
+and extend fresh consumption of the locally built Hex payload beyond timing to
+recovery, native reasoning, context discovery and request fidelity.
+
+Preserve production Req dispatch after request capture and preparation, response
+observation before capture, retries on one logical clock, continuation resets,
+stream cleanup, request fidelity, reasoning, registry fallback, cancellation,
+admission, privacy, failure identity, bounded history and terminal behavior.
+Rejecting or cancelling before dispatch creates no HTTP traffic or timing.
+Use `MODEL-METADATA-2026-10.md` section 2, SHA-256
 `d9945dca45ce09e2163843263a75b5e93028b00ee1baf191fc3ff13396830e9c`,
-including Stacey’s October 17 precedence, retry-span and continuation-reset decisions.
-Use the owner-designated `ts-stream-first-token-v1` reference and additive v2
-capture regressions at TypeScript commit `54171796a2b02c0f0170d0758d2e3c693ad027c9`.
-Verify dispatch, frame observation and capture through production Req real HTTP,
-including legacy/event streams, recovery, Broker and ChatSession. Preserve completed
-context-window discovery, registry fallback, request fidelity, native reasoning,
-recovery decisions, typed errors, privacy, cancellation, admission, failure identity,
-bounded history and terminal behavior. Dependency/runtime changes, unrelated recovery
-changes and rebuilding completed metadata/request-fidelity work are outside this run.
-Write only in this worktree. Correct the preserved cycle-13 dispatch defect:
-request capture and preparation precede the production Req dispatch clock;
-rejection or cancellation before dispatch must create neither HTTP traffic nor
-timing evidence. Preserve response observation before capture and stream cleanup.
-Run `scripts/verify-first-token-contract` and `scripts/verify-packaged-first-token`
-with the project gates. Under the October 17 library self-validation policy,
-public-API consumer tests and a fresh consumer of the locally built Hex payload
-establish the declared library cases. TypeScript snapshots are provenance, not a
-required external executable pairing. Dependents verify upon adopting a published
-version; no unreleased dependent adoption is required. Running service boundaries
-still require shared versioned producer/consumer verification in authorized work.
+including Stacey’s October 17 precedence, retry-span and continuation-reset
+decisions. The `ts-stream-first-token-v1` reference and additive v2 capture
+regressions at TypeScript commit `54171796a2b02c0f0170d0758d2e3c693ad027c9`
+remain provenance.
+
+Run all project gates, including `scripts/verify-readiness-contract`,
+`scripts/verify-first-token-contract` and `scripts/verify-packaged-first-token`.
+Under the October 17 library self-validation policy, public-API source consumers
+and a fresh consumer of the local Hex payload establish the declared library
+cases. No external port executable pairing or unreleased dependent adoption is
+required. Dependents verify upon adopting a published version. Changed running
+service boundaries still require shared versioned producer/consumer verification.
+Report genuine contract ambiguities for owner resolution. Dependency/runtime
+changes, rebuilding completed features and sibling-repository edits are outside
+this run. Write only in this worktree.
 
 The coordinated release hold remains in force until all six ports are ready and
 the release coordinator authorizes release. Do not tag, publish or bump versions.

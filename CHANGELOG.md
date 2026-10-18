@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — completion recovery and readiness verification
+
+- Opt-in completion recovery for OpenAI, Ollama and oMLX, across ordinary,
+  structured and streaming APIs, Broker and ChatSession. Recovery replays only
+  one immutable provider request; completed tools and the agent loop are not
+  replayed. Typed errors expose safe status, progress, attempt identity and bounded
+  history, with explicit accessors for private cause/received evidence. Lifecycle
+  events omit payloads; exact request/response capture is opt-in.
+- Configure `CompletionConfig.new(recovery: [max_attempts: 3])` for bounded
+  retries. Recovery is disabled by default; `recovery: []` opts into typed errors
+  with one attempt. OpenAI eligible transient failures can retry without a hook;
+  Ollama/oMLX ambiguous acceptance requires admission. Backoff respects jitter,
+  Retry-After and recovery budgets. Partial semantic streams interrupt rather
+  than resend. See the Broker guide for asynchronous admission and cancellation.
+- `ex-readiness-v1` runs the same public-API contract cases from source and a
+  fresh consumer of the extracted local Hex payload: recovery, native reasoning,
+  context discovery, request fidelity and timing. This establishes the declared
+  library cases under the October 17 self-validation policy. Dependent adoption
+  follows publication; the coordinated release hold remains.
+
 ### Fixed — stream dispatch timing
 
 - Start the client clock immediately before the production Req adapter sends,
@@ -67,8 +87,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `num_ctx`, then model `num_ctx`. Discovery does not set request parameters or
   change ChatSession trimming. Unknown advertised capacity remains `nil`.
 - `context-window-v1` executable contracts verify local adapters and metadata
-  consumers through production Req. External counterpart verification and
-  first-token timing remain pending; the coordinated release hold still applies.
+  consumers through production Req. Fresh packaged consumption covers these cases alongside timing; the
+  coordinated release hold still applies.
 
 ### Breaking changes — request fidelity
 
@@ -86,6 +106,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Migration: restore the former request settings explicitly with
 `CompletionConfig.new(temperature: 1.0, num_ctx: 32_768, max_tokens: 16_384)`.
+When reading these optional fields, guard numeric operations and comparisons
+with `is_number/1` or `is_integer/1`; Erlang term ordering makes `nil > 0` true.
 For ChatSession set `temperature: 1.0` in `new/2` and pass `num_ctx: 32_768,
 max_tokens: 16_384` to each send. Otherwise Ollama uses model/server settings,
 possibly a smaller context and unlimited output; OpenAI may generate more output
@@ -100,8 +122,8 @@ reasoning-drop warnings remain in place for explicit caller controls.
   Ollama and oMLX. All seven contract rows verify complete initial/continuation
   bodies, native parameter names and omissions, one tool execution, byte-identical
   continuation retries after an admitted 503, final output and session history.
-  Existing production forwarding and finalization already conform; this closes
-  a local verification gap. External provider/consumer verification remains open.
+  Existing production forwarding and finalization already conform; source and
+  fresh packaged consumers now verify the same cases.
 
 - Established the October 12 admission-without-a-hook guarantee through the real
   Req boundary across OpenAI, Ollama and oMLX ordinary, structured, event and
@@ -187,6 +209,12 @@ reasoning-drop warnings remain in place for explicit caller controls.
   for an asynchronous decision. Unexpected returns (including `:cancelled` and
   `:deadline`) and callback failures are undecided, not caller rejection. Use the
   existing cancellation message and deadline options for authoritative stops.
+
+### Maintenance
+
+- Correct opaque atomics cancellation-handle and tracer-event types for type
+  analysis. Realtime transport retains the error path for an invalid WebSocket
+  upgrade with empty headers. These changes add no completion-recovery policy.
 
 ### Security
 

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Local production adapters and metadata consumers verify the same versioned set.
-# External producers/consumers require separately authorized paired verification.
+# Library public-API verification; fresh payload consumption uses ex-readiness-v1.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 echo 'context-window-v1'

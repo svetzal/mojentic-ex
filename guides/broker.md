@@ -277,6 +277,10 @@ Replace `CompletionConfig.new(num_predict: n)` with
 config = CompletionConfig.new(temperature: 1.0, num_ctx: 32_768, max_tokens: 16_384)
 ```
 
+When reading optional configuration fields, guard numeric operations and
+comparisons with `is_number/1` or `is_integer/1`; `nil > 0` is true under Erlang
+term ordering.
+
 Without these explicit settings, Ollama uses model/server settings (possibly a
 smaller context or unlimited output). OpenAI output is limited by the model,
 which can increase generation length and cost. oMLX also uses server defaults.
@@ -505,8 +509,12 @@ Each gateway reports what its provider reports:
 - Ollama: `usage` holds `prompt_eval_count` and `eval_count`, `finish_reason` is
   `done_reason`, and `metadata` holds the reported durations in nanoseconds. On a
   single-turn stream the durations come from the final frame.
-- OpenAI streams report no provider metadata, so their stream traces record
-  `nil` metadata.
+- OpenAI streams have no provider duration fields; terminal metadata includes
+  client-measured timing. Provider usage remains separate.
+
+With recovery enabled, default Broker traces redact request and response payloads,
+model, usage and provider metadata. Use the explicit wire trace observer only when
+you intend to capture raw evidence and have chosen its storage policy.
 
 Unknown stays unknown. The tracer never estimates tokens from text length or a
 tokenizer.
@@ -668,8 +676,10 @@ tool rounds. Its bounded session history stores visible final answers; callers
 managing outer-turn native history should use the response API above.
 
 Run `scripts/verify-native-reasoning-contract` for the versioned production-Req
-contract set. External server and consumer verification is tracked separately in
-`CONFORMANCE-3.0.0.md`; local fixtures alone do not establish paired compatibility.
+contract set. `ex-readiness-v1` also runs these public cases from source and a
+fresh local Hex payload consumer. See `CONFORMANCE-3.0.0.md` for identities and
+results. This establishes the declared library cases; it does not certify a live
+server or model efficacy. Dependents verify upon published-version adoption.
 
 Reasoning validation returns `{:error, reason}` before HTTP. An incompatible
 profile effort returns `{:unsupported_reasoning_effort, profile_name, effort}`;

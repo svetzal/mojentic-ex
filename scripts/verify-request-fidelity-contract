@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Local adapter and Broker/ChatSession verification; external servers/consumers
-# must verify this same executable set in their own authorized repositories.
+# Library public-API verification; fresh payload consumption uses ex-readiness-v1.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 echo 'request-fidelity-v1'

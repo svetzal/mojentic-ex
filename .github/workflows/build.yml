@@ -230,6 +230,11 @@ jobs:
           MOJENTIC_MIX: mix
         run: scripts/verify-first-token-contract
 
+      - name: Verify public readiness contracts
+        env:
+          MOJENTIC_MIX: mix
+        run: scripts/verify-readiness-contract
+
       - name: Verify local Hex payload from a fresh consumer
         env:
           MOJENTIC_MIX: mix

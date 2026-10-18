@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Local provider-adapter and Broker consumer verification of native-reasoning-v1.
-# External consumers and model servers must verify this same set separately.
+# Library public-API verification; fresh payload consumption uses ex-readiness-v1.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 echo 'native-reasoning-v1'

@@ -180,8 +180,9 @@ existing behavior.
 The local `omlx-keepalive-v1` executable set runs with
 `scripts/verify-omlx-keepalive-contract`, using the scripted loopback HTTP server
 and production Req through gateways, Broker and ChatSession. See
-`CONFORMANCE-3.0.0.md` for identities, named tests and the outstanding paired
-provider-verification gap.
+`CONFORMANCE-3.0.0.md` for identities, named tests and source/payload consumer
+results under the October 17 library self-validation policy. Live server behavior
+and remote inference termination are not certified by these local cases.
 
 ## Advertised context capacity
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local executable set; paired cross-repository verification remains pending.
+# Library self-validation; fresh payload consumption uses ex-readiness-v1.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 echo 'retry-after-dates-v2'

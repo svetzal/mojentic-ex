@@ -38,6 +38,12 @@
       "timeout": 900
     },
     {
+      "name": "readiness-contract",
+      "command": "scripts/verify-readiness-contract",
+      "required": true,
+      "timeout": 900
+    },
+    {
       "name": "packaged-first-token",
       "command": "scripts/verify-packaged-first-token",
       "required": true,

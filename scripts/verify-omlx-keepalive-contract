@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Local executable cases; external paired provider verification remains required.
+# Library self-validation; fresh payload consumption uses ex-readiness-v1.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 echo 'omlx-keepalive-v1'
