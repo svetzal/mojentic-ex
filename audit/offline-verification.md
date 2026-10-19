@@ -31,7 +31,7 @@ publishes or runs deps.get.
 | Executable manifest | SHA-256 |
 | --- | --- |
 | `test/contracts/context_window_v1.manifest.sha256` | `80141cf30a543b798d5818c29c1e8af9bd4d027345fbe312f064f23a8a5b8faf` |
-| `test/contracts/readiness_v1.manifest.sha256` | `8943fc5e40b09ecdb8df34d433b6fbb0c5e309ded17c15b44cdc92bfd123a6ca` |
+| `test/contracts/readiness_v1.manifest.sha256` | `930a321ec8b5bdbc662ea75c8c82a2422befbf1d4cd9feb698cf2a35c7542651` |
 | `test/contracts/stream_first_token_v1.manifest.sha256` | `88962afa7cb210f63448c3ebb672ae677ab1152c1e7969a11153d6478aed585a` |
 
 Tested Hex artifact: local `mojentic.tar`, package version **3.0.0**, SHA-256

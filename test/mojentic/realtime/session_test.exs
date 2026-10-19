@@ -342,6 +342,11 @@ defmodule Mojentic.Realtime.SessionTest do
     end
   end
 
+  # Tool batches run in a background Task, so these events arrive asynchronously.
+  # Under full-suite load they can exceed ExUnit's 100ms default. This bound only
+  # caps how long a failure takes; each assertion still waits for the real message.
+  @tool_task_bound 2_000
+
   describe "tool batch dispatch" do
     test "function_call items are executed and outputs submitted" do
       config = Config.new(modalities: [:text], turn_detection: :none, tools: [GreetTool])
@@ -366,7 +371,8 @@ defmodule Mojentic.Realtime.SessionTest do
       push(transport, "response.done", %{"response" => %{"id" => "r1"}})
 
       assert_receive {:realtime_event,
-                      %Event{kind: :tool_batch_submitted, payload: %{call_ids: ["c1"]}}}
+                      %Event{kind: :tool_batch_submitted, payload: %{call_ids: ["c1"]}}},
+                     @tool_task_bound
 
       _ = :sys.get_state(session)
 
@@ -410,16 +416,19 @@ defmodule Mojentic.Realtime.SessionTest do
       push(transport, "response.done", %{"response" => %{"id" => "r1"}})
 
       assert_receive {:realtime_event,
-                      %Event{kind: :tool_call_dispatched, payload: %{call_id: "c2"}}}
+                      %Event{kind: :tool_call_dispatched, payload: %{call_id: "c2"}}},
+                     @tool_task_bound
 
       assert_receive {:realtime_event,
                       %Event{
                         kind: :tool_call_completed,
                         payload: %{call_id: "c2", result: %{greeting: "Hello, Bob!"}}
-                      }}
+                      }},
+                     @tool_task_bound
 
       assert_receive {:realtime_event,
-                      %Event{kind: :tool_batch_submitted, payload: %{call_ids: ["c2"]}}}
+                      %Event{kind: :tool_batch_submitted, payload: %{call_ids: ["c2"]}}},
+                     @tool_task_bound
 
       Session.close(session)
     end
@@ -453,22 +462,28 @@ defmodule Mojentic.Realtime.SessionTest do
 
       push(transport, "response.done", %{"response" => %{"id" => "r2"}})
 
-      assert_receive {:greet_started, worker}
+      assert_receive {:greet_started, worker}, @tool_task_bound
       monitor = Process.monitor(worker)
       :ok = Session.interrupt(session)
-      assert_receive {:realtime_event, %Event{kind: :interrupted, payload: %{turn_id: "r2"}}}
+
+      assert_receive {:realtime_event, %Event{kind: :interrupted, payload: %{turn_id: "r2"}}},
+                     @tool_task_bound
+
       send(worker, :release)
 
       assert_receive {:realtime_event,
-                      %Event{kind: :tool_call_completed, payload: %{call_id: "c3"}}}
+                      %Event{kind: :tool_call_completed, payload: %{call_id: "c3"}}},
+                     @tool_task_bound
 
-      assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}
+      assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}, @tool_task_bound
       # Tool completion and worker exit precede delivery by the separate batch task.
       # Observe this call's actual batch receipt before issuing a public call: its
       # reply guarantees the batch handler, including output submission, finished.
       assert_receive {:trace, ^session, :receive,
                       {:tool_batch_done, [%{id: "c3", name: "greet", args: %{"name" => "Carol"}}],
-                       [%{id: "c3", ok?: true, result: %{greeting: "Hello, Carol!"}}], _duration}}
+                       [%{id: "c3", ok?: true, result: %{greeting: "Hello, Carol!"}}],
+                       _duration}},
+                     @tool_task_bound
 
       :ok = Session.subscribe(session)
       :erlang.trace(session, false, [:receive])
