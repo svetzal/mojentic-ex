@@ -3,8 +3,9 @@
 ## Tested revision and reconciliation
 
 Both source and fresh local-Hex consumers test base revision
-`3dd2aa35b740a815ba5e8e09556957cdbd430add` plus the uncommitted scanner
-correction, executable regression and readiness gate wiring identified below.
+`81a6c64a9c3c4749d2182a980f49456b1ef243f7` plus the uncommitted regression
+correction and readiness manifest identified below. Scanner implementation and
+readiness gate wiring are unchanged.
 The preserved migration and retry-cancellation correction are retained. Trunk release commit `38875faede2679690483d7b8ec2f70fdeefafaaa` is
 already an ancestor: `mix.exs` version 3.0.0 and CHANGELOG match trunk exactly.
 No merge or ref changes were needed. Production `lib` tree
@@ -12,10 +13,34 @@ No merge or ref changes were needed. Production `lib` tree
 public APIs and the 80% coverage floor are unchanged. Git finalization belongs
 to Foundry; all correction changes remain uncommitted.
 
-The tested source execution tree SHA-256 is `cf46d75cbc60253eb2b7ddf1f98c59d4b7cd04a8ba64b3eb7bbfc44d4831aaf8`.
-It hashes sorted `SHA-256  relative-path\n` records for every file under
-`lib/`, `test/`, `scripts/`, `.github/workflows/`, plus `mix.exs`, `mix.lock`,
-`.formatter.exs` and `.hone-gates.json`. Audit prose is outside that identity.
+The tested source execution tree SHA-256 is
+`bd0144602e885ded406711a37b93171cb93b0011d65572c05ff305495ffaa580`.
+Reproduce it from the repository root with Python 3:
+
+```python
+import hashlib
+from pathlib import Path
+
+roots = ("lib", "test", "scripts", ".github/workflows")
+paths = {p for root in roots for p in Path(root).rglob("*") if p.is_file()}
+paths.update(map(Path, ("mix.exs", "mix.lock", ".formatter.exs", ".hone-gates.json")))
+records = b"".join(
+    hashlib.sha256(p.read_bytes()).hexdigest().encode("ascii")
+    + b"  " + p.as_posix().encode("utf-8") + b"\n"
+    for p in sorted(paths, key=lambda p: p.as_posix().encode("utf-8"))
+)
+print(hashlib.sha256(records).hexdigest())
+```
+
+Selection includes every file (including hidden files) recursively beneath those
+four roots for which `Path.is_file()` is true, following file symlinks, plus the
+four explicit root files. There are no extension or ignore-file exclusions.
+Paths are relative POSIX paths without a leading `./`, sorted by their UTF-8
+bytes, independently of locale. Each record encodes the lowercase ASCII SHA-256
+of the file's exact bytes, two ASCII spaces, the UTF-8 path and one LF byte.
+The final digest hashes the concatenated records, including the last LF.
+Audit and conformance prose, build outputs and execution scratch are outside
+this selection, so updating this evidence does not change the execution identity.
 
 ## Shared executable contracts
 
@@ -31,7 +56,7 @@ publishes or runs deps.get.
 | Executable manifest | SHA-256 |
 | --- | --- |
 | `test/contracts/context_window_v1.manifest.sha256` | `80141cf30a543b798d5818c29c1e8af9bd4d027345fbe312f064f23a8a5b8faf` |
-| `test/contracts/readiness_v1.manifest.sha256` | `8943fc5e40b09ecdb8df34d433b6fbb0c5e309ded17c15b44cdc92bfd123a6ca` |
+| `test/contracts/readiness_v1.manifest.sha256` | `80bb7924330bca1d91038d1faa6ce3e18171eb81089a17a329d2232613e063c7` |
 | `test/contracts/stream_first_token_v1.manifest.sha256` | `88962afa7cb210f63448c3ebb672ae677ab1152c1e7969a11153d6478aed585a` |
 
 Tested Hex artifact: local `mojentic.tar`, package version **3.0.0**, SHA-256
@@ -39,36 +64,45 @@ Tested Hex artifact: local `mojentic.tar`, package version **3.0.0**, SHA-256
 
 ## Scanner declaration proof
 
-The surviving literal socket-module token in the detector declaration is now
-spelled `:gen[_]tcp`. This preserves the regex's accepted operation language.
-All scan roots, checks and exclusions are unchanged. Scanner SHA-256:
+The scanner remains byte-for-byte unchanged, SHA-256
 `8f3c89c2da2552a737e790ee7778fcbf32b828ab93114c043759c1aaefe19a86`.
+Its `:gen[_]tcp` declaration preserves detection strength; all scan roots,
+checks and exclusions remain unchanged.
 
 `scripts/verify-offline-test-surface-regression` is executable regression evidence,
-identified by readiness-v1 and run by source readiness verification. It copies
-the actual scanner to an isolated temporary root and invokes its command API.
-Fixtures are inert text and are never executed. The scanner accepts a verbatim
-copy of its corrected declaration, while a separate literal-token assertion
-ensures the declaration also passes literal socket-token audits.
+identified by readiness-v1 and still run by source readiness verification. It
+copies the actual scanner to an isolated temporary root and invokes its command
+API. Fixtures are inert text and are never executed. The surviving literal
+`.listen(` in the regression's fixture declaration is now assembled from separate
+fragments. A literal-token assertion prevents its reintroduction.
 
-The initial probe rejected a socket operation and accepted the copied declaration,
-but exited **1** because the original declaration retained the literal token.
-After the source correction, the identical probe exited **0**. The corrected
-regression now checks 44 fixture cases: 35 prohibited inputs must exit **1** and
-identify the fixture path and line, and nine allowed inputs must exit **0**.
-It exercises TCP connect/listen, TLS, both server names, both scan roots,
+Before expanding the regression or running quality gates, the same acceptance
+probe ran against the original and corrected regression. In both runs, the
+scanner rejected assembled TCP connect/listen fixtures in both `test/` and
+`scripts/` with exit **1**, asserting the complete exact `path:2:operation`
+output line, and accepted a verbatim copy of the inert regression declarations
+with exit **0**. The initial probe then failed (exit **1**) on the surviving
+literal socket-operation token. After splitting that token, the identical probe
+passed (exit **0**). Rejecting/corrected logs and validated behavioral proof
+are archived as execution evidence.
+
+All 44 existing regression cases remain. Four additional socket fixtures put
+connect/listen operations on line 2 in both roots; another case accepts the
+verbatim inert regression itself. The resulting 49 cases comprise 39 rejected
+and ten accepted fixtures. Every rejection asserts the complete diagnostic line
+(path, line number and source text), rather than merely counting matches.
+The scanner's own copied declaration remains accepted, and the existing
+literal socket-module assertion is retained.
+
+Coverage remains TCP connect/listen, TLS, both server names, both scan roots,
 process/timer sleeps, timer/monotonic/system clocks, tokenizer/model loading,
 duration/elapsed thresholds, download commands and dependency/Hex registry
-commands. It also verifies outside-root, filename and extension exclusions,
-and the registry check's scripts-only scope. Temporary roots are cleaned up.
-
-The regression builds prohibited strings from fragments so its own inert fixture
-declarations do not trigger the production scanner. The actual repository scan
-and regression both pass. Rejecting/corrected proof records, complete captures
-and validation are archived as execution evidence.
+commands. Outside-root, filename and extension exclusions and scripts-only
+registry checks are preserved. The actual repository scan and regression pass;
+temporary fixture roots are cleaned up.
 
 The existing interrupted-turn public-API assertions and all contract-selected
-cases remain unchanged from the tested base revision.
+behavioral cases remain unchanged from the tested base revision.
 
 ## Final gates
 

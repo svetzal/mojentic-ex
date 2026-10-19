@@ -3,10 +3,11 @@
 ## Current offline readiness assessment
 
 This assessment covers RELEASE-3.0.0 parts 1–5 on base commit
-`3dd2aa35b740a815ba5e8e09556957cdbd430add`, with the uncommitted scanner
+`81a6c64a9c3c4749d2182a980f49456b1ef243f7`, with the uncommitted scanner
 verification changes identified by the executable manifests below. This
-correction changes only the scanner declaration, its executable regression,
-readiness gate wiring, readiness manifest and living verification evidence;
+correction changes only the scanner regression’s inert socket fixture assembly
+and diagnostic assertions, readiness manifest and living verification evidence;
+the scanner declaration, scan roots, exclusions and readiness gate wiring remain unchanged;
 production code and public-API assertions are unchanged.
 Git retains previous execution records.
 
