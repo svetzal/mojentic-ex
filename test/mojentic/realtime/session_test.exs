@@ -41,6 +41,10 @@ defmodule Mojentic.Realtime.SessionTest do
     # Return all payloads sent to this transport.
     def sent_payloads(pid), do: GenServer.call(pid, :sent_payloads)
 
+    def hold_cleanup(pid), do: GenServer.call(pid, {:hold_cleanup, self()})
+
+    def release_cleanup(pid), do: GenServer.call(pid, :release_cleanup)
+
     @impl GenServer
     def init(:ok), do: {:ok, %{subscriber: nil, sent: []}}
 
@@ -58,7 +62,23 @@ defmodule Mojentic.Realtime.SessionTest do
       {:reply, :ok, state}
     end
 
+    def handle_call({:hold_cleanup, observer}, _from, state) do
+      {:reply, :ok, Map.put(state, :cleanup, %{observer: observer})}
+    end
+
+    def handle_call(:close, {session, _tag} = caller, %{cleanup: cleanup} = state) do
+      Kernel.send(cleanup.observer, {:cleanup_started, session, self()})
+      {:noreply, %{state | cleanup: Map.put(cleanup, :caller, caller)}}
+    end
+
     def handle_call(:close, _from, state), do: {:stop, :normal, :ok, state}
+
+    def handle_call(:release_cleanup, _from, %{cleanup: cleanup} = state) do
+      {session, _tag} = cleanup.caller
+      Kernel.send(cleanup.observer, {:cleanup_completed, session, self()})
+      GenServer.reply(cleanup.caller, :ok)
+      {:stop, :normal, :ok, state}
+    end
 
     def handle_call(:sent_payloads, _from, state) do
       {:reply, state.sent, state}
@@ -344,27 +364,62 @@ defmodule Mojentic.Realtime.SessionTest do
       monitor = Process.monitor(session)
       transport_monitor = Process.monitor(transport)
 
-      # Queue delivery before holding cleanup at the transport boundary.
-      :ok = :sys.suspend(session)
+      :ok = FakeTransport.hold_cleanup(transport)
       FakeTransport.push(transport, {:realtime_close, :server})
-      :ok = :sys.suspend(transport)
-      :ok = :sys.resume(session)
 
-      try do
-        assert_receive {:realtime_event,
-                        %Event{kind: :session_closed, payload: %{reason: :server}}},
-                       @shutdown_bound
+      assert_receive {:realtime_event,
+                      %Event{kind: :session_closed, payload: %{reason: :server}}},
+                     @shutdown_bound
 
-        # Delivery is complete, but the same session still awaits transport cleanup.
-        refute_receive {:DOWN, ^monitor, :process, ^session, _reason}, 0
-      after
-        :ok = :sys.resume(transport)
-      end
+      assert_receive {:cleanup_started, ^session, ^transport}, @shutdown_bound
+
+      # The transport has accepted this exact session's close request without replying.
+      # Reject that observed incomplete state immediately, without waiting for a DOWN.
+      incomplete = %{
+        session: session,
+        transport: transport,
+        delivered: :server_close,
+        cleanup: :pending,
+        session_exit: :pending,
+        transport_exit: :pending
+      }
+
+      rejected = shutdown_probe(incomplete)
+
+      :ok = FakeTransport.release_cleanup(transport)
+      assert_receive {:cleanup_completed, ^session, ^transport}, @shutdown_bound
 
       assert_receive {:DOWN, ^monitor, :process, ^session, :normal}, @shutdown_bound
       assert_receive {:DOWN, ^transport_monitor, :process, ^transport, :normal}, @shutdown_bound
+
+      completed = %{
+        incomplete
+        | cleanup: :completed,
+          session_exit: {session, :normal},
+          transport_exit: {transport, :normal}
+      }
+
+      assert :ok = shutdown_probe(completed)
+      assert {:error, ^incomplete} = rejected
     end
   end
+
+  defp shutdown_probe(observations) do
+    IO.puts("shutdown boundary observations: #{inspect(observations, pretty: true)}")
+    shutdown_result(observations)
+  end
+
+  defp shutdown_result(%{
+         session: session,
+         transport: transport,
+         delivered: :server_close,
+         cleanup: :completed,
+         session_exit: {session, :normal},
+         transport_exit: {transport, :normal}
+       }),
+       do: :ok
+
+  defp shutdown_result(observations), do: {:error, observations}
 
   # Tool batches run in a background Task, so these events arrive asynchronously.
   # Under full-suite load they can exceed ExUnit's 100ms default. This bound only

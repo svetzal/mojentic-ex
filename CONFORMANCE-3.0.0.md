@@ -3,15 +3,13 @@
 ## Current offline readiness assessment
 
 This assessment covers RELEASE-3.0.0 parts 1–5 on base commit
-`31a35f68de33ba198f2a82b9d4354146b717b0cd`, the preserved
-`foundry-task/mojentic-ex-mojentic-ex-no-network-tests-c8-a5f6e4` revision,
-plus the uncommitted realtime shutdown harness correction identified by the
-executable manifests below. The scanner fixture correction and exact diagnostic
-assertions are retained verbatim, as are realtime interruption synchronization
-and every binding contract mapping. The shutdown test now queues delivery,
-holds and releases transport cleanup, and requires the exact session and
-transport monitored before delivery to exit with `:normal`, using explicit
-failure bounds. Production code, public APIs, dependencies, runtime pins,
+`085a360cedd3a77055352ea97c42bb42806a8903` plus the uncommitted shutdown evidence correction
+in worktree `mojentic-ex-no-network-tests-c10-336be6`, identified by the
+executable manifests and execution-tree digest in the audit. The landed
+migration, scanner correction, interruption synchronization and binding contract
+mappings are retained. The shutdown probe rejects the observed pending cleanup
+state, then accepts completed cleanup only after both original monitored PIDs
+exit with `:normal`. Production code, public APIs, dependencies, runtime pins,
 versions, scanner detection, roots, exclusions and gate wiring are unchanged.
 Git retains previous execution records; Foundry owns Git finalization.
 
@@ -51,17 +49,19 @@ in-process transport payloads establish absence of the correlated submission.
 A temporary `:submit_completed_only` negative control holds the batch result
 until after the tool completion event and worker exit; it exposes the exact
 `c3` greeting output and fails the drop assertion. No production change remains.
-The same file's `realtime_close stops the session` case now distinguishes
-receipt of the server-close event from completed shutdown. The existing public
-Session subscription and in-process FakeTransport remain the boundary. Cleanup
-is held at that transport, then released before asserting exact `:normal` DOWN
-messages for both premonitored PIDs. The default-bound premature-DOWN negative
-control fails while cleanup is held; the corrected ordering passes without a
-real sleep, socket or elapsed-time assertion. The 2-second receive bounds cap
-failure latency and do not assert elapsed time. Earlier passing captures did
-not rule out the later reported packaged-consumer failure; the reconciliation
-and the limits of this controlled reproduction, current manifest hashes, tested
-execution identity and both consumer results are recorded in
+The same file's `realtime_close stops the session` case uses public
+`Session.subscribe/1` and the existing in-process FakeTransport. The transport
+holds the original session's close request and identifies both PIDs at cleanup
+entry. The same behavioral probe rejects that observed pending-cleanup state
+immediately, then accepts completed cleanup after release only with exact
+`:normal` DOWN messages for both premonitored PIDs. The rejecting execution
+fails on the incomplete-state result, without a forced timeout, and still
+releases cleanup and records both normal exits. The corrected execution asserts
+both outcomes. Receive bounds cap failure latency; no real sleep, socket or
+elapsed-time assertion is used. This proves that delivered server-close can
+precede completed cleanup, but does not establish the scheduling or cause of
+the historical intermittent packaged failure. Exact diagnostic results, current
+manifest hashes, execution identity and both consumer results are recorded in
 [offline verification](audit/offline-verification.md).
 
 The second command retains its historical name for gate compatibility. It builds
