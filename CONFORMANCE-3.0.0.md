@@ -3,7 +3,7 @@
 ## Current offline readiness assessment
 
 This assessment covers RELEASE-3.0.0 parts 1–5 on base commit
-`0ea0496`, with the uncommitted offline
+`af9ca54b9ffdad589289a52f22828a8c19537330`, with the uncommitted offline
 verification changes identified by the executable manifests below. This
 correction changes tests, tooling and documentation; production code is unchanged.
 Git retains previous execution records.
@@ -35,6 +35,17 @@ that same manifest before running those same test files:
 
 - Source public consumers: `scripts/verify-readiness-contract`.
 - Fresh extracted Hex payload consumer: `scripts/verify-packaged-first-token`.
+
+The shared set also includes `test/mojentic/realtime/session_test.exs`:
+`interrupted turn with :drop policy discards tool outputs` waits for receipt of
+the exact `c3`/Carol batch result for interrupted turn `r2`, then calls public
+`Session.subscribe/1` to wait for handler completion. Subscriber events and
+in-process transport payloads establish absence of the correlated submission.
+A temporary `:submit_completed_only` negative control holds the batch result
+until after the tool completion event and worker exit; it exposes the exact
+`c3` greeting output and fails the drop assertion. No production change remains.
+Current manifest hashes, tested execution identity and both consumer results
+are recorded in [offline verification](audit/offline-verification.md).
 
 The second command retains its historical name for gate compatibility. It builds
 with `mix hex.build`, records the tar SHA-256, extracts the actual contents, creates

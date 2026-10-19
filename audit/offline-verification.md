@@ -1,172 +1,160 @@
 # Offline verification
 
-## Tested revision and executable identities
+## Tested revision and reconciliation
 
-The preserved c1 task ref and this worktree's HEAD both resolve to
-`0ea04962659276f0249d68420a97965c1a716297`. This correction remains uncommitted for Foundry finalization.
-Production `lib` tree `b2ee200c5ae7c45fa5cf2a2affb6f445a1b6cdb8`, `mix.exs`, `mix.lock`, runtime pins,
-public APIs and the 80% coverage floor are unchanged.
+Both source and fresh local-Hex consumers test base revision
+`af9ca54b9ffdad589289a52f22828a8c19537330` plus the uncommitted correction
+identified below. The preserved migration and retry-cancellation correction are
+retained. Trunk release commit `38875faede2679690483d7b8ec2f70fdeefafaaa` is
+already an ancestor: `mix.exs` version 3.0.0 and CHANGELOG match trunk exactly.
+No merge or ref changes were needed. Production `lib` tree
+`b2ee200c5ae7c45fa5cf2a2affb6f445a1b6cdb8`, dependencies, runtime pins,
+public APIs and the 80% coverage floor are unchanged. Git finalization belongs
+to Foundry; all correction changes remain uncommitted.
 
-The tested source execution tree SHA-256 is `404cc95200e712f76632c8f0a0ae13f0b99686dc5b31b83ff7f32c578e745fb6`.
-It hashes the sorted `SHA-256  relative-path\n` records for every file under
+The tested source execution tree SHA-256 is `6ebabd1eb7a3ba6fb80771756ffcf59fcef39ad59487a96d85516c3998fa5a36`.
+It hashes sorted `SHA-256  relative-path\n` records for every file under
 `lib/`, `test/`, `scripts/`, `.github/workflows/`, plus `mix.exs`, `mix.lock`,
-`.formatter.exs` and `.hone-gates.json`. This identifies the uncommitted inputs
-in addition to the base revision; audit prose is outside that executable tree.
+`.formatter.exs` and `.hone-gates.json`. Audit prose is outside that identity.
 
-The shared executable contract is **ex-readiness-v1**. Source public-API
-consumers/provider verification and the fresh Hex payload consumer/provider
-verification execute the same selected files and verify the same aggregate
-manifest. The per-feature versioned contracts and TypeScript provenance remain
-listed in [3.0.0 conformance](../CONFORMANCE-3.0.0.md).
+## Shared executable contracts
+
+The shared set is **ex-readiness-v1**. Source public-API consumers/provider
+verification and the fresh extracted Hex-payload consumer/provider verification
+run the same manifest-selected cases, including realtime interruption. Extracted
+provider inputs and copied consumer inputs are verified against the same manifest.
+The fresh consumer compiles the actual payload and verifies ReqClient's code path
+inside its own build. Local dependency sources/builds are reused, excluding
+Mojentic. HEX_OFFLINE=1 prevents registry access; no publish or deps.get occurs.
 
 | Executable manifest | SHA-256 |
 | --- | --- |
 | `test/contracts/context_window_v1.manifest.sha256` | `80141cf30a543b798d5818c29c1e8af9bd4d027345fbe312f064f23a8a5b8faf` |
-| `test/contracts/readiness_v1.manifest.sha256` | `825f0813271441a1dc4b9cbc7aa13720ac828c5787e2fda74f6f6c6331b915ea` |
-| `test/contracts/stream_first_token_v1.manifest.sha256` | `8bf164765756a2f945b83974d20dea2f4a5e6711f2449c3eddd8836209a5500a` |
+| `test/contracts/readiness_v1.manifest.sha256` | `4663dde1adb57926480dce4f01ab669b9723b7da88714966d7dc1320419630e2` |
+| `test/contracts/stream_first_token_v1.manifest.sha256` | `88962afa7cb210f63448c3ebb672ae677ab1152c1e7969a11153d6478aed585a` |
 
-Tested local Hex artifact SHA-256: `40721277faa879bbfd9079563e524bee0760c147f408f4d688dd7e683a71687c`.
-The extracted provider files and copied consumer inputs are checked against the
-same aggregate manifest before execution. The fresh consumer compiles Mojentic
-from the actual extracted payload; its final code-path assertion verifies that
-ReqClient resolves from that consumer's own build. Locally available dependency
-sources and compiled dependencies are reused, excluding Mojentic. HEX_OFFLINE=1
-prevents registry access; packaging never publishes or invokes deps.get.
+Tested Hex artifact: local `mojentic.tar`, package version **3.0.0**, SHA-256
+`40721277faa879bbfd9079563e524bee0760c147f408f4d688dd7e683a71687c`. The payload is built locally and never published.
 
-## Final gate observations
+## Interrupted-turn proof
 
-All nine configured gates below exited zero on the corrected tree. The runtime
-was the existing pinned Elixir 1.18.5 / OTP 28.5.0.7; the gate environment used
-MIX_ENV=test and HEX_OFFLINE=1. SHA-256 values identify the complete observed
-stdout captures archived with the execution evidence, rather than disposable
-checkout paths.
+`test/mojentic/realtime/session_test.exs`:
+**interrupted turn with :drop policy discards tool outputs** drives Session's
+public API and the in-process FakeTransport. It correlates response `r2`, call
+`c3`, arguments Carol and the successful greeting result. Tool completion and
+normal worker DOWN alone cannot establish batch processing. A receive trace
+observes the exact batch result at Session; a subsequent public subscribe reply
+establishes handler completion before inspecting subscriber events and transport
+payloads. No internal state is asserted and no result is injected into Session.
+The test requires absent r2/c3 submission and absent c3 function_call_output.
 
-| Command | Exit | Observed stdout SHA-256 |
+The temporary rejecting probe changes on_interrupt to submit_completed_only and
+holds the separate batch task after the real runner returns. The test releases
+that task only after observing tool_call_completed(c3) and the monitored worker's
+normal exit. It then observes actual batch receipt and public call completion.
+The drop assertion fails with the exact transport payload:
+
+```json
+{"type":"conversation.item.create","item":{"type":"function_call_output","call_id":"c3","output":"{\"greeting\":\"Hello, Carol!\"}"}}
+```
+
+Probe command: `scripts/recovery-mix test test/mojentic/realtime/session_test.exs:427`.
+Rejecting delayed submit_completed_only probe exits **2**; the same delayed probe
+with drop exits **0**. After removing temporary instrumentation, the corrected
+focused test exits **0**. The recorded behavioral proof's JSON shape, string and
+integer fields, actual exit codes and log existence were validated. Temporary
+production instrumentation is absent from the final tree. No socket, server,
+service/registry call, real sleep or wall-clock threshold is used.
+
+## Final gates
+
+All nine `.hone-gates.json` commands exited zero. Runtime: pinned Elixir 1.18.5 /
+OTP 28.5.0.7, MIX_ENV=test, HEX_OFFLINE=1. Hashes identify complete stdout captures
+archived with execution evidence, without depending on disposable checkout paths.
+
+| Command | Exit | Stdout SHA-256 |
 | --- | --- | --- |
 | `scripts/recovery-mix format --check-formatted` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | `scripts/recovery-mix compile --warnings-as-errors` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `scripts/recovery-mix credo --strict` | 0 | `ba4fce160edb1cde9dcd38234743eba2e8155b04e66029003e3ecc7f7ecea33c` |
-| `scripts/recovery-mix test --cover` | 0 | `2cf33b16348b3bd893077c2d279021f5b08e02705ef35c46823dea202ab6e625` |
+| `scripts/recovery-mix credo --strict` | 0 | `9f4a5bd19656cbe835d3c7801d11a7b3e9b7c76bf96e18e0a6c39598923d9708` |
+| `scripts/recovery-mix test --cover` | 0 | `2906b7e53f9f32c58b854d3d12d0c5ec32d71fde00c05aaa58abf51c10b14fd3` |
 | `scripts/recovery-mix deps.audit` | 0 | `3016e51e4eac0d421674d2128bbbdefb2924b4646e0c14a1ab034977ad73fae5` |
 | `scripts/recovery-mix sobelow --config` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `scripts/verify-first-token-contract` | 0 | `4c2768f5c9284bdf06c60e5e610897c811c0463cc027879aa3dfaa845d6a69b2` |
-| `scripts/verify-readiness-contract` | 0 | `d584f0f98246a4c6cbbf2c0344a83761362e051ba2d3700fdbef887d8ab4fe9f` |
-| `scripts/verify-packaged-first-token` | 0 | `6dfd1117cdf7af99f6031a13c629d9b67965dfa74cd771c36dc823b1a9edd378` |
+| `scripts/verify-first-token-contract` | 0 | `0ec57eb365e76160a9709cc9bb357ba890a86e1579115ff871494971c12ebabd` |
+| `scripts/verify-readiness-contract` | 0 | `8768d8ad8092472b52a481be05fe5da586b1d3294d029c7d4e0c8d833068db58` |
+| `scripts/verify-packaged-first-token` | 0 | `46ba060de8638ffdc435d3039b57edc467de4ecf4879904c7091e45f0fa560be` |
 
-Full suite with coverage:
+test:
 
 ```text
-Finished in 227.4 seconds (142.9s async, 84.4s sync)
+Finished in 177.6 seconds (105.2s async, 72.4s sync)
 22 doctests, 6084 tests, 0 failures
-    91.43% | Total
+    91.45% | Total
 ```
 
-First-token source verification:
+first-token-contract:
 
 ```text
-Finished in 38.9 seconds (0.00s async, 38.9s sync)
+Finished in 38.5 seconds (0.00s async, 38.5s sync)
 864 tests, 0 failures
 ```
 
-Readiness source-provider/public-source-consumer verification:
+readiness-contract:
 
 ```text
-Finished in 170.0 seconds (96.5s async, 73.5s sync)
-5374 tests, 0 failures
+Finished in 164.5 seconds (92.1s async, 72.4s sync)
+5395 tests, 0 failures
 ```
 
-Fresh packaged-provider/public-consumer verification:
+packaged-first-token:
 
 ```text
-Finished in 198.3 seconds (124.0s async, 74.2s sync)
-5374 tests, 0 failures
+Finished in 159.0 seconds (87.1s async, 71.9s sync)
+5395 tests, 0 failures
 ```
 
-## Public behavior and rejecting evidence
+## Preserved behavior and scope
 
-`recovery_wire_test.exs`: `<gateway> <operation> cancellation inside retry worker guard retains only dispatched failure` covers OpenAI, Ollama and oMLX ordinary
-and structured APIs. The old clock-call counter produced a DOWN with noproc;
-the original probe exited 2. The corrected six-case probe exited 0: retry_started
-selects the non-caller worker, the worker acknowledges the installed monitor and
-stays blocked before cancellation reaches the public request owner. DOWN must
-be killed. The exact prepared request is the only dispatch; no retry request is
-observed. Returned HTTP 503, request ID wire-request-73, Retry-After 11 seconds,
-private response-secret cause, logical/attempt identities and one history entry
-survive. The ordered lifecycle ends in cancelled. The behavioral proof JSON's
-shape, exit-code types, actual observed exits and log existence were validated.
+The offline Req migration retains production request preparation, dispatch,
+observation and cleanup through the in-process adapter. Exact prepared requests,
+errors, optional fields, cancellation and lifecycle identities remain exercised.
+The retry-worker cancellation case still selects the actual blocked worker,
+installs its monitor before cancellation and requires DOWN reason killed;
+noproc is not accepted. First-token disconnect fixtures release data and await
+public delivery before injecting EOF; injected clocks establish exact timing.
+Tokenizer operations use the committed byte-tokenizer fixture without model
+registry access. No live infrastructure is required.
 
-The first full coverage run exposed a preserved disconnect race in
-`first_token_wire_test.exs`: `<provider> <route> recovery <policy> retains first-token timing on disconnect without replay`. The HTTP worker could observe
-EOF before the session consumer advanced the injected clock: observed duration
-25ms versus expected 80ms. The fixture now releases data, waits for public
-content delivery acknowledgement and then injects disconnect. All 30 focused
-combinations pass; the final source and packaged runs above verify the same
-corrected case with exact 25ms first-token / 80ms duration, terminal error, one
-request and no replay. Intermediate failed runs and stale-manifest rejections
-are superseded by the final observations above.
-
-`offline_transport_test.exs`: **prepared dispatch precedes observation and
-rejected capture retains timing without delivery** still verifies actual public
-capture_failed, observed content true, delivered content false, first-token
-25ms / duration 80ms, exact POST path/body and correlated response cleanup.
-The [decision map](../test/contracts/DECISIONS.md),
+The offline surface scanner passes as part of source readiness verification.
+[Decision mapping](../test/contracts/DECISIONS.md),
 [3.0.0 conformance](../CONFORMANCE-3.0.0.md) and
-[recovery conformance](../RECOVERY-CONFORMANCE.md) map binding parts 1–3 to
-named behavioral assertions, including errors, optional fields, old/new paths,
-request fidelity, reasoning, context discovery and parts 4–5 applicability.
-Every cited test file exists on this tree.
+[recovery conformance](../RECOVERY-CONFORMANCE.md) retain named executable cases
+for binding parts 1–3 and parts 4–5 applicability. Frozen root contracts and
+TypeScript provenance remain as recorded in the conformance map. This is library
+self-validation, with no changed running service boundary or claim of external
+provider verification. Dependents verify when adopting a published version.
 
-## Complete offline test surface
+## Security and supplementary checks
 
-The transport migration is preserved: production Req preparation, dispatch,
-response observation and cleanup run through an in-process Req adapter. Native
-transport failures are injected. Transcripts contain exact prepared method,
-path, headers and body; they do not claim generated HTTP framing or remote
-termination. Monitors and adapter cancellation callbacks establish local cleanup.
+MixAudit scans the complete existing advisory snapshot
+`83be990cdd1105386d97f133b041215e97a58a61` without filtering or suppression.
+A read-only execution wrapper refuses its git synchronization so it cannot
+write outside this worktree or change refs. This verifies the local snapshot,
+not a newly fetched advisory database. Sobelow uses its unchanged configuration.
 
-Aggregator waiting uses observation of the public wait call plus a GenServer
-barrier. Dispatcher tests hold actual routed workers, assert an exact queue size
-of five, exercise the public zero-timeout error and verify draining after release.
-Tool-runner tests require overlapping blocked calls and release one slot at a
-time; completion callbacks prove reverse completion while returned outcomes keep
-input order. Realtime tests await public lifecycle events, monitor normal close,
-and interrupt a blocked tool before allowing completion to prove dropped output.
-No sleep or stopwatch substitutes for those behavioral assertions.
+Supplementary final-tree checks:
 
-All test and verification-script files were reviewed and the required source
-contract command runs `scripts/verify-offline-test-surface`. Its scan rejects
-explicit real clocks/sleeps, wall-clock duration thresholds, socket/server APIs,
-model downloads and direct service/registry commands. The scan itself rejected
-the remaining OpenAI duration comparison before correction. That timeout case
-now injects a native timeout after partial content and uses an injected clock.
-Tokenizer operation tests load the committed byte-tokenizer fixture and assert
-UTF-8 round trips, empty inputs and counts without Hugging Face requests; the
-thin hosted-model-loading wrapper is not exercised against a registry. The
-obsolete live-test exclusion and instructions were removed. All ten CI jobs now
-have timeout-minutes=30; runtime/dependency versions and coverage policy remain
-unchanged.
+| Command | Environment | Exit | Stdout SHA-256 |
+| --- | --- | --- | --- |
+| `scripts/recovery-mix test test/mojentic/realtime/session_test.exs:427` | `test` | 0 | `a9fa2aaa731761947a8d0f9b2913042568b59147fbda2437a7d602bb33dc2d69` |
+| `scripts/recovery-mix dialyzer` | `test` | 0 | `0118ef81e344612313be85b1f962049fe6b88c5f0fcfe92d32093d2773159126` |
+| `scripts/recovery-mix hex.audit` | `test` | 0 | `25ce35312da15695b9ab9e466ebdba2c1460f780ca6a14e164646fee228030d6` |
+| `scripts/recovery-mix hex.outdated --all` | `test` | 1 | `e9296e2eee096a9e9dede088c128638ec21e305962aea3e6ce7737f7335e42b3` |
+| `scripts/recovery-mix docs` | `dev` | 0 | `0583ac826ef2f3f6e0588417c85a8f43be2fa0eabad0d8b4c18586e78e476967` |
 
-## Security, documentation and contract copies
-
-MixAudit scans the full existing advisory snapshot at commit
-83be990cdd1105386d97f133b041215e97a58a61 and reports no vulnerabilities.
-Its git synchronization commands were refused by an execution-environment
-wrapper, so the audit reads the existing snapshot without network access or
-writes to another checkout. No advisory is filtered or suppressed. Offline
-hex.audit reports no retired or security-advisory packages. Offline
-hex.outdated --all exits 1 for available updates; upgrade visibility is
-informational and dependencies were not changed. Sobelow passes with its
-existing configuration unchanged.
-
-The local TRANSIENT-RECOVERY copy matches the authoritative root at
-141d4ee5fcfbc18c940a7e7fe8d5ba9e381abc41a6d03f300f541e0fd5236f9d;
-the local frozen MODEL-METADATA contract matches
-d9945dca45ce09e2163843263a75b5e93028b00ee1baf191fc3ff13396830e9c.
-Authoritative sibling files were read only. This is library self-validation;
-no running service boundary changed and no external port adoption or live model
-efficacy is claimed. Dependents verify upon adopting a published version.
-
-Additional final-tree `MIX_ENV=test scripts/recovery-mix dialyzer` verification
-exited zero with zero errors. `scripts/recovery-mix docs` exited zero; existing
-missing-link warnings remain for README's LICENSE link, the parent release-plan
-link and the Igniter usage-rules path. These are reported rather than hidden.
+Dialyzer reports zero errors, skips or unnecessary skips. Hex audit reports no
+retired or security-advisory packages. Hex outdated exits 1 for available updates;
+this is informational and no dependency is changed. Documentation builds
+successfully with existing missing-link warnings for `LICENSE`,
+`../RELEASE-3.0.0.md` and `deps/igniter/usage-rules.md`. Strict Credo reports no
+issues; compilation with warnings-as-errors passes.

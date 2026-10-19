@@ -21,3 +21,4 @@ test/mojentic/llm/recovery_wire_test.exs
 test/mojentic/llm/retry_after_dates_wire_test.exs
 test/mojentic/llm/stream_recovery_wire_test.exs
 test/mojentic/llm/typed_errors_wire_test.exs
+test/mojentic/realtime/session_test.exs

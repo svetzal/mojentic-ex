@@ -435,6 +435,7 @@ defmodule Mojentic.Realtime.SessionTest do
 
       {session, transport} = start_session(config: config)
       :ok = Session.subscribe(session)
+      :erlang.trace(session, true, [:receive])
 
       push(transport, "response.created", %{"response" => %{"id" => "r2"}})
 
@@ -455,26 +456,40 @@ defmodule Mojentic.Realtime.SessionTest do
       assert_receive {:greet_started, worker}
       monitor = Process.monitor(worker)
       :ok = Session.interrupt(session)
-      assert_receive {:realtime_event, %Event{kind: :interrupted}}
+      assert_receive {:realtime_event, %Event{kind: :interrupted, payload: %{turn_id: "r2"}}}
       send(worker, :release)
 
       assert_receive {:realtime_event,
                       %Event{kind: :tool_call_completed, payload: %{call_id: "c3"}}}
 
       assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}
-      _ = :sys.get_state(session)
-      refute_received {:realtime_event, %Event{kind: :tool_batch_submitted}}
+      # Tool completion and worker exit precede delivery by the separate batch task.
+      # Observe this call's actual batch receipt before issuing a public call: its
+      # reply guarantees the batch handler, including output submission, finished.
+      assert_receive {:trace, ^session, :receive,
+                      {:tool_batch_done, [%{id: "c3", name: "greet", args: %{"name" => "Carol"}}],
+                       [%{id: "c3", ok?: true, result: %{greeting: "Hello, Carol!"}}], _duration}}
+
+      :ok = Session.subscribe(session)
+      :erlang.trace(session, false, [:receive])
 
       payloads = FakeTransport.sent_payloads(transport)
 
       output_payload =
         Enum.find(payloads, fn p ->
           p["type"] == "conversation.item.create" &&
-            get_in(p, ["item", "type"]) == "function_call_output"
+            get_in(p, ["item", "type"]) == "function_call_output" &&
+            get_in(p, ["item", "call_id"]) == "c3"
         end)
 
       assert is_nil(output_payload),
              "Expected no function_call_output but found: #{inspect(output_payload)}"
+
+      refute_received {:realtime_event,
+                       %Event{
+                         kind: :tool_batch_submitted,
+                         payload: %{turn_id: "r2", call_ids: ["c3"]}
+                       }}
 
       Session.close(session)
     end
