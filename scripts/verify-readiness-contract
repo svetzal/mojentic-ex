@@ -2,6 +2,7 @@
 # Source public consumers and packaged consumers execute the same frozen cases.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+scripts/verify-offline-test-surface
 echo 'ex-readiness-v1 source consumer'
 git rev-parse HEAD
 sha256sum --check test/contracts/readiness_v1.manifest.sha256

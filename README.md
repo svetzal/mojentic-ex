@@ -174,6 +174,9 @@ mix compile
 # Run tests
 mix test
 
+# Verify the offline test/script boundary
+scripts/verify-offline-test-surface
+
 # Format code
 mix format
 

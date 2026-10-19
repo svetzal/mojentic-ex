@@ -359,13 +359,16 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
       stream = invoke(provider, @route, CompletionConfig.new(recovery: @recovery), self())
       Agent.update(clock, fn _ -> @milestones["dispatch"] end)
       supervisor = start_supervised!(Task.Supervisor)
+      owner = self()
 
       task =
         Task.Supervisor.async_nolink(supervisor, fn ->
           stream
           |> Stream.map(fn event ->
-            if event == {:content, "answer"} or event == "answer",
-              do: Agent.update(clock, fn _ -> @milestones["terminal"] end)
+            if event == {:content, "answer"} or event == "answer" do
+              Agent.update(clock, fn _ -> @milestones["terminal"] end)
+              send(owner, :content_delivered)
+            end
 
             event
           end)
@@ -378,9 +381,11 @@ defmodule Mojentic.LLM.FirstTokenWireTest do
       :ok =
         GenServer.call(
           server,
-          {:release, chunk(Contract.frame(provider, %{"content" => "answer"}))}
+          {:release_data, chunk(Contract.frame(provider, %{"content" => "answer"}))}
         )
 
+      assert_receive :content_delivered
+      :ok = GenServer.call(server, {:release, ""})
       events = Task.await(task)
       assert [terminal] = Enum.filter(events, &terminal?/1)
       assert {:error, _} = terminal

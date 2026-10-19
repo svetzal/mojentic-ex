@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Keep every test and verification script independent of live infrastructure.
+set -euo pipefail
+cd "$(dirname "$0")/.."
+patterns='Process[.]sleep|:timer[.](sleep|tc)|System[.](monotonic_time|system_time)|:gen_tcp[.]|:ssl[.]|TCPServer|HTTPServer|from_pretrained|TokenizerGateway[.]new[!(]'
+if rg -n "$patterns" test scripts --glob '!verify-offline-test-surface'; then
+  echo 'Offline test surface contains a real clock, sleeper, socket or model download.' >&2
+  exit 1
+fi
+if rg -n 'assert.*(duration_ms|elapsed_ms).*[<>]' test --glob '*.exs'; then
+  echo 'Assert timing values from an injected clock, not wall-clock thresholds.' >&2
+  exit 1
+fi
+if rg -n '^\s*(curl|wget|mix deps[.]get|mix hex[.](repo|registry))\b' scripts --glob '!verify-offline-test-surface'; then
+  echo 'Verification scripts must use local dependencies and registry snapshots.' >&2
+  exit 1
+fi
+echo 'Offline test/script surface: no explicit real clocks, sleeps, sockets or service/registry calls.'

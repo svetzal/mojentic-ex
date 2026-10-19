@@ -178,7 +178,7 @@ as a completed assistant response. Recovery-disabled streaming retains its
 existing behavior.
 
 The local `omlx-keepalive-v1` executable set runs with
-`scripts/verify-omlx-keepalive-contract`, using the scripted loopback HTTP server
+`scripts/verify-omlx-keepalive-contract`, using the in-process Req adapter
 and production Req through gateways, Broker and ChatSession. See
 `CONFORMANCE-3.0.0.md` for identities, named tests and source/payload consumer
 results under the October 17 library self-validation policy. Live server behavior

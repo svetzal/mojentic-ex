@@ -3,7 +3,7 @@
 ## Current offline readiness assessment
 
 This assessment covers RELEASE-3.0.0 parts 1–5 on base commit
-`38875faede2679690483d7b8ec2f70fdeefafaaa`, with the uncommitted offline
+`0ea0496`, with the uncommitted offline
 verification changes identified by the executable manifests below. This
 correction changes tests, tooling and documentation; production code is unchanged.
 Git retains previous execution records.
@@ -17,7 +17,7 @@ The binding root contracts were read and their SHA-256 identities verified:
 | REASONING-PROTOTYPE-2026-10 | `0a40f3ad45c593bc779411021e45db569e73d3ecce86c99b201e7f8ebb656809` |
 | MODEL-METADATA-2026-10, including October 17 decisions | `d9945dca45ce09e2163843263a75b5e93028b00ee1baf191fc3ff13396830e9c` |
 
-The local recovery contract includes the root amendment. No new ambiguity was found. Library readiness follows the
+The local recovery and MODEL-METADATA copies match the authoritative root bytes. No new ambiguity was found. Library readiness follows the
 October 17 self-validation policy: the same versioned executable cases consume
 public APIs from source and from the local Hex payload. TypeScript source identities are
 provenance. Dependents verify on published-version adoption; this assessment does
@@ -71,7 +71,7 @@ adapters. Embeddings and realtime are explicitly outside completion recovery.
 | Eligible transport and 429/500/502/503/504, caller category/status selection, permanent/protocol veto | `recovery_wire_test.exs`: `<gateway> <operation> real Req 503 recovers with identical full payload and correlated lifecycle`, `real Req permanent failure does not retry under bounded recovery`; `permanent_http_wire_test.exs`: `<gateway> <operation> selected <status> <body_mode> tracing <tracing> remains permanent`; `stream_recovery_wire_test.exs`: interrupted public streams and selected-status truncated failures |
 | Full jitter exponential ceiling and saturation, Retry-After minimum, ceiling/budget refusal, budget begins at first failure; active generation may finish | `recovery_wire_test.exs`: `real Req exponential full jitter doubles and saturates at the configured ceiling`, `real Req monotonic budget begins at first failure and never resets on later failures`, `<gateway> <operation> recovery deadline allows active generation to finish`; `retry_after_dates_wire_test.exs`: `<gateway> <entrypoint> <form> <scenario> normalizes metadata and enforces wire recovery limits` |
 | Admission distinguishes eligibility from permission; pending is not an attempt; no timeout proves remote termination | `recovery_wire_test.exs`: `ambiguous local 504 waits for explicit admission and preserves complete wire payload`, `<gateway> <operation> real Req pending admission requires explicit <decision>` |
-| Cancellation during request/admission/backoff; no later dispatch; observed versus delivered evidence; paused-consumer cleanup | `recovery_wire_test.exs`: `<gateway> <operation> real Req cancellation during <phase> is authoritative and sends no retry`; `cancellation_socket_wire_test.exs`: `<gateway> <operation> tracing <tracing> <stage> closes correlated peer before fixture release`, `paused consumer cancels a buffered terminal before success` |
+| Cancellation during request/admission/backoff; no later dispatch; observed versus delivered evidence; paused-consumer cleanup | `recovery_wire_test.exs`: `<gateway> <operation> cancellation inside retry worker guard retains only dispatched failure` (retry_started selects the worker, monitor handshake precedes cancellation, DOWN must be :killed, exact single request and original HTTP history); `<gateway> <operation> real Req cancellation during <phase> is authoritative and sends no retry`; `cancellation_socket_wire_test.exs`: `<gateway> <operation> tracing <tracing> <stage> closes correlated response before fixture release`, `paused consumer cancels a buffered terminal before success` |
 | Immutable messages/native history/tools/schema/model/sampling/limits on retries, including file inputs | `immutable_request_wire_test.exs`: `fidelity-v1 <gateway> <boundary> <operation> <row> exact body and admitted replay`; `recovery_wire_test.exs`: `<gateway> <operation> recovery freezes legacy adaptation of history schema tools and controls` |
 | Semantic reasoning/content/tool fragments or completed calls forbid replay; bounded failure/exhaustion never completes a session | `stream_recovery_wire_test.exs`: `<gateway> <mode> cancellation after delivery preserves exact semantic and raw progress`, `<gateway> completed tool deltas followed by wire failure expose progress without execution`; `typed_errors_wire_test.exs`: `<gateway> <entrypoint> <scenario> retains typed cause and forbids replay` |
 | Tools execute once; retry does not restart agent/Broker or replenish depth | `recovery_wire_test.exs`: `<gateway> <caller> real Req recovers after exact tool result without tool replay`, `real Req recovery does not replenish broker tool depth`; `stream_recovery_wire_test.exs`: `<gateway> broker recovery does not replenish streaming tool depth` |

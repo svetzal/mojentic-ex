@@ -165,11 +165,19 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
     refute_received {:transport_request, _}
   end
 
-  test "absolute transport deadline preserves partial response then cancels" do
-    # Long enough for the partial chunk to arrive under load, yet well inside
-    # the 2s the server holds the response open, so the deadline still fires.
-    System.put_env("OPENAI_TIMEOUT", "500")
-    serve([event("partial")], true)
+  test "injected transport timeout preserves partial response then cancels" do
+    previous = Application.get_env(:mojentic, :monotonic_clock)
+    Mox.set_mox_global()
+    Mox.stub(Mojentic.MonotonicClockMock, :now, fn -> 42 end)
+    Application.put_env(:mojentic, :monotonic_clock, Mojentic.MonotonicClockMock)
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:mojentic, :monotonic_clock, previous),
+        else: Application.delete_env(:mojentic, :monotonic_clock)
+    end)
+
+    serve([event("partial")], :timeout)
 
     assert [
              {:content, "partial"},
@@ -178,8 +186,8 @@ defmodule Mojentic.LLM.Gateways.OpenAIStreamTest do
              Enum.to_list(stream())
 
     assert evidence.metadata.first_token_kind == :content
-    assert is_integer(evidence.metadata.time_to_first_token_ms)
-    assert evidence.metadata.request_duration_ms >= evidence.metadata.time_to_first_token_ms
+    assert evidence.metadata.time_to_first_token_ms == 0
+    assert evidence.metadata.request_duration_ms == 0
     assert_receive {:transport_closed, _}, 2000
   end
 

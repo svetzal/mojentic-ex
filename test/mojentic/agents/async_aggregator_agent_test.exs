@@ -155,14 +155,16 @@ defmodule Mojentic.Agents.AsyncAggregatorAgentTest do
     test "waits for events to arrive", %{pid: pid} do
       correlation_id = "wait-1"
 
+      :erlang.trace(pid, true, [:receive])
+
       # Start waiting in a separate process
       waiter_task =
         Task.async(fn ->
           AsyncAggregatorAgent.wait_for_events(pid, correlation_id, timeout: 5000)
         end)
 
-      # Give the waiter time to register
-      Process.sleep(50)
+      await_waiter(pid, waiter_task.pid, correlation_id)
+      :erlang.trace(pid, false, [:receive])
 
       # Send events
       event_a = %EventA{source: __MODULE__, correlation_id: correlation_id, data: "A"}
@@ -200,11 +202,13 @@ defmodule Mojentic.Agents.AsyncAggregatorAgentTest do
       AsyncAggregatorAgent.receive_event(pid, event_a)
 
       # Should timeout
-      assert catch_exit(AsyncAggregatorAgent.wait_for_events(pid, correlation_id, timeout: 100))
+      assert catch_exit(AsyncAggregatorAgent.wait_for_events(pid, correlation_id, timeout: 0))
     end
 
     test "multiple waiters for same correlation_id", %{pid: pid} do
       correlation_id = "multi-wait"
+
+      :erlang.trace(pid, true, [:receive])
 
       # Start multiple waiters
       waiters =
@@ -215,7 +219,8 @@ defmodule Mojentic.Agents.AsyncAggregatorAgentTest do
           end)
         end
 
-      Process.sleep(50)
+      Enum.each(waiters, &await_waiter(pid, &1.pid, correlation_id))
+      :erlang.trace(pid, false, [:receive])
 
       # Send events
       event_a = %EventA{source: __MODULE__, correlation_id: correlation_id, data: "M"}
@@ -289,5 +294,13 @@ defmodule Mojentic.Agents.AsyncAggregatorAgentTest do
       {:ok, []} = AsyncAggregatorAgent.receive_event(pid, event_a)
       assert {:error, :processing_failed} = AsyncAggregatorAgent.receive_event(pid, event_b)
     end
+  end
+
+  defp await_waiter(aggregator, waiter, correlation_id) do
+    assert_receive {:trace, ^aggregator, :receive,
+                    {:"$gen_call", {^waiter, _}, {:wait_for_events, ^correlation_id}}}
+
+    # The trace observes the public call; this barrier waits for its registration.
+    _ = :sys.get_state(aggregator)
   end
 end

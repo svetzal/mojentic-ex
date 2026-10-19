@@ -4,13 +4,10 @@ Mox.defmock(Mojentic.HTTPMock, for: Mojentic.HTTP)
 # Replace HTTP client with the mock in test environment
 Application.put_env(:mojentic, :http_client, Mojentic.HTTPMock)
 
-# Use the lightweight stub tokenizer as the default in tests so that
-# ChatSession tests do not trigger HuggingFace model downloads.
-# Tests that specifically exercise TokenizerGateway are tagged :integration
-# and excluded from the default suite — run them with: mix test --include integration
+# Session tests use the public tokenizer boundary; tokenizer operation tests
+# load the committed byte-tokenizer fixture. Neither path downloads models.
 Application.put_env(:mojentic, :default_tokenizer_mod, Mojentic.TestSupport.StubTokenizer)
 
-ExUnit.configure(exclude: [:integration])
 ExUnit.start()
 
 # Metadata consumers derive responses from context-window-v1, verified through the in-process Req adapter.

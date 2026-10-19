@@ -186,7 +186,7 @@ paused consumer callback, send directly to the recovery owner recorded by the
 `:attempt_started` observer, as described in the streaming guide.
 
 Recovery preserves the encoded request for the current session turn, including
-prior system, user and assistant messages. The immutable-request loopback tests
+prior system, user and assistant messages. The immutable-request in-process adapter tests
 exercise both `send/3` and `send_stream/3` after a successful prior turn and compare
 the complete payload and retry bytes with recovery disabled. Session APIs build
 their own completion configuration from the optional session temperature and

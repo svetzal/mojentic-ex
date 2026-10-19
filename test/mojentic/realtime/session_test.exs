@@ -16,8 +16,10 @@ defmodule Mojentic.Realtime.SessionTest do
 
     use GenServer
 
+    def start_link(opts), do: GenServer.start_link(__MODULE__, opts)
+
     @impl Mojentic.Realtime.Transport
-    def connect(_url, _headers, _opts), do: GenServer.start_link(__MODULE__, :ok)
+    def connect(_url, _headers, _opts), do: start_link(:ok)
 
     @impl Mojentic.Realtime.Transport
     def send(pid, payload), do: GenServer.call(pid, {:send, payload})
@@ -65,7 +67,17 @@ defmodule Mojentic.Realtime.SessionTest do
   defmodule GreetTool do
     @behaviour Mojentic.LLM.Tools.Tool
 
+    defstruct [:owner]
+
     @impl true
+    def run(%__MODULE__{owner: owner}, args) when is_pid(owner) do
+      send(owner, {:greet_started, self()})
+
+      receive do
+        :release -> run(__MODULE__, args)
+      end
+    end
+
     def run(_tool, args), do: {:ok, %{greeting: "Hello, #{Map.get(args, "name", "world")}!"}}
 
     @impl true
@@ -117,7 +129,7 @@ defmodule Mojentic.Realtime.SessionTest do
   # ---------------------------------------------------------------------------
 
   defp start_session(opts \\ []) do
-    {:ok, transport_pid} = FakeTransport.connect("ws://fake", [], [])
+    transport_pid = start_supervised!({FakeTransport, :ok})
 
     config =
       Keyword.get(opts, :config, Config.new(modalities: [:text], turn_detection: :none))
@@ -129,7 +141,9 @@ defmodule Mojentic.Realtime.SessionTest do
         config: config
       ] ++ Keyword.drop(opts, [:config])
 
-    {:ok, session_pid} = Session.start_link(session_opts)
+    session_pid =
+      start_supervised!(Supervisor.child_spec({Session, session_opts}, restart: :temporary))
+
     {session_pid, transport_pid}
   end
 
@@ -137,21 +151,18 @@ defmodule Mojentic.Realtime.SessionTest do
     FakeTransport.push(transport_pid, {:realtime_message, Map.merge(%{"type" => type}, extra)})
   end
 
-  defp collect_events(timeout \\ 100) do
-    collect_events([], timeout)
+  defp collect_events(session) do
+    _ = :sys.get_state(session)
+    drain_events([])
   end
 
-  defp collect_events(acc, timeout) do
+  defp drain_events(acc) do
     receive do
-      {:realtime_event, event} -> collect_events([event | acc], timeout)
+      {:realtime_event, event} -> drain_events([event | acc])
     after
-      timeout -> Enum.reverse(acc)
+      0 -> Enum.reverse(acc)
     end
   end
-
-  # ---------------------------------------------------------------------------
-  # Tests
-  # ---------------------------------------------------------------------------
 
   describe "subscribe/1" do
     test "subscriber receives realtime_event messages" do
@@ -160,7 +171,7 @@ defmodule Mojentic.Realtime.SessionTest do
 
       push(transport, "session.updated")
 
-      events = collect_events()
+      events = collect_events(session)
 
       assert Enum.any?(events, &match?(%Event{kind: :session_updated}, &1))
 
@@ -177,7 +188,7 @@ defmodule Mojentic.Realtime.SessionTest do
       payloads = FakeTransport.sent_payloads(transport)
       assert Enum.any?(payloads, &match?(%{"type" => "session.update"}, &1))
 
-      events = collect_events()
+      events = collect_events(session)
       assert Enum.any?(events, &match?(%Event{kind: :session_opened}, &1))
 
       Session.close(session)
@@ -223,7 +234,7 @@ defmodule Mojentic.Realtime.SessionTest do
 
       :ok = Session.interrupt(session)
 
-      events = collect_events()
+      events = collect_events(session)
       assert Enum.any?(events, &match?(%Event{kind: :interrupted}, &1))
 
       Session.close(session)
@@ -235,7 +246,7 @@ defmodule Mojentic.Realtime.SessionTest do
 
       assert :ok = Session.interrupt(session)
 
-      events = collect_events(50)
+      events = collect_events(session)
       refute Enum.any?(events, &match?(%Event{kind: :interrupted}, &1))
 
       Session.close(session)
@@ -265,7 +276,7 @@ defmodule Mojentic.Realtime.SessionTest do
 
       push(transport, "input_audio_buffer.speech_started", %{"audio_start_ms" => 250})
 
-      events = collect_events()
+      events = collect_events(session)
       ev = Enum.find(events, &match?(%Event{kind: :user_speech_started}, &1))
 
       assert ev
@@ -281,7 +292,7 @@ defmodule Mojentic.Realtime.SessionTest do
       push(transport, "response.created", %{"response" => %{"id" => "r1"}})
       push(transport, "input_audio_buffer.speech_started", %{"audio_start_ms" => 0})
 
-      events = collect_events()
+      events = collect_events(session)
       assert Enum.any?(events, &match?(%Event{kind: :interrupted}, &1))
 
       Session.close(session)
@@ -295,7 +306,7 @@ defmodule Mojentic.Realtime.SessionTest do
         "rate_limits" => [%{"reset_seconds" => 2}]
       })
 
-      events = collect_events()
+      events = collect_events(session)
       ev = Enum.find(events, &match?(%Event{kind: :rate_limited}, &1))
 
       assert ev
@@ -312,7 +323,7 @@ defmodule Mojentic.Realtime.SessionTest do
         "error" => %{"type" => "session_error", "message" => "bad"}
       })
 
-      events = collect_events()
+      events = collect_events(session)
       ev = Enum.find(events, &match?(%Event{kind: :error}, &1))
 
       assert ev
@@ -325,12 +336,9 @@ defmodule Mojentic.Realtime.SessionTest do
       {session, transport} = start_session()
       :ok = Session.subscribe(session)
 
+      monitor = Process.monitor(session)
       FakeTransport.push(transport, {:realtime_close, :server})
-
-      # Give the GenServer time to process the stop
-      Process.sleep(50)
-
-      refute Process.alive?(session)
+      assert_receive {:DOWN, ^monitor, :process, ^session, :normal}
     end
   end
 
@@ -357,8 +365,10 @@ defmodule Mojentic.Realtime.SessionTest do
 
       push(transport, "response.done", %{"response" => %{"id" => "r1"}})
 
-      # Wait for the async batch to complete
-      Process.sleep(200)
+      assert_receive {:realtime_event,
+                      %Event{kind: :tool_batch_submitted, payload: %{call_ids: ["c1"]}}}
+
+      _ = :sys.get_state(session)
 
       payloads = FakeTransport.sent_payloads(transport)
       types = Enum.map(payloads, & &1["type"])
@@ -399,13 +409,17 @@ defmodule Mojentic.Realtime.SessionTest do
 
       push(transport, "response.done", %{"response" => %{"id" => "r1"}})
 
-      Process.sleep(200)
+      assert_receive {:realtime_event,
+                      %Event{kind: :tool_call_dispatched, payload: %{call_id: "c2"}}}
 
-      events = collect_events()
-      kinds = Enum.map(events, & &1.kind)
+      assert_receive {:realtime_event,
+                      %Event{
+                        kind: :tool_call_completed,
+                        payload: %{call_id: "c2", result: %{greeting: "Hello, Bob!"}}
+                      }}
 
-      assert :tool_call_dispatched in kinds
-      assert :tool_call_completed in kinds
+      assert_receive {:realtime_event,
+                      %Event{kind: :tool_batch_submitted, payload: %{call_ids: ["c2"]}}}
 
       Session.close(session)
     end
@@ -415,7 +429,7 @@ defmodule Mojentic.Realtime.SessionTest do
         Config.new(
           modalities: [:text],
           turn_detection: :none,
-          tools: [GreetTool],
+          tools: [%GreetTool{owner: self()}],
           on_interrupt: :drop
         )
 
@@ -438,10 +452,18 @@ defmodule Mojentic.Realtime.SessionTest do
 
       push(transport, "response.done", %{"response" => %{"id" => "r2"}})
 
-      # Interrupt before batch completes
+      assert_receive {:greet_started, worker}
+      monitor = Process.monitor(worker)
       :ok = Session.interrupt(session)
+      assert_receive {:realtime_event, %Event{kind: :interrupted}}
+      send(worker, :release)
 
-      Process.sleep(200)
+      assert_receive {:realtime_event,
+                      %Event{kind: :tool_call_completed, payload: %{call_id: "c3"}}}
+
+      assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}
+      _ = :sys.get_state(session)
+      refute_received {:realtime_event, %Event{kind: :tool_batch_submitted}}
 
       payloads = FakeTransport.sent_payloads(transport)
 

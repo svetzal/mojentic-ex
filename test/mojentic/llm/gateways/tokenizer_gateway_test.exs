@@ -1,42 +1,19 @@
 defmodule Mojentic.LLM.Gateways.TokenizerGatewayTest do
-  # Tests in this module download tokenizer models from Hugging Face Hub.
-  # They are excluded from the default suite and require network access plus
-  # model cache warming. Run them explicitly with: mix test --include integration
   use ExUnit.Case, async: true
 
   alias Mojentic.LLM.Gateways.TokenizerGateway
 
-  @moduletag :integration
-
-  describe "new/1" do
-    test "creates gateway with default model" do
-      assert {:ok, %TokenizerGateway{}} = TokenizerGateway.new()
-    end
-
-    test "creates gateway with specified model" do
-      assert {:ok, %TokenizerGateway{}} = TokenizerGateway.new("gpt2")
-    end
-
-    test "returns error for invalid model" do
-      assert {:error, _reason} = TokenizerGateway.new("nonexistent-model-xyz")
-    end
-  end
-
-  describe "new!/1" do
-    test "creates gateway with default model" do
-      assert %TokenizerGateway{} = TokenizerGateway.new!()
-    end
-
-    test "raises on invalid model" do
-      assert_raise RuntimeError, fn ->
-        TokenizerGateway.new!("nonexistent-model-xyz")
-      end
-    end
+  # Model downloading is a thin I/O wrapper. Exercise gateway token operations
+  # with a local byte tokenizer instead of requesting a hosted model.
+  defp local_tokenizer do
+    path = Path.expand("../../../fixtures/byte_tokenizer.json", __DIR__)
+    {:ok, tokenizer} = Tokenizers.Tokenizer.from_file(path)
+    {:ok, %TokenizerGateway{tokenizer: tokenizer}}
   end
 
   describe "encode/2" do
     setup do
-      {:ok, tokenizer} = TokenizerGateway.new()
+      {:ok, tokenizer} = local_tokenizer()
       {:ok, tokenizer: tokenizer}
     end
 
@@ -64,7 +41,7 @@ defmodule Mojentic.LLM.Gateways.TokenizerGatewayTest do
 
   describe "decode/2" do
     setup do
-      {:ok, tokenizer} = TokenizerGateway.new()
+      {:ok, tokenizer} = local_tokenizer()
       {:ok, tokenizer: tokenizer}
     end
 
@@ -100,7 +77,7 @@ defmodule Mojentic.LLM.Gateways.TokenizerGatewayTest do
 
   describe "count_tokens/2" do
     setup do
-      {:ok, tokenizer} = TokenizerGateway.new()
+      {:ok, tokenizer} = local_tokenizer()
       {:ok, tokenizer: tokenizer}
     end
 
@@ -133,31 +110,9 @@ defmodule Mojentic.LLM.Gateways.TokenizerGatewayTest do
     end
   end
 
-  describe "different models" do
-    test "gpt2 model works" do
-      {:ok, tokenizer} = TokenizerGateway.new("gpt2")
-      text = "Hello, world!"
-      tokens = TokenizerGateway.encode(tokenizer, text)
-
-      assert tokens != []
-      assert TokenizerGateway.decode(tokenizer, tokens) == text
-    end
-
-    test "bert-base-uncased model works" do
-      {:ok, tokenizer} = TokenizerGateway.new("bert-base-uncased")
-      text = "Hello, world!"
-      tokens = TokenizerGateway.encode(tokenizer, text)
-
-      assert tokens != []
-      # BERT may alter casing and add special tokens
-      decoded = TokenizerGateway.decode(tokenizer, tokens)
-      assert is_binary(decoded)
-    end
-  end
-
   describe "unicode handling" do
     setup do
-      {:ok, tokenizer} = TokenizerGateway.new()
+      {:ok, tokenizer} = local_tokenizer()
       {:ok, tokenizer: tokenizer}
     end
 

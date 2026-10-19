@@ -167,8 +167,7 @@ defmodule Mojentic.LLM.Tools.ToolInvocationTest do
       call = ToolCallExecution.new("1", "echo", %{"value" => "x"})
       outcome = ToolInvocation.invoke(call, [EchoTool])
 
-      assert is_number(outcome.duration_ms)
-      assert outcome.duration_ms >= 0
+      assert is_integer(outcome.duration_ms)
     end
   end
 end

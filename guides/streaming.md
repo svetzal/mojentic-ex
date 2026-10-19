@@ -533,7 +533,7 @@ request. A later logical completion prepares its own request. Complete tool
 history stays in a retried follow-up; transport recovery does not execute the
 completed tool again.
 
-`ImmutableRequestWireTest` verifies full server-observed bodies through production
+`ImmutableRequestWireTest` verifies full adapter-observed bodies through production
 Req for both stream APIs, ordinary and structured completions, brokers and session
 history, against the `request-fidelity-v1` executable contract and recovery-disabled
 bytes. The event stream API supplies no tools; structured completion supplies a

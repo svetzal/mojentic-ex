@@ -17,6 +17,7 @@ permissions:
 jobs:
   setup:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # Skip job if actor is github-actions[bot] to ensure agent safety
     if: ${{ github.actor != 'github-actions[bot]' }}
     steps:
@@ -49,6 +50,7 @@ jobs:
 
   format-check:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: setup
     # Skip job if actor is github-actions[bot] to ensure agent safety
     if: ${{ github.actor != 'github-actions[bot]' }}
@@ -82,6 +84,7 @@ jobs:
 
   compile:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: setup
     # Skip job if actor is github-actions[bot] to ensure agent safety
     if: ${{ github.actor != 'github-actions[bot]' }}
@@ -115,6 +118,7 @@ jobs:
 
   credo:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: setup
     # Skip job if actor is github-actions[bot] to ensure agent safety
     if: ${{ github.actor != 'github-actions[bot]' }}
@@ -148,6 +152,7 @@ jobs:
 
   dialyzer:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: setup
     # Skip job if actor is github-actions[bot] to ensure agent safety
     if: ${{ github.actor != 'github-actions[bot]' }}
@@ -194,6 +199,7 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: setup
     # Skip job if actor is github-actions[bot] to ensure agent safety
     if: ${{ github.actor != 'github-actions[bot]' }}
@@ -242,6 +248,7 @@ jobs:
 
   security-audit:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: setup
     # Skip job if actor is github-actions[bot] to ensure agent safety
     if: ${{ github.actor != 'github-actions[bot]' }}
@@ -277,6 +284,7 @@ jobs:
 
   release-build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [format-check, compile, credo, dialyzer, test, security-audit]
     # Only run on release publish events
     if: github.event_name == 'release' && github.event.action == 'published'
@@ -317,6 +325,7 @@ jobs:
 
   publish-hex:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: [format-check, compile, credo, dialyzer, test, security-audit]
     # Only run on release publish events
     if: github.event_name == 'release' && github.event.action == 'published'
@@ -360,6 +369,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: release-build
     # Only run on release publish events
     if: github.event_name == 'release' && github.event.action == 'published'

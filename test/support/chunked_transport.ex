@@ -13,7 +13,13 @@ defmodule Mojentic.TestSupport.ChunkedTransport do
       "HTTP/1.1 #{status} Result\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n" <>
         body
 
-    response = if hold, do: {:stream_hold, response}, else: response <> "0\r\n\r\n"
+    response =
+      case hold do
+        :timeout -> {:stream_error, response, :timeout}
+        true -> {:stream_hold, response}
+        false -> response <> "0\r\n\r\n"
+      end
+
     {:ok, pid} = Mojentic.TestSupport.ScriptedTransport.start_link({owner, [response]})
 
     send(owner, {:port, GenServer.call(pid, :id)})

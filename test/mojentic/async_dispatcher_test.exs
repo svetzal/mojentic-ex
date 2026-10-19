@@ -88,6 +88,19 @@ defmodule Mojentic.AsyncDispatcherTest do
     end
   end
 
+  defmodule ControlledAgent do
+    @behaviour BaseAsyncAgent
+
+    @impl true
+    def receive_event_async(%{data: {owner, id}}) do
+      send(owner, {:agent_started, id, self()})
+
+      receive do
+        :release -> {:ok, []}
+      end
+    end
+  end
+
   describe "AsyncDispatcher.start_link/1" do
     test "starts with router" do
       router = Router.new()
@@ -325,24 +338,20 @@ defmodule Mojentic.AsyncDispatcherTest do
     end
 
     test "times out if queue doesn't empty" do
-      defmodule SlowAgent do
-        @behaviour BaseAsyncAgent
-
-        @impl true
-        def receive_event_async(_event) do
-          Process.sleep(5000)
-          {:ok, []}
-        end
-      end
-
       router = Router.new()
-      router = Router.add_route(router, EventA, SlowAgent)
+      router = Router.add_route(router, EventA, ControlledAgent)
 
-      {:ok, dispatcher} = AsyncDispatcher.start_link(router: router)
+      dispatcher = start_supervised!({AsyncDispatcher, router: router})
 
-      AsyncDispatcher.dispatch(dispatcher, %EventA{source: __MODULE__, data: "slow"})
-
-      assert {:error, :timeout} = AsyncDispatcher.wait_for_empty_queue(dispatcher, timeout: 100)
+      AsyncDispatcher.dispatch(dispatcher, %EventA{source: __MODULE__, data: {self(), "slow"}})
+      assert_receive {:agent_started, "slow", worker}, 1000
+      monitor = Process.monitor(worker)
+      assert AsyncDispatcher.get_queue_size(dispatcher) == 1
+      assert {:error, :timeout} = AsyncDispatcher.wait_for_empty_queue(dispatcher, timeout: 0)
+      send(worker, :release)
+      assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}
+      assert AsyncDispatcher.get_queue_size(dispatcher) == 0
+      assert :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher)
 
       AsyncDispatcher.stop(dispatcher)
     end
@@ -359,33 +368,30 @@ defmodule Mojentic.AsyncDispatcherTest do
     end
 
     test "returns correct queue size" do
-      # Slow agent to keep events in queue
-      defmodule SlowProcessAgent do
-        @behaviour BaseAsyncAgent
-
-        @impl true
-        def receive_event_async(_event) do
-          Process.sleep(1000)
-          {:ok, []}
-        end
-      end
-
       router = Router.new()
-      router = Router.add_route(router, EventA, SlowProcessAgent)
+      router = Router.add_route(router, EventA, ControlledAgent)
 
-      {:ok, dispatcher} = AsyncDispatcher.start_link(router: router)
+      dispatcher = start_supervised!({AsyncDispatcher, router: router})
 
-      # Dispatch events
       for i <- 1..5 do
-        AsyncDispatcher.dispatch(dispatcher, %EventA{source: __MODULE__, data: "#{i}"})
+        AsyncDispatcher.dispatch(dispatcher, %EventA{source: __MODULE__, data: {self(), i}})
       end
 
-      # Give dispatcher time to start processing
-      Process.sleep(50)
+      workers =
+        for _ <- 1..5 do
+          assert_receive {:agent_started, id, worker}, 1000
+          {id, worker, Process.monitor(worker)}
+        end
 
-      # Should have some events in queue
-      size = AsyncDispatcher.get_queue_size(dispatcher)
-      assert size >= 0
+      assert AsyncDispatcher.get_queue_size(dispatcher) == 5
+
+      Enum.each(workers, fn {_id, worker, monitor} ->
+        send(worker, :release)
+        assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}
+      end)
+
+      assert AsyncDispatcher.get_queue_size(dispatcher) == 0
+      assert :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher)
 
       AsyncDispatcher.stop(dispatcher)
     end

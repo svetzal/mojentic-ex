@@ -1915,22 +1915,23 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       owner = self()
       cancel = make_ref()
       supervisor = start_supervised!(Task.Supervisor)
-      guards = start_supervised!({Agent, fn -> 0 end})
+      guards = start_supervised!({Agent, fn -> false end})
 
       task =
         Task.Supervisor.async_nolink(supervisor, fn ->
           caller = self()
 
           clock = fn ->
-            if self() != caller do
-              number = Agent.get_and_update(guards, fn n -> {n + 1, n + 1} end)
+            if self() != caller and Agent.get(guards, & &1) do
+              send(owner, {:dispatch_guard, caller, self()})
 
-              if number == 2 do
-                send(owner, {:dispatch_guard, self()})
+              receive do
+                {:monitor_guard, ref} ->
+                  send(owner, {:guard_monitored, ref, self()})
 
-                receive do
-                  :release_guard -> :ok
-                end
+                  receive do
+                    :release_guard -> :ok
+                  end
               end
             end
 
@@ -1947,7 +1948,10 @@ defmodule Mojentic.LLM.RecoveryWireTest do
                 admission: fn _ -> :allow end,
                 base_delay: 0,
                 sleeper: fn _ -> :ok end,
-                observer: &send(owner, {:dispatch_event, &1})
+                observer: fn event ->
+                  if event.type == :retry_started, do: Agent.update(guards, fn _ -> true end)
+                  send(owner, {:dispatch_event, event})
+                end
               ]
             )
 
@@ -1956,8 +1960,14 @@ defmodule Mojentic.LLM.RecoveryWireTest do
 
       assert_receive {:transport_request, request}, 2000
       assert_payload(request, @gateway, @operation)
-      assert_receive {:dispatch_guard, worker}, 2000
+      assert_receive {:dispatch_guard, caller, worker}, 2000
+      assert caller == task.pid
+      refute worker == caller
       monitor = Process.monitor(worker)
+      handshake = make_ref()
+      send(worker, {:monitor_guard, handshake})
+      assert_receive {:guard_monitored, ^handshake, ^worker}
+      refute_received {:DOWN, ^monitor, :process, ^worker, _}
       send(task.pid, {:cancel, cancel})
       assert {:error, error} = Task.await(task, 2000)
       assert_receive {:DOWN, ^monitor, :process, ^worker, :killed}

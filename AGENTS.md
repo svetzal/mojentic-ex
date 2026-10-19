@@ -222,6 +222,28 @@ mix deps.audit
 - Re-run all checks
 - Only proceed when all pass
 
+### Offline test boundaries
+
+All test files, including tokenizer tests, run without services, sockets, model
+registries or downloads. Drive public APIs through Mox gateway behaviours or the
+in-process Req adapter. Keep production request preparation and observation in
+those tests. Tokenizer operations use `test/fixtures/byte_tokenizer.json`; model
+loading is an I/O wrapper and is not exercised against a hosted registry.
+
+Use injected clocks/sleepers for timing policies and messages, monitors or
+GenServer barriers for synchronization. Do not add real sleeps, stopwatch
+assertions, local servers or positive elapsed-time thresholds. Receive timeouts
+are failure bounds, not synchronization evidence. A cancellation monitor must
+identify the blocked worker before cancellation and require its actual exit
+reason; `:noproc` does not prove cancellation.
+
+Run `scripts/verify-offline-test-surface`, `scripts/verify-readiness-contract`,
+`scripts/verify-first-token-contract` and `scripts/verify-packaged-first-token`.
+Source and fresh local Hex consumers execute the same manifest-identified cases.
+Do not replace this mechanism with independent mocks or require live providers.
+The authoritative root-contract copies are synchronized verbatim; record their
+hashes in the conformance documents and update living evidence in place.
+
 ### Additional Quality Practices
 
 - Write unit tests for new functions

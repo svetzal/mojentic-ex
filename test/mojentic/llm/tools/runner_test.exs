@@ -52,12 +52,18 @@ defmodule Mojentic.LLM.Tools.RunnerTest do
     end
   end
 
-  defmodule SlowTool do
+  defmodule ControlledTool do
     @behaviour Mojentic.LLM.Tools.Tool
 
     @impl true
     def run(_tool, args) do
-      Process.sleep(Map.get(args, "delay_ms", 50))
+      send(Map.fetch!(args, "owner"), {:tool_started, Map.fetch!(args, "value"), self()})
+
+      receive do
+        :release -> :ok
+      end
+
+      send(Map.fetch!(args, "owner"), {:tool_finished, Map.fetch!(args, "value")})
       {:ok, %{value: Map.get(args, "value", "x")}}
     end
 
@@ -67,7 +73,7 @@ defmodule Mojentic.LLM.Tools.RunnerTest do
         type: "function",
         function: %{
           name: "slow",
-          description: "Sleeps then returns",
+          description: "Waits for explicit release then returns",
           parameters: %{type: "object", properties: %{}, required: []}
         }
       }
@@ -131,33 +137,70 @@ defmodule Mojentic.LLM.Tools.RunnerTest do
 
   describe "ParallelToolRunner" do
     test "dispatches calls in parallel" do
-      delay = 100
-
       calls =
         for i <- 1..4,
-            do: ToolCallExecution.new("#{i}", "slow", %{"value" => "#{i}", "delay_ms" => delay})
+            do: ToolCallExecution.new("#{i}", "slow", %{"value" => "#{i}", "owner" => self()})
 
-      runner = ParallelToolRunner.new(max_concurrency: 4)
+      runner = ParallelToolRunner.new(max_concurrency: 2)
+      supervisor = start_supervised!(Task.Supervisor)
 
-      {time, outcomes} =
-        :timer.tc(fn -> ParallelToolRunner.run_with(runner, calls, [SlowTool]) end)
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn ->
+          ParallelToolRunner.run_with(runner, calls, [ControlledTool])
+        end)
 
-      elapsed_ms = time / 1000
-      assert length(outcomes) == 4
+      assert_receive {:tool_started, first, first_worker}
+      assert_receive {:tool_started, second, second_worker}
+      assert Enum.sort([first, second]) == ["1", "2"]
+      refute_received {:tool_started, _, _}
+      send(first_worker, :release)
+      assert_receive {:tool_finished, ^first}
+      assert_receive {:tool_started, "3", third_worker}
+      refute_received {:tool_started, "4", _}
+      send(second_worker, :release)
+      assert_receive {:tool_started, "4", fourth_worker}
+      send(third_worker, :release)
+      send(fourth_worker, :release)
+
+      outcomes = Task.await(task)
+      assert Enum.map(outcomes, & &1.id) == ["1", "2", "3", "4"]
+      assert Enum.map(outcomes, & &1.result.value) == ["1", "2", "3", "4"]
       assert Enum.all?(outcomes, & &1.ok?)
-      assert elapsed_ms < delay * 3, "expected parallel dispatch, took #{elapsed_ms}ms"
     end
 
     test "preserves output order regardless of completion order" do
-      calls = [
-        ToolCallExecution.new("a", "slow", %{"value" => "a", "delay_ms" => 50}),
-        ToolCallExecution.new("b", "slow", %{"value" => "b", "delay_ms" => 10}),
-        ToolCallExecution.new("c", "slow", %{"value" => "c", "delay_ms" => 30})
-      ]
+      calls =
+        for id <- ["a", "b", "c"],
+            do: ToolCallExecution.new(id, "slow", %{"value" => id, "owner" => self()})
 
-      runner = ParallelToolRunner.new(max_concurrency: 4)
-      outcomes = ParallelToolRunner.run_with(runner, calls, [SlowTool])
+      runner = ParallelToolRunner.new(max_concurrency: 3)
+      supervisor = start_supervised!(Task.Supervisor)
+      owner = self()
 
+      context =
+        RunContext.new(
+          on_call_complete: fn outcome -> send(owner, {:outcome_completed, outcome.id}) end
+        )
+
+      task =
+        Task.Supervisor.async_nolink(supervisor, fn ->
+          ParallelToolRunner.run_with(runner, calls, [ControlledTool], context)
+        end)
+
+      workers =
+        for _ <- 1..3 do
+          assert_receive {:tool_started, id, worker}
+          {id, worker}
+        end
+        |> Map.new()
+
+      for id <- ["c", "b", "a"] do
+        send(Map.fetch!(workers, id), :release)
+        assert_receive {:tool_finished, ^id}
+        assert_receive {:outcome_completed, ^id}
+      end
+
+      outcomes = Task.await(task)
       assert Enum.map(outcomes, & &1.id) == ["a", "b", "c"]
       assert Enum.map(outcomes, & &1.result.value) == ["a", "b", "c"]
     end

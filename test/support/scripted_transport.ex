@@ -164,6 +164,17 @@ defmodule Mojentic.TestSupport.ScriptedTransport do
     end
   end
 
+  # Data and EOF can be released separately so a public consumer can
+  # acknowledge delivery before the adapter reports a disconnect.
+  def handle_call({:release_data, response}, _from, state) do
+    Enum.each(state.active, fn {ref, {pid, _request, _from, chunked}} ->
+      {data, _done} = if chunked, do: chunks(response), else: {[response], false}
+      Enum.each(data, &send(pid, {ref, {:data, &1}}))
+    end)
+
+    {:reply, :ok, state}
+  end
+
   def handle_call({:release, response}, _from, state) do
     Enum.each(state.active, fn {ref, {pid, _request, from, chunked}} ->
       if String.starts_with?(response, "HTTP/") do
