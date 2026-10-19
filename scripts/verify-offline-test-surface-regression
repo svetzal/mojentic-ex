@@ -1,0 +1,74 @@
+#!/usr/bin/env python3
+"""Exercise the offline scanner as a command; fixtures are never executed."""
+import pathlib
+import subprocess
+import tempfile
+
+scanner = pathlib.Path(__file__).resolve().with_name("verify-offline-test-surface")
+source = scanner.read_text()
+socket_module = ":gen" + "_tcp"
+
+with tempfile.TemporaryDirectory(prefix="offline-scanner-") as temporary:
+    root = pathlib.Path(temporary)
+    (root / "scripts").mkdir()
+    (root / "test").mkdir()
+    command = root / "scripts" / scanner.name
+    command.write_text(source)
+
+    def verify(relative_path, content, expected):
+        fixture = root / relative_path
+        fixture.write_text(content + "\n")
+        try:
+            result = subprocess.run(
+                ["bash", str(command)], capture_output=True, text=True, check=False
+            )
+            assert result.returncode == expected, (relative_path, result.stdout, result.stderr)
+            if expected:
+                assert relative_path + ":1:" in result.stdout, result.stdout
+            print(f"PASS {relative_path}: exit {result.returncode}")
+        finally:
+            fixture.unlink()
+
+    operations = [
+        socket_module + ".connect(host, port, [])",
+        socket_module + ".listen(port, [])",
+        ":s" + "sl.connect(host, port, [])",
+        "TCP" + "Server.start()",
+        "HTTP" + "Server.start()",
+        "Process" + ".sleep(1)",
+        ":timer" + ".sleep(1)",
+        ":timer" + ".tc(fun)",
+        "System" + ".monotonic_time()",
+        "System" + ".system_time()",
+        "Tokenizer.from" + "_pretrained(model)",
+        "TokenizerGateway" + ".new(model)",
+        "TokenizerGateway" + ".new!(model)",
+    ]
+    for operation in operations:
+        for relative_path in ("test/operation.exs", "scripts/operation"):
+            verify(relative_path, operation, 1)
+
+    for field in ("duration_ms", "elapsed_ms"):
+        for comparison in (">", "<"):
+            verify("test/threshold.exs", f"assert {field} {comparison} 0", 1)
+    verify("test/threshold.txt", "assert elapsed_ms > 0", 0)
+
+    registry_commands = [
+        "cu" + "rl example.invalid",
+        "w" + "get example.invalid",
+        "mix " + "deps.get",
+        "mix hex." + "repo list",
+        "mix hex." + "registry build",
+    ]
+    for registry_command in registry_commands:
+        verify("scripts/registry-command", registry_command, 1)
+        verify("test/registry-command.exs", registry_command, 0)
+
+    # Neither files outside the roots nor the scanner's own filename are scanned.
+    verify("outside.exs", operations[0], 0)
+    verify("test/verify-offline-test-surface", operations[0], 0)
+    verify("scripts/declaration-copy", source, 0)
+
+# Literal-token audits must also accept the inert detector declaration.
+assert socket_module not in source, "inert detector still contains the literal socket token"
+print("PASS inert declaration contains no literal socket token")

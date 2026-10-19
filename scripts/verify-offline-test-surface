@@ -3,7 +3,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # Character classes preserve matches without matching this declaration as input.
-patterns='Process[.]sleep|:timer[.](sleep|tc)|System[.](monotonic_time|system_time)|:gen_tcp[.]|:ssl[.]|TCP[S]erver|HTTP[S]erver|from[_]pretrained|TokenizerGateway[.]new[!(]'
+patterns='Process[.]sleep|:timer[.](sleep|tc)|System[.](monotonic_time|system_time)|:gen[_]tcp[.]|:ssl[.]|TCP[S]erver|HTTP[S]erver|from[_]pretrained|TokenizerGateway[.]new[!(]'
 if rg -n "$patterns" test scripts --glob '!verify-offline-test-surface'; then
   echo 'Offline test surface contains a real clock, sleeper, socket or model download.' >&2
   exit 1
