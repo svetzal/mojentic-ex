@@ -3,9 +3,10 @@
 ## Current offline readiness assessment
 
 This assessment covers RELEASE-3.0.0 parts 1–5 on base commit
-`af9ca54b9ffdad589289a52f22828a8c19537330`, with the uncommitted offline
+`5d7698826b32f7bc1bd48e1e411ecddb6336f79d`, with the uncommitted scanner
 verification changes identified by the executable manifests below. This
-correction changes tests, tooling and documentation; production code is unchanged.
+correction changes only the scanner declaration, its readiness manifest and living
+verification evidence; production code and public-API assertions are unchanged.
 Git retains previous execution records.
 
 The binding root contracts were read and their SHA-256 identities verified:
