@@ -3,14 +3,17 @@
 ## Current offline readiness assessment
 
 This assessment covers RELEASE-3.0.0 parts 1–5 on base commit
-`1b12afcb9d16c9800d7c6b29e339067d858aa242`, plus the uncommitted reconciliation
-of preserved correction `01f2f1c4f936ece8f080e6da3a63733285cec301` identified by
-the executable manifests below. Only the scanner regression’s inert socket
-fixture assembly and exact diagnostic assertions, readiness manifest and living
-evidence change. Trunk’s realtime task receive bounds and their manifest entry
-are retained. Scanner detection, roots, exclusions, gate wiring, production code
-and public-API assertions remain unchanged.
-Git retains previous execution records.
+`31a35f68de33ba198f2a82b9d4354146b717b0cd`, the preserved
+`foundry-task/mojentic-ex-mojentic-ex-no-network-tests-c8-a5f6e4` revision,
+plus the uncommitted realtime shutdown harness correction identified by the
+executable manifests below. The scanner fixture correction and exact diagnostic
+assertions are retained verbatim, as are realtime interruption synchronization
+and every binding contract mapping. The shutdown test now queues delivery,
+holds and releases transport cleanup, and requires the exact session and
+transport monitored before delivery to exit with `:normal`, using explicit
+failure bounds. Production code, public APIs, dependencies, runtime pins,
+versions, scanner detection, roots, exclusions and gate wiring are unchanged.
+Git retains previous execution records; Foundry owns Git finalization.
 
 The binding root contracts were read and their SHA-256 identities verified:
 
@@ -48,8 +51,18 @@ in-process transport payloads establish absence of the correlated submission.
 A temporary `:submit_completed_only` negative control holds the batch result
 until after the tool completion event and worker exit; it exposes the exact
 `c3` greeting output and fails the drop assertion. No production change remains.
-Current manifest hashes, tested execution identity and both consumer results
-are recorded in [offline verification](audit/offline-verification.md).
+The same file's `realtime_close stops the session` case now distinguishes
+receipt of the server-close event from completed shutdown. The existing public
+Session subscription and in-process FakeTransport remain the boundary. Cleanup
+is held at that transport, then released before asserting exact `:normal` DOWN
+messages for both premonitored PIDs. The default-bound premature-DOWN negative
+control fails while cleanup is held; the corrected ordering passes without a
+real sleep, socket or elapsed-time assertion. The 2-second receive bounds cap
+failure latency and do not assert elapsed time. Earlier passing captures did
+not rule out the later reported packaged-consumer failure; the reconciliation
+and the limits of this controlled reproduction, current manifest hashes, tested
+execution identity and both consumer results are recorded in
+[offline verification](audit/offline-verification.md).
 
 The second command retains its historical name for gate compatibility. It builds
 with `mix hex.build`, records the tar SHA-256, extracts the actual contents, creates

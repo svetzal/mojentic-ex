@@ -6,6 +6,9 @@ defmodule Mojentic.Realtime.SessionTest do
   alias Mojentic.Realtime.Event
   alias Mojentic.Realtime.Session
 
+  # Failure bound for asynchronous delivery, termination and transport cleanup.
+  @shutdown_bound 2_000
+
   # ---------------------------------------------------------------------------
   # Fake transport — a simple GenServer that records sent payloads
   # and lets tests push inbound messages directly.
@@ -26,7 +29,7 @@ defmodule Mojentic.Realtime.SessionTest do
 
     @impl Mojentic.Realtime.Transport
     def close(pid) do
-      if Process.alive?(pid), do: GenServer.stop(pid, :normal), else: :ok
+      if Process.alive?(pid), do: GenServer.call(pid, :close), else: :ok
     end
 
     @impl Mojentic.Realtime.Transport
@@ -54,6 +57,8 @@ defmodule Mojentic.Realtime.SessionTest do
       if state.subscriber, do: Kernel.send(state.subscriber, msg)
       {:reply, :ok, state}
     end
+
+    def handle_call(:close, _from, state), do: {:stop, :normal, :ok, state}
 
     def handle_call(:sent_payloads, _from, state) do
       {:reply, state.sent, state}
@@ -337,8 +342,27 @@ defmodule Mojentic.Realtime.SessionTest do
       :ok = Session.subscribe(session)
 
       monitor = Process.monitor(session)
+      transport_monitor = Process.monitor(transport)
+
+      # Queue delivery before holding cleanup at the transport boundary.
+      :ok = :sys.suspend(session)
       FakeTransport.push(transport, {:realtime_close, :server})
-      assert_receive {:DOWN, ^monitor, :process, ^session, :normal}
+      :ok = :sys.suspend(transport)
+      :ok = :sys.resume(session)
+
+      try do
+        assert_receive {:realtime_event,
+                        %Event{kind: :session_closed, payload: %{reason: :server}}},
+                       @shutdown_bound
+
+        # Delivery is complete, but the same session still awaits transport cleanup.
+        refute_receive {:DOWN, ^monitor, :process, ^session, _reason}, 0
+      after
+        :ok = :sys.resume(transport)
+      end
+
+      assert_receive {:DOWN, ^monitor, :process, ^session, :normal}, @shutdown_bound
+      assert_receive {:DOWN, ^transport_monitor, :process, ^transport, :normal}, @shutdown_bound
     end
   end
 
