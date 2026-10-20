@@ -3,16 +3,42 @@
 ## Tested revision and scope
 
 This correction tests base commit
-`169b741f93616d095352c429c3f57ab151deeba5` plus the uncommitted changes in this
+`067831fbcd69c4b95567504db50ecf5d294a0e6e` plus the uncommitted changes in this
 worktree. A read-only `git ls-remote origin refs/heads/main` check confirmed that
 remote `main`, local `main` and this worktree identify that commit; no ref update
-was needed. The remaining native-tool timeout trigger from that commit is
-replaced with explicit timeout delivery through an internal scheduling seam.
+was needed.
 
-Stacey's October 19 decision authorizes this internal injection.
-Public APIs, dependencies, runtime pins, versions and CI wiring are unchanged.
-Foundry owns Git finalization; no commit, push, merge, rebase, release or ref
-update is performed. Only this worktree is edited.
+The crash-handler regression now orders handler failure before normal gateway
+completion. Public APIs, production behaviour, dependencies, runtime pins,
+versions and CI wiring are unchanged. Foundry owns Git finalization; no commit,
+push, merge, rebase, release or ref update is performed. Only this worktree is
+edited.
+
+## Concurrent outcome ordering
+
+**solve returns error when an event handler crashes** uses a supervised gateway
+task that announces its worker and callback PIDs, then waits for an explicit
+release message before returning `DONE`. The solver also runs under the test
+supervisor. The test requires the existing handler-error result from public
+`solve/2` and the existing `HandlerErrorEvent` assertion before releasing normal
+completion. It monitors the blocked callback before release and requires its
+actual `:normal` exit. Supervisor shutdown also terminates pending tasks on test
+failure; the gateway callback awaits that supervised task, so it cannot remain
+blocked on a lost release. Receive and task-await timeouts bound failures only.
+No sleep, clock advance, live service or socket participates.
+
+The complete file passed seed **55772** and seeds **1–20**, each with **22 tests,
+0 failures**. The complete agent directory passed seed **55772** with **99 tests,
+0 failures**. All runs reported zero Finch connection attempts.
+
+All nine files in `test/mojentic/agents/` were reviewed for competing concurrent
+outcomes. Aggregator waiters register through explicit receive-trace barriers
+before event delivery; their zero-time timeout case never supplies the missing
+event. Concurrent AsyncLLMAgent requests assert every result independently.
+Recursive event-flow assertions select the expected messages without depending
+on callback arrival order; negative emitter assertions already wait for callback
+exit barriers. The other agent files exercise synchronous results. No additional
+instance of competing terminal outcomes without explicit ordering was found.
 
 ## Scanner and connection boundary
 
@@ -116,8 +142,9 @@ Both verify the manifest; the fresh consumer additionally checks extracted
 provider files and copied consumer inputs, compiles the package afresh and
 verifies its loaded ReqClient path. The file set now includes
 `native_response_test.exs` and `simple_recursive_agent_test.exs`, so all three
-deterministic cases run on both sides. Updated manifests identify the scheduler seam, runner and shared
-test helper where selected; existing clock cases remain in place.
+deterministic cases run on both sides. The readiness manifest now also identifies
+the ordered crash-handler regression; scheduler, runner, shared helper and clock
+inputs remain unchanged.
 Root contract text and binding 3.0.0 decisions are unchanged. No sibling
 repository or running-service boundary changed.
 
@@ -125,29 +152,36 @@ repository or running-service boundary changed.
 | Executable manifest | SHA-256 |
 | --- | --- |
 | `test/contracts/context_window_v1.manifest.sha256` | `c803c59e808bd28d365ac24b62fe3b32c43b94637255ade8f27187f6f484a8fa` |
-| `test/contracts/readiness_v1.manifest.sha256` | `cb7d11ed019ff4918c7c76e3a16d345914cbeae1eaee5d1cfeb988c336bb5502` |
+| `test/contracts/readiness_v1.manifest.sha256` | `deaa3ca0fbf515eb2fdf643a943a6e548ee2854fb17287c30eecf70a74b5ed5d` |
 | `test/contracts/stream_first_token_v1.manifest.sha256` | `ea8fa8a4fc37427e9b5f1306447c3788d40a032fb997eb59fd4d9460726dd220` |
 
 ## Final local verification
 
-All nine `.hone-gates.json` gates and the exact CI readiness step passed on Linux. Every final command ran with pinned Elixir **1.18.5** and OTP **28.5.0.7**, local Hex caches, and a PATH verified to contain no `rg`. The CI step used `MOJENTIC_MIX=mix scripts/verify-readiness-contract` with the pinned `mix` on PATH.
+All nine `.hone-gates.json` gates and the exact CI readiness step passed on Linux.
+Every command ran with pinned Elixir **1.18.5** and OTP **28.5.0.7**, local Hex
+caches, `MIX_ENV=test` (except documentation in `dev`), and a PATH checked to
+contain no `rg`. A private command directory exposes host Linux utilities while
+omitting ripgrep; runtime pins and repository scripts are unchanged. The CI step
+used `MOJENTIC_MIX=mix scripts/verify-readiness-contract` with the pinned `mix` on
+PATH. Full command output was captured; hashes identify the archived logs.
 
 | Check | Exit | Stdout SHA-256 | Stderr SHA-256 |
 | --- | --- | --- | --- |
 | `scripts/recovery-mix format --check-formatted` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `scripts/recovery-mix compile --warnings-as-errors` | 0 | `e7b9998c52d3e96b8213e7cf881531a660d62103ebe98768902085128a77a958` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `scripts/recovery-mix compile --warnings-as-errors` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | `scripts/recovery-mix credo --strict` | 0 | `a810b4a4aedae77b2cca98d8c9ee3d664832260b969831c10aa299ffcc829ba0` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `scripts/recovery-mix test --cover` | 0 | `d16beaefa2a57f505da4fe72a77c206277a93f51d02b23998e3fc32e232b8d3d` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `scripts/recovery-mix test --cover` | 0 | `23298dff40818c2aa55692e47e5a4311f604345b8bc55020a3c0ebf016f4ec4b` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | `scripts/recovery-mix deps.audit` | 0 | `3016e51e4eac0d421674d2128bbbdefb2924b4646e0c14a1ab034977ad73fae5` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | `scripts/recovery-mix sobelow --config` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | `6436a76f6c9f215476e71c23607008bfa1b717cb8c20c2fb6b07f4625ac5e6ce` |
-| `scripts/verify-first-token-contract` | 0 | `4f3732bc3940ee2962abfed43b17313f7e13f2d759d995c4976899a24ad24f07` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `scripts/verify-readiness-contract` | 0 | `62d2dd2935037a71adce0ffe7e7c86f79bbf2b137e030c401451a5b60c87f164` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `scripts/verify-packaged-first-token` | 0 | `53538c3808f5237c9a6e2c954e853d64385be6682ef74c9b863cbff7a9da2763` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `env MOJENTIC_MIX=mix scripts/verify-readiness-contract` | 0 | `563368d6b211b7d04e5ec9e36aaa377c79a91fee6668ed814ae026598d7f2812` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `scripts/verify-first-token-contract` | 0 | `216092de73e04e40913219e0ae052e0ba1931ce79ae6f0ed03a01978d286af15` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `scripts/verify-readiness-contract` | 0 | `3ca2b88ec76d337a52a120ed0d0c9b683c07ad3de9834628c9e84eef44b9a859` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `scripts/verify-packaged-first-token` | 0 | `b23a7155d48b6b6fa2d0c096054f95ea84da2c02f5e35578a6611c7130cd3dc9` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `env MOJENTIC_MIX=mix scripts/verify-readiness-contract` | 0 | `8b1d358d0f3329a3ea8c076d005d1c7f22b06dc7e35d909a97ea8a460cc699b9` | `860c43e709e040609b8e879afd668272693503083ca651adb5d0b40a4b31de0c` |
+| `env MIX_ENV=test scripts/recovery-mix compile --warnings-as-errors` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | `scripts/recovery-mix hex.audit` | 0 | `25ce35312da15695b9ab9e466ebdba2c1460f780ca6a14e164646fee228030d6` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | `scripts/recovery-mix hex.outdated --all` | 1 | `e9296e2eee096a9e9dede088c128638ec21e305962aea3e6ce7737f7335e42b3` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `env MIX_ENV=dev scripts/recovery-mix docs` | 0 | `ab5b706a8fa973ebafbc53529e50750460b2e531878bf4d3787a7c20487edaf3` | `12f66072abf2e3ab2e2875f9eda10da6690da37c1875e8cbc8afcf2fc0276f7f` |
-| `scripts/recovery-mix dialyzer` | 0 | `fe88dca27107e56c768d11e0d7845e3b1a78bc57200eb5a58a238d3810824235` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `env MIX_ENV=dev scripts/recovery-mix docs` | 0 | `f7d8d276b20c5228780bc479ae5cea7429bb090c461aa6fc1ee099db99b953d7` | `12f66072abf2e3ab2e2875f9eda10da6690da37c1875e8cbc8afcf2fc0276f7f` |
+| `scripts/recovery-mix dialyzer` | 0 | `3f3e0873af607906bc5567137625f138cf9697e0313ec1c4b8b0f2168de1d98e` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 
 | Suite | Result |
 | --- | --- |
@@ -157,14 +191,41 @@ All nine `.hone-gates.json` gates and the exact CI readiness step passed on Linu
 | packaged-first-token | 5523 tests, 0 failures; zero Finch connection attempts |
 | ci-readiness | 5523 tests, 0 failures; zero Finch connection attempts |
 
-Coverage: `91.40% | Total` (required threshold: 80%).
+Coverage: **91.40%** (required threshold: 80%). The 21 seeded file runs and complete
+agent-directory run also passed with no Finch connection attempts. Their combined
+stdout SHA-256 is
+`9e4a2bff1bfb916505f76723665da1949579d89a93c9b9e7aa59fe19a8d5833a`.
 
-Local Hex payload: version **3.0.0**, SHA-256 `38b0a04f409b5aaa1bd49c598a31fe619095a70d2b1bec53ce4b3baf0d047014`. The fresh consumer checked extracted provider inputs and copied contract inputs, compiled the provider from that payload and verified its loaded ReqClient path. No package was published.
+Local Hex payload: version **3.0.0**, SHA-256 `38b0a04f409b5aaa1bd49c598a31fe619095a70d2b1bec53ce4b3baf0d047014`.
+The fresh consumer verified the extracted provider inputs and copied consumer
+contract inputs, compiled the provider from the payload and verified its loaded
+ReqClient path. Both source and fresh payload consumers passed **ex-readiness-v1**
+with manifest SHA-256
+`deaa3ca0fbf515eb2fdf643a943a6e548ee2854fb17287c30eecf70a74b5ed5d`.
+No package was published.
 
-Dialyzer passed with zero errors; strict Credo found no issues. Hex outdated is informational and exited 1 for available upgrades; dependencies and advisory suppressions are unchanged. Dependency audit reported no vulnerabilities; Hex audit reported no retired or security-advisory packages in the local registry. Documentation built with existing missing links to `LICENSE`, `../RELEASE-3.0.0.md` and `deps/igniter/usage-rules.md`. Sobelow passed with its existing missing-router diagnostic for this non-Phoenix library and quoted-key parsing warnings from the unchanged lockfile. Initial compilation of unchanged third-party development dependencies also emitted their existing deprecation warnings; project warnings-as-errors compilation and strict Credo passed.
+Dialyzer passed with zero errors; strict Credo found no issues. Dependency audit
+reported no vulnerabilities. Hex audit reported no retired packages. Hex outdated
+is informational; its exit status above reports available upgrades. Dependencies
+and advisory suppressions are unchanged. Documentation built with existing missing
+links to `LICENSE`, `../RELEASE-3.0.0.md` and `deps/igniter/usage-rules.md`. Sobelow
+passed with its existing missing-router diagnostic for this non-Phoenix library
+and quoted-key parsing warnings from the unchanged lockfile. Initial compilation
+of unchanged third-party development dependencies emitted existing deprecation
+warnings; project warnings-as-errors compilation and strict Credo passed.
+The CI readiness run also emitted two bare `Logger - error:` diagnostics on
+stderr; it exited zero with 5523 tests, zero failures and zero Finch connection
+attempts. The captured output does not identify their cause.
 
 ## Execution identity and finalization
 
-Execution-tree SHA-256: `7ca75b88bf60909cfa7750e6585aed804dc3bd23bdc676fd2d0546cde9e0f45e`. This hashes sorted path/digest records under `lib/`, `test/`, `scripts/`, `.github/workflows/`, plus `mix.exs`, `mix.lock`, `.formatter.exs` and `.hone-gates.json`; living evidence prose is excluded.
+Execution-tree SHA-256:
+`dc9cb432eec5731adf450d5039d469f847da6a7bcf9d6078af6730f4e9dbc164`.
+This hashes sorted path/digest records under `lib/`, `test/`, `scripts/`,
+`.github/workflows/`, plus `mix.exs`, `mix.lock`, `.formatter.exs` and
+`.hone-gates.json`; living evidence prose is excluded.
 
-Base commit `169b741f93616d095352c429c3f57ab151deeba5` plus this execution identity identifies both provider and consumer verification. All changes remain uncommitted for Foundry. GitHub Actions was not monitored; these are local verification results.
+Base commit `067831fbcd69c4b95567504db50ecf5d294a0e6e` plus this execution identity
+identifies both provider and consumer verification, including the exact CI step.
+All changes remain uncommitted for Foundry. GitHub Actions was not monitored;
+these are local verification results.

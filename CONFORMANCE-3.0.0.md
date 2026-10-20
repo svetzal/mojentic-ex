@@ -3,8 +3,8 @@
 ## Current offline readiness assessment
 
 This assessment covers RELEASE-3.0.0 parts 1–5 on base commit
-`169b741f93616d095352c429c3f57ab151deeba5` plus the uncommitted deterministic
-native-tool timeout correction. A read-only remote check and local refs confirm
+`067831fbcd69c4b95567504db50ecf5d294a0e6e` plus the uncommitted deterministic
+crash-handler test correction. A read-only remote check and local refs confirm
 that the worktree starts at current `main`. Current manifest identities and
 source/packaged verification results are recorded in
 [offline verification](audit/offline-verification.md).
@@ -61,7 +61,7 @@ ExUnit cases and in-process Req adapter mechanism. Its companion
 `readiness_v1.manifest.sha256` identifies all selected cases, fixtures, support,
 production modules, package inputs and verification scripts. Both commands check
 that same manifest before running those same test files. Current manifest SHA-256:
-`cb7d11ed019ff4918c7c76e3a16d345914cbeae1eaee5d1cfeb988c336bb5502`.
+`deaa3ca0fbf515eb2fdf643a943a6e548ee2854fb17287c30eecf70a74b5ed5d`.
 
 The current first-token manifest SHA-256 is
 `ea8fa8a4fc37427e9b5f1306447c3788d40a032fb997eb59fd4d9460726dd220`.

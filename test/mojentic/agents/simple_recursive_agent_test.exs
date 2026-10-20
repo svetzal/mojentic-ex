@@ -484,6 +484,23 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
       agent = SimpleRecursiveAgent.new(broker)
       test_pid = self()
       solution_ref = make_ref()
+      supervisor = start_supervised!(Task.Supervisor)
+
+      MockGatewayState.set_response_fn(fn _messages ->
+        callback = self()
+
+        task =
+          Task.Supervisor.async_nolink(supervisor, fn ->
+            send(test_pid, {solution_ref, :gateway_blocked, self(), callback})
+
+            receive do
+              {^solution_ref, :release} ->
+                {:ok, %GatewayResponse{content: "DONE", tool_calls: [], object: nil}}
+            end
+          end)
+
+        Task.await(task)
+      end)
 
       # Subscribe a handler that raises — this tests the HandlerErrorEvent path
       EventEmitter.subscribe(agent.emitter, GoalSubmittedEvent, fn _event ->
@@ -495,13 +512,23 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
         send(test_pid, {solution_ref, event.reason})
       end)
 
-      # solve/2 should return {:error, {:handler_error, _}} rather than hanging
-      assert {:error, {:handler_error, _reason}} =
-               SimpleRecursiveAgent.solve(agent, "trigger crash")
+      solver =
+        Task.Supervisor.async_nolink(supervisor, fn ->
+          SimpleRecursiveAgent.solve(agent, "trigger crash")
+        end)
+
+      assert_receive {^solution_ref, :gateway_blocked, gateway_worker, callback}, 2000
+      callback_monitor = Process.monitor(callback)
+
+      # Normal completion stays blocked until the handler error reaches solve/2.
+      assert {:error, {:handler_error, _reason}} = Task.await(solver)
 
       # HandlerErrorEvent should have been emitted
       assert_receive {^solution_ref, %RuntimeError{message: "intentional crash in handler"}},
                      2000
+
+      send(gateway_worker, {solution_ref, :release})
+      assert_receive {:DOWN, ^callback_monitor, :process, ^callback, :normal}, 2000
     end
   end
 
