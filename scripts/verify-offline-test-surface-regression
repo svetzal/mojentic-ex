@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Exercise the offline scanner as a command; fixtures are never executed."""
+import os
 import pathlib
+import shutil
 import subprocess
 import tempfile
 
@@ -14,13 +16,20 @@ with tempfile.TemporaryDirectory(prefix="offline-scanner-") as temporary:
     (root / "test").mkdir()
     command = root / "scripts" / scanner.name
     command.write_text(source)
+    # Exercise the same minimal host tools as CI, with no ripgrep on PATH.
+    host_tools = root / "bin"
+    host_tools.mkdir()
+    for tool in ("bash", "dirname", "find", "grep"):
+        (host_tools / tool).symlink_to(shutil.which(tool))
+    environment = dict(os.environ, PATH=str(host_tools))
 
     def verify(relative_path, content, expected, line=1):
         fixture = root / relative_path
         fixture.write_text(content + "\n")
         try:
             result = subprocess.run(
-                ["bash", str(command)], capture_output=True, text=True, check=False
+                ["bash", str(command)], capture_output=True, text=True, check=False,
+                env=environment
             )
             assert result.returncode == expected, (relative_path, result.stdout, result.stderr)
             if expected:
@@ -68,6 +77,21 @@ with tempfile.TemporaryDirectory(prefix="offline-scanner-") as temporary:
     for registry_command in registry_commands:
         verify("scripts/registry-command", registry_command, 1)
         verify("test/registry-command.exs", registry_command, 0)
+
+    verify("scripts/indented-command", "  " + registry_commands[0], 1)
+    verify("scripts/command-prefix", "curlish example.invalid", 0)
+    verify("test/file with spaces.exs", operations[0], 1)
+
+    # A scanner failure must never be mistaken for a clean surface.
+    (host_tools / "grep").unlink()
+    unavailable = subprocess.run(
+        ["bash", str(command)], capture_output=True, text=True, check=False,
+        env=environment
+    )
+    assert unavailable.returncode == 127, unavailable
+    assert "could not inspect" in unavailable.stderr, unavailable.stderr
+    (host_tools / "grep").symlink_to(shutil.which("grep"))
+    print("PASS missing grep fails closed")
 
     # Neither files outside the roots nor the scanner's own filename are scanned.
     verify("outside.exs", operations[0], 0)

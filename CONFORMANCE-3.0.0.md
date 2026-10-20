@@ -3,15 +3,19 @@
 ## Current offline readiness assessment
 
 This assessment covers RELEASE-3.0.0 parts 1–5 on base commit
-`085a360cedd3a77055352ea97c42bb42806a8903` plus the uncommitted shutdown evidence correction
-in worktree `mojentic-ex-no-network-tests-c10-336be6`, identified by the
-executable manifests and execution-tree digest in the audit. The landed
-migration, scanner correction, interruption synchronization and binding contract
-mappings are retained. The shutdown probe rejects the observed pending cleanup
-state, then accepts completed cleanup only after both original monitored PIDs
-exit with `:normal`. Production code, public APIs, dependencies, runtime pins,
-versions, scanner detection, roots, exclusions and gate wiring are unchanged.
-Git retains previous execution records; Foundry owns Git finalization.
+`ff478c46b6d4d2e16bd127fbf7e9c0161a72605e` plus the uncommitted CI scanner
+portability, connection-verification and deterministic date-test correction. Current manifest identities
+and source/packaged verification results are recorded in
+[offline verification](audit/offline-verification.md). The scanner uses host
+`find`/`grep` tools and retains its rejection patterns and diagnostic regressions.
+The shared test helper rejects Finch connection attempts across each complete
+suite, including the fresh packaged consumer. Streaming ReqClient still creates
+lazy Finch pool supervisors before using the in-process Req adapter; those pools
+do not establish connections. Production code, public APIs, dependencies, runtime
+pins, versions, binding contract mappings and gate wiring are unchanged.
+The separate CurrentDatetime test clock constraint remains unresolved, as recorded
+in the audit: eliminating it requires a library change that has not been authorized.
+Foundry owns Git finalization; changes remain uncommitted.
 
 The binding root contracts were read and their SHA-256 identities verified:
 

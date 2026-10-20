@@ -4,15 +4,28 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 # Character classes preserve matches without matching this declaration as input.
 patterns='Process[.]sleep|:timer[.](sleep|tc)|System[.](monotonic_time|system_time)|:gen[_]tcp[.]|:ssl[.]|TCP[S]erver|HTTP[S]erver|from[_]pretrained|TokenizerGateway[.]new[!(]'
-if rg -n "$patterns" test scripts --glob '!verify-offline-test-surface'; then
+# Collect filenames separately so grep's no-match status is distinct from errors.
+mapfile -d '' -t surface < <(find test scripts -type f ! -name verify-offline-test-surface -print0)
+mapfile -d '' -t tests < <(find test -type f -name '*.exs' -print0)
+mapfile -d '' -t scripts < <(find scripts -type f ! -name verify-offline-test-surface -print0)
+scan() {
+  local status=0
+  grep -nHE -- "$@" || status=$?
+  case "$status" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) echo 'Offline scanner could not inspect its inputs.' >&2; exit "$status" ;;
+  esac
+}
+if scan "$patterns" "${surface[@]}"; then
   echo 'Offline test surface contains a real clock, sleeper, socket or model download.' >&2
   exit 1
 fi
-if rg -n 'assert.*(duration_ms|elapsed_ms).*[<>]' test --glob '*.exs'; then
+if scan 'assert.*(duration_ms|elapsed_ms).*[<>]' "${tests[@]}"; then
   echo 'Assert timing values from an injected clock, not wall-clock thresholds.' >&2
   exit 1
 fi
-if rg -n '^\s*(curl|wget|mix deps[.]get|mix hex[.](repo|registry))\b' scripts --glob '!verify-offline-test-surface'; then
+if scan '^[[:space:]]*(curl|wget|mix deps[.]get|mix hex[.](repo|registry))([^[:alnum:]_]|$)' "${scripts[@]}"; then
   echo 'Verification scripts must use local dependencies and registry snapshots.' >&2
   exit 1
 fi

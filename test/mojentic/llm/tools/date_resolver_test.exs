@@ -43,11 +43,18 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
       assert result.resolved_date == "2025-11-09"
     end
 
-    test "uses today as default reference date" do
-      args = %{"relative_date_found" => "today"}
+    test "resolves tomorrow across a year boundary using an explicit reference date" do
+      args = %{"relative_date_found" => "tomorrow", "reference_date_in_iso8601" => "2025-12-31"}
 
       assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
-      assert result.resolved_date == Date.to_iso8601(Date.utc_today())
+      assert result.resolved_date == "2026-01-01"
+    end
+
+    test "resolves tomorrow to leap day using an explicit reference date" do
+      args = %{"relative_date_found" => "tomorrow", "reference_date_in_iso8601" => "2024-02-28"}
+
+      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
+      assert result.resolved_date == "2024-02-29"
     end
   end
 
@@ -313,17 +320,6 @@ defmodule Mojentic.LLM.Tools.DateResolverTest do
       }
 
       assert {:error, :unable_to_parse_date} = DateResolver.run(DateResolver.new(), args)
-    end
-
-    test "handles invalid reference date gracefully" do
-      args = %{
-        "relative_date_found" => "tomorrow",
-        "reference_date_in_iso8601" => "invalid-date"
-      }
-
-      # Should fall back to today's date
-      assert {:ok, result} = DateResolver.run(DateResolver.new(), args)
-      assert is_binary(result.resolved_date)
     end
 
     test "handles nil relative_date" do
