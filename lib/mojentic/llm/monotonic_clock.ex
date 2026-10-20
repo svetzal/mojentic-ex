@@ -9,5 +9,5 @@ defmodule Mojentic.LLM.MonotonicClock do
 
   @doc "Returns monotonic milliseconds; the epoch has no wall-clock meaning."
   @spec now() :: integer()
-  def now, do: System.monotonic_time(:millisecond)
+  def now, do: Mojentic.Clock.monotonic_ms()
 end

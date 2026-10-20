@@ -3,15 +3,26 @@
 ## Current offline readiness assessment
 
 This assessment covers RELEASE-3.0.0 parts 1–5 on base commit
-`085a360cedd3a77055352ea97c42bb42806a8903` plus the uncommitted shutdown evidence correction
-in worktree `mojentic-ex-no-network-tests-c10-336be6`, identified by the
-executable manifests and execution-tree digest in the audit. The landed
-migration, scanner correction, interruption synchronization and binding contract
-mappings are retained. The shutdown probe rejects the observed pending cleanup
-state, then accepts completed cleanup only after both original monitored PIDs
-exit with `:normal`. Production code, public APIs, dependencies, runtime pins,
-versions, scanner detection, roots, exclusions and gate wiring are unchanged.
-Git retains previous execution records; Foundry owns Git finalization.
+`ff478c46b6d4d2e16bd127fbf7e9c0161a72605e` plus the uncommitted temporal-coupling
+correction, including all preserved work from
+`43b959700536e5c36bb747e9c85beea5dc44e7e2`. Current manifest identities and
+source/packaged verification results are recorded in
+[offline verification](audit/offline-verification.md).
+
+The scanner uses host `find`/`grep` and rejects direct calendar clocks as well
+as monotonic clocks, sleeps, sockets and downloads. Its command regression runs
+without ripgrep. The shared test helper rejects Finch connection attempts across
+each complete suite, including the fresh packaged consumer. Streaming ReqClient
+still creates lazy Finch pool supervisors before using the in-process Req adapter;
+those pools do not establish connections.
+
+Stacey's October 19 decision authorizes internal clock injection. `Mojentic.Clock`
+now supplies monotonic time, UTC time, OS timestamps and sleeping behind an internal application
+configuration seam. Its production default calls the same BEAM clocks and sleeper;
+the suite installs a fixed clock and explicitly advances a shared counter when
+needed. Existing per-request clock options retain precedence. Public APIs,
+dependencies, runtime pins, versions and CI wiring are unchanged.
+Foundry owns Git finalization; changes remain uncommitted.
 
 The binding root contracts were read and their SHA-256 identities verified:
 
@@ -36,7 +47,13 @@ service boundary is changed by this assessment.
 ExUnit cases and in-process Req adapter mechanism. Its companion
 `readiness_v1.manifest.sha256` identifies all selected cases, fixtures, support,
 production modules, package inputs and verification scripts. Both commands check
-that same manifest before running those same test files:
+that same manifest before running those same test files. Current manifest SHA-256:
+`7cfad313c26222618e3a4c9c659992ec8be05c999fef0e0d928602fec9e568db`.
+
+The current first-token manifest SHA-256 is
+`5e99b073daa017daf5020ffc2a64094a3ee6457e71f5531fe7c904f717549ef3`.
+
+Both source and payload verification use the following commands:
 
 - Source public consumers: `scripts/verify-readiness-contract`.
 - Fresh extracted Hex payload consumer: `scripts/verify-packaged-first-token`.
@@ -189,6 +206,16 @@ resend** matrices. The replacement **zero <mode> timeout distinguishes queued da
 absolute deadline** cases in `req_client_test.exs` use `recv_timeout: 0`: idle
 consumes queued `partial` then yields `:timeout`; absolute immediately yields
 `:timeout`. Both close exactly one response with no resend or elapsed-time check.
+The additional **absolute deadline expires after explicit clock advance for HTTP
+200/503** cases consume one body fragment, advance the injected clock by the
+1000ms budget and assert exact timeout events, received error-body evidence,
+cleanup and one request. No transport timer or elapsed-time threshold is used.
+The readiness source and fresh Hex consumers also run CurrentDatetime's exact
+UTC/Unix assertions and explicit second advance, TracerSystem's exact timestamp
+assertions across a 1250ms advance, DateResolver's missing/invalid
+reference fallback with an explicit day advance, and dispatcher tests that send
+`:process_events` directly rather than waiting for its periodic timer.
+
 Concurrent response cleanup remains in `req_client_test.exs`'s
 **closing one stream leaves another stream at the same origin cancellable**.
 

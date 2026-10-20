@@ -22,7 +22,7 @@ defmodule Mojentic.LLM.Tools.ToolInvocation do
   `ok?: false`.
   """
   def invoke(%ToolCallExecution{} = call, tools, ctx \\ nil) do
-    start = System.monotonic_time(:millisecond)
+    start = Mojentic.Clock.monotonic_ms()
     fire_on_start(ctx, call)
 
     outcome =
@@ -33,7 +33,7 @@ defmodule Mojentic.LLM.Tools.ToolInvocation do
             name: call.name,
             ok?: false,
             error: {:tool_not_found, call.name},
-            duration_ms: System.monotonic_time(:millisecond) - start
+            duration_ms: Mojentic.Clock.monotonic_ms() - start
           }
 
         tool ->
@@ -60,7 +60,7 @@ defmodule Mojentic.LLM.Tools.ToolInvocation do
         kind, payload -> {:error, {kind, payload}}
       end
 
-    duration_ms = System.monotonic_time(:millisecond) - start
+    duration_ms = Mojentic.Clock.monotonic_ms() - start
 
     case result do
       {:ok, value} ->

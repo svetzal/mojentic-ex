@@ -100,7 +100,7 @@ defmodule Mojentic.Tracer.TracerSystem do
   ## Examples
 
       event = %TracerEvent{
-        timestamp: System.os_time(:millisecond) / 1000,
+        timestamp: 1_767_225_600.0,
         correlation_id: "abc-123",
         source: MyModule
       }
@@ -538,6 +538,6 @@ defmodule Mojentic.Tracer.TracerSystem do
   # Private Helpers
 
   defp current_timestamp do
-    System.os_time(:millisecond) / 1000
+    Mojentic.Clock.os_time_ms() / 1000
   end
 end

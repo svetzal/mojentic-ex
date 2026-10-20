@@ -1,3 +1,4 @@
+test/mojentic/async_dispatcher_test.exs
 test/mojentic/http/req_client_test.exs
 test/mojentic/llm/admission_wire_test.exs
 test/mojentic/llm/cancellation_socket_wire_test.exs
@@ -20,5 +21,8 @@ test/mojentic/llm/recovery_test.exs
 test/mojentic/llm/recovery_wire_test.exs
 test/mojentic/llm/retry_after_dates_wire_test.exs
 test/mojentic/llm/stream_recovery_wire_test.exs
+test/mojentic/llm/tools/current_datetime_test.exs
+test/mojentic/llm/tools/date_resolver_test.exs
 test/mojentic/llm/typed_errors_wire_test.exs
 test/mojentic/realtime/session_test.exs
+test/mojentic/tracer/tracer_system_test.exs

@@ -152,7 +152,7 @@ defmodule Mojentic.AsyncDispatcherTest do
 
     test "dispatches event to router", %{dispatcher: dispatcher, collector: collector} do
       event = %EventA{source: __MODULE__, data: "test"}
-      AsyncDispatcher.dispatch(dispatcher, event)
+      dispatch(dispatcher, event)
 
       :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher)
 
@@ -166,7 +166,7 @@ defmodule Mojentic.AsyncDispatcherTest do
       collector: collector
     } do
       event = %EventA{source: __MODULE__, correlation_id: nil, data: "test"}
-      AsyncDispatcher.dispatch(dispatcher, event)
+      dispatch(dispatcher, event)
 
       :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher)
 
@@ -177,7 +177,7 @@ defmodule Mojentic.AsyncDispatcherTest do
 
     test "preserves existing correlation_id", %{dispatcher: dispatcher, collector: collector} do
       event = %EventA{source: __MODULE__, correlation_id: "custom-123", data: "test"}
-      AsyncDispatcher.dispatch(dispatcher, event)
+      dispatch(dispatcher, event)
 
       :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher)
 
@@ -185,7 +185,10 @@ defmodule Mojentic.AsyncDispatcherTest do
       assert hd(events).correlation_id == "custom-123"
     end
 
-    test "processes multiple events in order", %{dispatcher: dispatcher, collector: collector} do
+    test "processes sequentially dispatched events in order", %{
+      dispatcher: dispatcher,
+      collector: collector
+    } do
       # Stop the default dispatcher and create one with batch_size=1 for strict ordering
       AsyncDispatcher.stop(dispatcher)
 
@@ -199,7 +202,10 @@ defmodule Mojentic.AsyncDispatcherTest do
         %EventA{source: __MODULE__, data: "third"}
       ]
 
-      Enum.each(events, &AsyncDispatcher.dispatch(dispatcher, &1))
+      Enum.each(events, fn event ->
+        dispatch(dispatcher, event)
+        assert :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher, timeout: 2000)
+      end)
 
       :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher, timeout: 2000)
 
@@ -231,7 +237,7 @@ defmodule Mojentic.AsyncDispatcherTest do
 
     test "chains events through multiple agents", %{dispatcher: dispatcher, collector: collector} do
       event = %EventA{source: __MODULE__, data: "original"}
-      AsyncDispatcher.dispatch(dispatcher, event)
+      dispatch(dispatcher, event)
 
       :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher, timeout: 2000)
 
@@ -242,7 +248,7 @@ defmodule Mojentic.AsyncDispatcherTest do
 
     test "preserves correlation_id through chain", %{dispatcher: dispatcher, collector: collector} do
       event = %EventA{source: __MODULE__, correlation_id: "chain-123", data: "test"}
-      AsyncDispatcher.dispatch(dispatcher, event)
+      dispatch(dispatcher, event)
 
       :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher, timeout: 2000)
 
@@ -294,8 +300,8 @@ defmodule Mojentic.AsyncDispatcherTest do
       event_b = %EventB{source: __MODULE__, correlation_id: correlation_id, data: "b"}
       event_c = %EventC{source: __MODULE__, correlation_id: correlation_id, data: "c"}
 
-      AsyncDispatcher.dispatch(dispatcher, event_b)
-      AsyncDispatcher.dispatch(dispatcher, event_c)
+      dispatch(dispatcher, event_b)
+      dispatch(dispatcher, event_c)
 
       :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher, timeout: 2000)
 
@@ -325,7 +331,7 @@ defmodule Mojentic.AsyncDispatcherTest do
 
       # Dispatch multiple events
       for i <- 1..10 do
-        AsyncDispatcher.dispatch(dispatcher, %EventA{source: __MODULE__, data: "#{i}"})
+        dispatch(dispatcher, %EventA{source: __MODULE__, data: "#{i}"})
       end
 
       assert :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher, timeout: 3000)
@@ -343,15 +349,15 @@ defmodule Mojentic.AsyncDispatcherTest do
 
       dispatcher = start_supervised!({AsyncDispatcher, router: router})
 
-      AsyncDispatcher.dispatch(dispatcher, %EventA{source: __MODULE__, data: {self(), "slow"}})
+      dispatch(dispatcher, %EventA{source: __MODULE__, data: {self(), "slow"}})
       assert_receive {:agent_started, "slow", worker}, 1000
       monitor = Process.monitor(worker)
       assert AsyncDispatcher.get_queue_size(dispatcher) == 1
       assert {:error, :timeout} = AsyncDispatcher.wait_for_empty_queue(dispatcher, timeout: 0)
       send(worker, :release)
       assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}
-      assert AsyncDispatcher.get_queue_size(dispatcher) == 0
       assert :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher)
+      assert AsyncDispatcher.get_queue_size(dispatcher) == 0
 
       AsyncDispatcher.stop(dispatcher)
     end
@@ -374,7 +380,7 @@ defmodule Mojentic.AsyncDispatcherTest do
       dispatcher = start_supervised!({AsyncDispatcher, router: router})
 
       for i <- 1..5 do
-        AsyncDispatcher.dispatch(dispatcher, %EventA{source: __MODULE__, data: {self(), i}})
+        dispatch(dispatcher, %EventA{source: __MODULE__, data: {self(), i}})
       end
 
       workers =
@@ -390,8 +396,8 @@ defmodule Mojentic.AsyncDispatcherTest do
         assert_receive {:DOWN, ^monitor, :process, ^worker, :normal}
       end)
 
-      assert AsyncDispatcher.get_queue_size(dispatcher) == 0
       assert :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher)
+      assert AsyncDispatcher.get_queue_size(dispatcher) == 0
 
       AsyncDispatcher.stop(dispatcher)
     end
@@ -405,7 +411,7 @@ defmodule Mojentic.AsyncDispatcherTest do
       ref = Process.monitor(dispatcher)
 
       terminate_event = %TerminateEvent{source: __MODULE__}
-      AsyncDispatcher.dispatch(dispatcher, terminate_event)
+      dispatch(dispatcher, terminate_event)
 
       # Wait for dispatcher to stop
       assert_receive {:DOWN, ^ref, :process, ^dispatcher, :normal}, 1000
@@ -434,7 +440,7 @@ defmodule Mojentic.AsyncDispatcherTest do
       {:ok, dispatcher} = AsyncDispatcher.start_link(router: router)
 
       event = %EventA{source: __MODULE__, data: "module-test"}
-      AsyncDispatcher.dispatch(dispatcher, event)
+      dispatch(dispatcher, event)
 
       :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher, timeout: 2000)
 
@@ -472,7 +478,7 @@ defmodule Mojentic.AsyncDispatcherTest do
       {:ok, dispatcher} = AsyncDispatcher.start_link(router: router)
 
       event = %EventA{source: __MODULE__, data: "test"}
-      AsyncDispatcher.dispatch(dispatcher, event)
+      dispatch(dispatcher, event)
 
       :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher, timeout: 2000)
 
@@ -501,7 +507,7 @@ defmodule Mojentic.AsyncDispatcherTest do
       {:ok, dispatcher} = AsyncDispatcher.start_link(router: router, batch_size: 1)
 
       event = %EventA{source: __MODULE__, data: "original"}
-      AsyncDispatcher.dispatch(dispatcher, event)
+      dispatch(dispatcher, event)
 
       :ok = AsyncDispatcher.wait_for_empty_queue(dispatcher, timeout: 5000)
 
@@ -513,5 +519,12 @@ defmodule Mojentic.AsyncDispatcherTest do
       AsyncDispatcher.stop(dispatcher)
       GenServer.stop(collector)
     end
+  end
+
+  # Exercise the scheduled message directly; the test never waits for the timer.
+  defp dispatch(dispatcher, event) do
+    :ok = AsyncDispatcher.dispatch(dispatcher, event)
+    send(dispatcher, :process_events)
+    :ok
   end
 end

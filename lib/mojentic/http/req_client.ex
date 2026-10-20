@@ -136,7 +136,7 @@ defmodule Mojentic.HTTP.ReqClient do
       not is_nil(Keyword.get(opts, :wire_trace)) or Keyword.get(opts, :recovery_metadata, false)
 
     deadline =
-      if mode == :idle, do: {:idle, timeout}, else: System.monotonic_time(:millisecond) + timeout
+      if mode == :idle, do: {:idle, timeout}, else: Mojentic.Clock.monotonic_ms() + timeout
 
     # A native Finch timeout can return an unfinished socket to its pool before
     # cancellation reaches the worker. Give each stream its own pool so cleanup
@@ -225,7 +225,7 @@ defmodule Mojentic.HTTP.ReqClient do
     remaining =
       case deadline do
         {:idle, timeout} -> timeout
-        deadline -> max(deadline - System.monotonic_time(:millisecond), 0)
+        deadline -> max(deadline - Mojentic.Clock.monotonic_ms(), 0)
       end
 
     case receive_stream(state, response.body.ref, remaining, cancel) do
@@ -262,7 +262,7 @@ defmodule Mojentic.HTTP.ReqClient do
     do: receive_stream(state, response.body.ref, timeout)
 
   defp next_stream({:streaming, response, deadline} = state) do
-    remaining = max(deadline - System.monotonic_time(:millisecond), 0)
+    remaining = max(deadline - Mojentic.Clock.monotonic_ms(), 0)
 
     if remaining == 0 do
       close_stream(state)

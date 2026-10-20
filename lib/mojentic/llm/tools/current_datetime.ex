@@ -32,7 +32,7 @@ defmodule Mojentic.LLM.Tools.CurrentDatetime do
   @impl true
   def run(%__MODULE__{}, arguments) do
     format_string = Map.get(arguments, "format_string", "%Y-%m-%d %H:%M:%S")
-    now = DateTime.utc_now()
+    now = Mojentic.Clock.utc_now()
 
     formatted_time =
       case format_datetime(now, format_string) do

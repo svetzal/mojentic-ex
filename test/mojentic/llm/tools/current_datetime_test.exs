@@ -1,7 +1,12 @@
 defmodule Mojentic.LLM.Tools.CurrentDatetimeTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Mojentic.LLM.Tools.CurrentDatetime
+
+  setup do
+    Mojentic.TestSupport.Clock.install()
+    :ok
+  end
 
   describe "descriptor/0" do
     test "returns valid tool descriptor" do
@@ -26,7 +31,7 @@ defmodule Mojentic.LLM.Tools.CurrentDatetimeTest do
       assert is_integer(result.timestamp)
       assert is_binary(result.timezone)
       # Default format is "%Y-%m-%d %H:%M:%S"
-      assert result.current_datetime =~ ~r/\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/
+      assert result.current_datetime == "2026-01-01 00:00:00"
     end
 
     test "returns current datetime with custom format" do
@@ -34,7 +39,7 @@ defmodule Mojentic.LLM.Tools.CurrentDatetimeTest do
 
       assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
       assert is_binary(result.current_datetime)
-      assert result.current_datetime =~ ~r/\d{4}-\d{2}-\d{2}/
+      assert result.current_datetime == "2026-01-01"
       refute result.current_datetime =~ ~r/\d{2}:\d{2}:\d{2}/
     end
 
@@ -42,9 +47,11 @@ defmodule Mojentic.LLM.Tools.CurrentDatetimeTest do
       args = %{}
 
       assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
-      # Timestamp should be a reasonable unix epoch (after 2020, before 2030)
-      assert result.timestamp > 1_577_836_800
-      assert result.timestamp < 1_893_456_000
+      assert result.timestamp == 1_767_225_600
+      Mojentic.TestSupport.Clock.advance(1000)
+      assert {:ok, advanced} = CurrentDatetime.run(CurrentDatetime.new(), args)
+      assert advanced.timestamp == result.timestamp + 1
+      assert advanced.current_datetime == "2026-01-01 00:00:01"
     end
 
     test "returns timezone information" do
@@ -58,45 +65,21 @@ defmodule Mojentic.LLM.Tools.CurrentDatetimeTest do
       args = %{"format_string" => "%A"}
 
       assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
-      # Should be a day name
-      assert result.current_datetime in [
-               "Monday",
-               "Tuesday",
-               "Wednesday",
-               "Thursday",
-               "Friday",
-               "Saturday",
-               "Sunday"
-             ]
+      assert result.current_datetime == "Thursday"
     end
 
     test "handles format with month name" do
       args = %{"format_string" => "%B"}
 
       assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
-      # Should be a month name
-      assert result.current_datetime in [
-               "January",
-               "February",
-               "March",
-               "April",
-               "May",
-               "June",
-               "July",
-               "August",
-               "September",
-               "October",
-               "November",
-               "December"
-             ]
+      assert result.current_datetime == "January"
     end
 
     test "handles format with year only" do
       args = %{"format_string" => "%Y"}
 
       assert {:ok, result} = CurrentDatetime.run(CurrentDatetime.new(), args)
-      # Should be a 4-digit year
-      assert result.current_datetime =~ ~r/^\d{4}$/
+      assert result.current_datetime == "2026"
     end
 
     test "handles invalid format gracefully" do

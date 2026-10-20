@@ -38,10 +38,10 @@ defmodule Mojentic.LLM.Tools.DateResolver do
       if reference_date_str do
         case Date.from_iso8601(reference_date_str) do
           {:ok, date} -> date
-          _ -> Date.utc_today()
+          _ -> DateTime.to_date(Mojentic.Clock.utc_now())
         end
       else
-        Date.utc_today()
+        DateTime.to_date(Mojentic.Clock.utc_now())
       end
 
     case parse_relative_date(relative_date, reference_date) do

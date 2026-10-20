@@ -170,7 +170,7 @@ defmodule Mojentic.LLM.Broker do
     )
 
     # Measure call duration
-    start_time = System.monotonic_time(:millisecond)
+    start_time = Mojentic.Clock.monotonic_ms()
 
     with {:ok, response} <-
            broker.gateway.complete(
@@ -179,7 +179,7 @@ defmodule Mojentic.LLM.Broker do
              tools,
              config
            ) do
-      call_duration_ms = System.monotonic_time(:millisecond) - start_time
+      call_duration_ms = Mojentic.Clock.monotonic_ms() - start_time
 
       # Record LLM response in tracer
       Tracer.record_llm_response(broker.tracer,
@@ -283,7 +283,7 @@ defmodule Mojentic.LLM.Broker do
     )
 
     # Measure call duration
-    start_time = System.monotonic_time(:millisecond)
+    start_time = Mojentic.Clock.monotonic_ms()
 
     with {:ok, response} <-
            broker.gateway.complete_object(
@@ -292,7 +292,7 @@ defmodule Mojentic.LLM.Broker do
              schema,
              config
            ) do
-      call_duration_ms = System.monotonic_time(:millisecond) - start_time
+      call_duration_ms = Mojentic.Clock.monotonic_ms() - start_time
 
       # Record LLM response in tracer with object representation
       Tracer.record_llm_response(broker.tracer,
@@ -424,7 +424,7 @@ defmodule Mojentic.LLM.Broker do
       %{
         continuation: stream_to_continuation(stream),
         broker: broker,
-        started: System.monotonic_time(:millisecond),
+        started: Mojentic.Clock.monotonic_ms(),
         content: "",
         terminal: false
       }
@@ -469,7 +469,7 @@ defmodule Mojentic.LLM.Broker do
       metadata: evidence[:metadata],
       content: state.content,
       tool_calls: [],
-      call_duration_ms: System.monotonic_time(:millisecond) - state.started,
+      call_duration_ms: Mojentic.Clock.monotonic_ms() - state.started,
       source: __MODULE__,
       correlation_id: broker.correlation_id
     )

@@ -178,6 +178,54 @@ defmodule Mojentic.HTTP.ReqClientTest do
     end
   end
 
+  for status <- [200, 503] do
+    @status status
+    test "absolute deadline expires after explicit clock advance for HTTP #{@status}" do
+      Mojentic.TestSupport.Clock.install()
+
+      transport =
+        start_supervised!(
+          {ScriptedTransport,
+           {self(), [{:stream_hold, "HTTP/1.1 #{@status} Response\r\n\r\npartial"}]}}
+        )
+
+      assert_receive {:transport_id, id}
+
+      {:ok, stream} =
+        ReqClient.post_stream("http://example.test:#{id}/stream", "{}", [],
+          recv_timeout: 1000,
+          recovery_metadata: true
+        )
+
+      events =
+        Enum.map(stream, fn event ->
+          if event in [{:data, "partial"}, {:http_data, "partial"}] do
+            Mojentic.TestSupport.Clock.advance(1000)
+            # A queued end must not mask the expired successful-stream deadline.
+            if @status == 200, do: GenServer.call(transport, {:release, ""})
+          end
+
+          event
+        end)
+
+      assert Mojentic.TestSupport.Clock.last_read() == 1000
+
+      if @status == 200 do
+        assert events == [{:data, "partial"}, {:error, :timeout}]
+      else
+        assert events == [
+                 {:headers, 503, []},
+                 {:http_data, "partial"},
+                 {:error, {:http_response, 503, [], "partial", :timeout}}
+               ]
+      end
+
+      assert_receive {:transport_request, request}
+      assert GenServer.call(transport, {:response_state, request}) == :closed
+      assert GenServer.call(transport, :requests) == [request]
+    end
+  end
+
   defp serve_json(json) do
     response = "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n" <> json
     start_supervised!({ScriptedTransport, {self(), [response]}})

@@ -450,9 +450,9 @@ defmodule Mojentic.Realtime.Session do
 
       task =
         Task.async(fn ->
-          start_time = System.monotonic_time(:millisecond)
+          start_time = Mojentic.Clock.monotonic_ms()
           outcomes = state.tool_runner.run_batch(executions, state.tools, ctx)
-          duration_ms = System.monotonic_time(:millisecond) - start_time
+          duration_ms = Mojentic.Clock.monotonic_ms() - start_time
           send(session_pid, {:tool_batch_done, executions, outcomes, duration_ms})
         end)
 

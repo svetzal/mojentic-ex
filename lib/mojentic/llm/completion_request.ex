@@ -549,7 +549,7 @@ defmodule Mojentic.LLM.CompletionRequest do
            value
          ) do
       [_, weekday, day, month, year, time] ->
-        now = Keyword.get(opts, :wall_clock, &DateTime.utc_now/0).()
+        now = Keyword.get(opts, :wall_clock, &Mojentic.Clock.utc_now/0).()
         year = http_year(String.to_integer(year), month, day, time, now)
         "#{String.slice(weekday, 0, 3)}, #{day} #{month} #{year} #{time} GMT"
 

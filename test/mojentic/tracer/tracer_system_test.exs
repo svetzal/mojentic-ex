@@ -1,5 +1,5 @@
 defmodule Mojentic.Tracer.TracerSystemTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
 
   alias Mojentic.Tracer.TracerSystem
 
@@ -12,8 +12,25 @@ defmodule Mojentic.Tracer.TracerSystemTest do
   }
 
   setup do
-    {:ok, tracer} = TracerSystem.start_link()
+    tracer = start_supervised!(TracerSystem)
     {:ok, tracer: tracer}
+  end
+
+  test "records timestamps from the explicitly advanced clock", %{tracer: tracer} do
+    Mojentic.TestSupport.Clock.install()
+
+    :ok =
+      TracerSystem.record_llm_call(tracer, model: "model", messages: [], correlation_id: "clock")
+
+    assert [%LLMCallTracerEvent{timestamp: 1_767_225_600.0}] = TracerSystem.get_events(tracer)
+
+    Mojentic.TestSupport.Clock.advance(1250)
+
+    :ok =
+      TracerSystem.record_llm_call(tracer, model: "model", messages: [], correlation_id: "clock")
+
+    assert tracer |> TracerSystem.get_events() |> Enum.map(& &1.timestamp) |> Enum.sort() ==
+             [1_767_225_600.0, 1_767_225_601.25]
   end
 
   describe "start_link/1" do

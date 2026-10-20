@@ -359,7 +359,7 @@ defmodule Mojentic.LLM.Recovery do
 
   defp retry_after(opts, {:http_date, date}) do
     {:ok, date, _} = DateTime.from_iso8601(date)
-    wall = Keyword.get(opts, :wall_clock, &DateTime.utc_now/0).()
+    wall = Keyword.get(opts, :wall_clock, &Mojentic.Clock.utc_now/0).()
     max(0, DateTime.diff(date, wall, :millisecond))
   end
 
@@ -608,7 +608,7 @@ defmodule Mojentic.LLM.Recovery do
     end
   end
 
-  defp now(opts), do: Keyword.get(opts, :clock, fn -> System.monotonic_time(:millisecond) end).()
+  defp now(opts), do: Keyword.get(opts, :clock, fn -> Mojentic.Clock.monotonic_ms() end).()
   defp remaining(_opts, nil), do: :infinity
   defp remaining(opts, deadline), do: min(@max_timer_delay, max(0, deadline - now(opts)))
 

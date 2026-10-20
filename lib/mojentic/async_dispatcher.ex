@@ -206,13 +206,13 @@ defmodule Mojentic.AsyncDispatcher do
   """
   def wait_for_empty_queue(pid, opts \\ []) do
     timeout = Keyword.get(opts, :timeout, 5000)
-    start_time = System.monotonic_time(:millisecond)
+    start_time = Mojentic.Clock.monotonic_ms()
 
     wait_loop(pid, start_time, timeout)
   end
 
   defp wait_loop(pid, start_time, timeout) do
-    elapsed = System.monotonic_time(:millisecond) - start_time
+    elapsed = Mojentic.Clock.monotonic_ms() - start_time
 
     if elapsed >= timeout do
       {:error, :timeout}
@@ -222,7 +222,7 @@ defmodule Mojentic.AsyncDispatcher do
           :ok
 
         _size ->
-          Process.sleep(100)
+          Mojentic.Clock.sleep(100)
           wait_loop(pid, start_time, timeout)
       end
     end
