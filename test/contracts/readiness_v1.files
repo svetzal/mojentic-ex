@@ -1,3 +1,4 @@
+test/mojentic/agents/simple_recursive_agent_test.exs
 test/mojentic/async_dispatcher_test.exs
 test/mojentic/http/req_client_test.exs
 test/mojentic/llm/admission_wire_test.exs
@@ -10,6 +11,7 @@ test/mojentic/llm/gateways/openai_model_registry_test.exs
 test/mojentic/llm/gateways/openai_stream_test.exs
 test/mojentic/llm/immutable_request_wire_test.exs
 test/mojentic/llm/model_context_window_test.exs
+test/mojentic/llm/native_response_test.exs
 test/mojentic/llm/no_hook_wire_test.exs
 test/mojentic/llm/offline_transport_test.exs
 test/mojentic/llm/omlx_keepalive_wire_test.exs

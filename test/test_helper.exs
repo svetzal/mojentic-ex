@@ -10,6 +10,8 @@ Application.put_env(:mojentic, :http_client, Mojentic.HTTPMock)
 # load the committed byte-tokenizer fixture. Neither path downloads models.
 Application.put_env(:mojentic, :default_tokenizer_mod, Mojentic.TestSupport.StubTokenizer)
 
+Mox.defmock(Mojentic.TaskStreamMock, for: Mojentic.TaskStream)
+
 ExUnit.start()
 
 # Metadata consumers derive responses from context-window-v1, verified through the in-process Req adapter.

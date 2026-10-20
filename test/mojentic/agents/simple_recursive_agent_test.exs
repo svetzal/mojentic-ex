@@ -180,7 +180,7 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
     end
 
     test "unsubscribes from events" do
-      {:ok, emitter} = EventEmitter.start_link()
+      emitter = start_supervised!(EventEmitter)
       test_pid = self()
 
       ref =
@@ -192,10 +192,12 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
 
       state = %GoalState{goal: "test"}
       event = %GoalSubmittedEvent{state: state}
+      trace_emitter_callbacks(emitter)
       EventEmitter.emit(emitter, event)
 
-      # Should not receive event after unsubscribe
-      refute_receive {:event_received, _}, 200
+      # All spawned callbacks have exited before checking the mailbox.
+      wait_for_emitter_callbacks(emitter)
+      refute_received {:event_received, _}
 
       GenServer.stop(emitter)
     end
@@ -223,7 +225,7 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
     end
 
     test "supports different event types" do
-      {:ok, emitter} = EventEmitter.start_link()
+      emitter = start_supervised!(EventEmitter)
       test_pid = self()
 
       EventEmitter.subscribe(emitter, GoalSubmittedEvent, fn _event ->
@@ -236,9 +238,11 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
 
       state = %GoalState{goal: "test"}
 
+      trace_emitter_callbacks(emitter)
       EventEmitter.emit(emitter, %GoalSubmittedEvent{state: state})
-      assert_receive {:goal_submitted}, 1000
-      refute_receive {:goal_achieved}, 200
+      wait_for_emitter_callbacks(emitter)
+      assert_received {:goal_submitted}
+      refute_received {:goal_achieved}
 
       EventEmitter.emit(emitter, %GoalAchievedEvent{state: state})
       assert_receive {:goal_achieved}, 1000
@@ -551,6 +555,33 @@ defmodule Mojentic.Agents.SimpleRecursiveAgentTest do
 
       assert_receive {:event, :goal_failed, solution}, 1000
       assert String.contains?(solution, "Failed to solve")
+    end
+  end
+
+  defp trace_emitter_callbacks(emitter) do
+    :erlang.trace(emitter, true, [:procs, :set_on_spawn])
+    :ok
+  end
+
+  defp wait_for_emitter_callbacks(emitter) do
+    _ = :sys.get_state(emitter)
+    delivery = :erlang.trace_delivered(emitter)
+    workers = collect_callback_workers(emitter, delivery, [])
+
+    for worker <- workers do
+      assert_receive {:trace, ^worker, :exit, :normal}
+    end
+
+    :erlang.trace(emitter, false, [:all])
+  end
+
+  defp collect_callback_workers(emitter, delivery, workers) do
+    receive do
+      {:trace, ^emitter, :spawn, worker, _entry} ->
+        collect_callback_workers(emitter, delivery, [worker | workers])
+
+      {:trace_delivered, ^emitter, ^delivery} ->
+        workers
     end
   end
 end

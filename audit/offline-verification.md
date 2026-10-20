@@ -3,14 +3,13 @@
 ## Tested revision and scope
 
 This correction tests base commit
-`ff478c46b6d4d2e16bd127fbf7e9c0161a72605e` plus the uncommitted changes in this
-worktree. A read-only remote check confirmed that `main` still identifies that
-commit. The complete preserved correction from
-`43b959700536e5c36bb747e9c85beea5dc44e7e2` was reapplied: portable scanner and
-regressions, Finch connection guard, deterministic date cases, shared harness
-manifests and living conformance/audit evidence.
+`169b741f93616d095352c429c3f57ab151deeba5` plus the uncommitted changes in this
+worktree. A read-only `git ls-remote origin refs/heads/main` check confirmed that
+remote `main`, local `main` and this worktree identify that commit; no ref update
+was needed. The remaining native-tool timeout trigger from that commit is
+replaced with explicit timeout delivery through an internal scheduling seam.
 
-Stacey's October 19 decision authorizes the additional internal clock seam.
+Stacey's October 19 decision authorizes this internal injection.
 Public APIs, dependencies, runtime pins, versions and CI wiring are unchanged.
 Foundry owns Git finalization; no commit, push, merge, rebase, release or ref
 update is performed. Only this worktree is edited.
@@ -76,24 +75,58 @@ Named behavioral checks include:
   in order** waits for each event before sending the next; worker scheduling is
   not an ordering assertion. Queue-empty checks follow public drain barriers.
 
+The suite-wide timeout audit covered `Task.async_stream`, `Task.yield`,
+`Task.await`/`await_many`, receive-after clauses, `Process.send_after` and numeric
+timeout options, including negative receive assertions. NativeResponseTest's
+5ms runner timeout and two 200ms silence windows in SimpleRecursiveAgentTest
+were the remaining elapsed-time triggers. All three are now deterministic.
+Other task and receive bounds wait for explicitly released work and cap failure
+latency; they do not trigger expected outcomes. ReqClient deadline tests advance the injected clock;
+its zero-time receive probes consume queued evidence or expire immediately.
+Dispatcher and aggregator zero-time probes hold work pending or leave required
+events absent. No other real-delay test trigger was found.
+
+`Mojentic.TaskStream` is the internal scheduling behaviour, configured like the
+clock seam. Production delegates directly to `Task.async_stream/3`, preserving
+all concurrency, ordering, timeout and kill options. The serial native response
+test installs a Mox double only at this scheduling boundary and restores its
+configuration on exit. Its lazy stream invokes the real tool on a supervised
+worker, identifies the worker from its start message, monitors it, explicitly
+kills it, requires its actual `:killed` DOWN reason, then delivers the timeout
+result. No timer is armed. The public runner must preserve `timed-id`/`wait`,
+return `{:task_exit, :timeout}`, and emit exactly one matching completion callback.
+Other runner tests continue to exercise the default production scheduler.
+
+The recursive emitter's **unsubscribes from events** and **supports different
+event types** checks use supervised emitters. Before emission, they trace actual
+callback spawning and exits; a GenServer barrier establishes emission handling,
+then `trace_delivered` establishes complete spawn observations. They require
+all observed callback workers to exit `:normal` before checking mailbox absence.
+This also catches an unwanted callback that has been spawned but not yet run.
+A temporary negative control dispatched each event to every subscriber; the
+second check failed specifically on the unexpected `{:goal_achieved}` message.
+The production change was restored before final gates. The corrected emitter
+file passed all 22 tests. No production emitter change remains.
+
 ## Shared executable contracts
 
 Source public-API consumer/provider verification and a fresh extracted Hex
 consumer/provider verification execute the same **ex-readiness-v1** file set.
 Both verify the manifest; the fresh consumer additionally checks extracted
 provider files and copied consumer inputs, compiles the package afresh and
-verifies its loaded ReqClient path. The existing file set now also includes the
-datetime, date-resolver, tracer and dispatcher tests; ReqClient's new clock cases already
-belong to it. Both manifests identify the new internal clock and test clock.
+verifies its loaded ReqClient path. The file set now includes
+`native_response_test.exs` and `simple_recursive_agent_test.exs`, so all three
+deterministic cases run on both sides. Updated manifests identify the scheduler seam, runner and shared
+test helper where selected; existing clock cases remain in place.
 Root contract text and binding 3.0.0 decisions are unchanged. No sibling
 repository or running-service boundary changed.
 
 
 | Executable manifest | SHA-256 |
 | --- | --- |
-| `test/contracts/context_window_v1.manifest.sha256` | `56ff70a4da7183b3a031fc923bec09973ad58b7b70a9b5f850417089e0c19676` |
-| `test/contracts/readiness_v1.manifest.sha256` | `7cfad313c26222618e3a4c9c659992ec8be05c999fef0e0d928602fec9e568db` |
-| `test/contracts/stream_first_token_v1.manifest.sha256` | `5e99b073daa017daf5020ffc2a64094a3ee6457e71f5531fe7c904f717549ef3` |
+| `test/contracts/context_window_v1.manifest.sha256` | `c803c59e808bd28d365ac24b62fe3b32c43b94637255ade8f27187f6f484a8fa` |
+| `test/contracts/readiness_v1.manifest.sha256` | `cb7d11ed019ff4918c7c76e3a16d345914cbeae1eaee5d1cfeb988c336bb5502` |
+| `test/contracts/stream_first_token_v1.manifest.sha256` | `ea8fa8a4fc37427e9b5f1306447c3788d40a032fb997eb59fd4d9460726dd220` |
 
 ## Final local verification
 
@@ -102,37 +135,36 @@ All nine `.hone-gates.json` gates and the exact CI readiness step passed on Linu
 | Check | Exit | Stdout SHA-256 | Stderr SHA-256 |
 | --- | --- | --- | --- |
 | `scripts/recovery-mix format --check-formatted` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `scripts/recovery-mix compile --warnings-as-errors` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `scripts/recovery-mix credo --strict` | 0 | `53c6c10fb05613575836a8688bce8ab92ee3238ee1cf5ae8daf82c120949c49f` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `scripts/recovery-mix test --cover` | 0 | `e41e65dc8e30a42e13a8ecebd059629190fb2004bea47d271c94a657f73838f2` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `scripts/recovery-mix compile --warnings-as-errors` | 0 | `e7b9998c52d3e96b8213e7cf881531a660d62103ebe98768902085128a77a958` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `scripts/recovery-mix credo --strict` | 0 | `a810b4a4aedae77b2cca98d8c9ee3d664832260b969831c10aa299ffcc829ba0` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `scripts/recovery-mix test --cover` | 0 | `d16beaefa2a57f505da4fe72a77c206277a93f51d02b23998e3fc32e232b8d3d` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | `scripts/recovery-mix deps.audit` | 0 | `3016e51e4eac0d421674d2128bbbdefb2924b4646e0c14a1ab034977ad73fae5` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | `scripts/recovery-mix sobelow --config` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | `6436a76f6c9f215476e71c23607008bfa1b717cb8c20c2fb6b07f4625ac5e6ce` |
-| `scripts/verify-first-token-contract` | 0 | `87880f35f2f6e431276d0b49d5e3e5ea5d46d761aa9db5c624e849a1c11c74c0` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `scripts/verify-readiness-contract` | 0 | `d808cbfc67c6699ab90eb6ca092ef3993339d24fcdee59cfc53725ed1c791284` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `scripts/verify-packaged-first-token` | 0 | `18b588a1056630c6b0f9e643c8900288012ccd04878b992ab33a8ea784ba4787` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `env MOJENTIC_MIX=mix scripts/verify-readiness-contract` | 0 | `e30d48936779eea77765ab55d50823dfa0381a697de97b71a82458dcf4233b03` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `scripts/verify-first-token-contract` | 0 | `4f3732bc3940ee2962abfed43b17313f7e13f2d759d995c4976899a24ad24f07` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `scripts/verify-readiness-contract` | 0 | `62d2dd2935037a71adce0ffe7e7c86f79bbf2b137e030c401451a5b60c87f164` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `scripts/verify-packaged-first-token` | 0 | `53538c3808f5237c9a6e2c954e853d64385be6682ef74c9b863cbff7a9da2763` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `env MOJENTIC_MIX=mix scripts/verify-readiness-contract` | 0 | `563368d6b211b7d04e5ec9e36aaa377c79a91fee6668ed814ae026598d7f2812` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | `scripts/recovery-mix hex.audit` | 0 | `25ce35312da15695b9ab9e466ebdba2c1460f780ca6a14e164646fee228030d6` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 | `scripts/recovery-mix hex.outdated --all` | 1 | `e9296e2eee096a9e9dede088c128638ec21e305962aea3e6ce7737f7335e42b3` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `env MIX_ENV=dev scripts/recovery-mix docs` | 0 | `60a11d865b9a8d02898f2f5328666b0f28b1cd6a911bffc8f845e128b1a9cfe5` | `12f66072abf2e3ab2e2875f9eda10da6690da37c1875e8cbc8afcf2fc0276f7f` |
-| `scripts/recovery-mix dialyzer` | 0 | `e965b62aee848e89951f9b43818f096b24d6d59427d327e29d1a156c348e6a3a` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
-| `env MIX_ENV=dev scripts/recovery-mix compile --warnings-as-errors` | 0 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `env MIX_ENV=dev scripts/recovery-mix docs` | 0 | `ab5b706a8fa973ebafbc53529e50750460b2e531878bf4d3787a7c20487edaf3` | `12f66072abf2e3ab2e2875f9eda10da6690da37c1875e8cbc8afcf2fc0276f7f` |
+| `scripts/recovery-mix dialyzer` | 0 | `fe88dca27107e56c768d11e0d7845e3b1a78bc57200eb5a58a238d3810824235` | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
 
 | Suite | Result |
 | --- | --- |
 | test | 22 doctests, 6088 tests, 0 failures; zero Finch connection attempts |
 | first-token-contract | 864 tests, 0 failures; zero Finch connection attempts |
-| readiness-contract | 5489 tests, 0 failures; zero Finch connection attempts |
-| packaged-first-token | 5489 tests, 0 failures; zero Finch connection attempts |
-| ci-readiness | 5489 tests, 0 failures; zero Finch connection attempts |
+| readiness-contract | 5523 tests, 0 failures; zero Finch connection attempts |
+| packaged-first-token | 5523 tests, 0 failures; zero Finch connection attempts |
+| ci-readiness | 5523 tests, 0 failures; zero Finch connection attempts |
 
-Coverage: `91.39% | Total` (required threshold: 80%).
+Coverage: `91.40% | Total` (required threshold: 80%).
 
-Local Hex payload: version **3.0.0**, SHA-256 `bfa6dd8671f125ec9329e0ab3ccabdaa2701d89db4da590cf200119347fac426`. The fresh consumer checked extracted provider inputs and copied contract inputs, compiled the provider from that payload and verified its loaded ReqClient path. No package was published.
+Local Hex payload: version **3.0.0**, SHA-256 `38b0a04f409b5aaa1bd49c598a31fe619095a70d2b1bec53ce4b3baf0d047014`. The fresh consumer checked extracted provider inputs and copied contract inputs, compiled the provider from that payload and verified its loaded ReqClient path. No package was published.
 
-Dialyzer passed with zero errors; strict Credo found no issues. Hex outdated is informational and exited 1 for available upgrades; dependencies and advisory suppressions are unchanged. Dependency audit reported no vulnerabilities using advisory commit `83be990cdd1105386d97f133b041215e97a58a61`; Hex audit reported no retired or security-advisory packages in the local registry. Documentation built with existing missing links to `LICENSE`, `../RELEASE-3.0.0.md` and `deps/igniter/usage-rules.md`. Sobelow passed with its existing missing-router diagnostic for this non-Phoenix library and quoted-key parsing warnings from the unchanged lockfile. Initial compilation of unchanged third-party development dependencies also emitted their existing deprecation warnings; project warnings-as-errors compilation and strict Credo passed.
+Dialyzer passed with zero errors; strict Credo found no issues. Hex outdated is informational and exited 1 for available upgrades; dependencies and advisory suppressions are unchanged. Dependency audit reported no vulnerabilities; Hex audit reported no retired or security-advisory packages in the local registry. Documentation built with existing missing links to `LICENSE`, `../RELEASE-3.0.0.md` and `deps/igniter/usage-rules.md`. Sobelow passed with its existing missing-router diagnostic for this non-Phoenix library and quoted-key parsing warnings from the unchanged lockfile. Initial compilation of unchanged third-party development dependencies also emitted their existing deprecation warnings; project warnings-as-errors compilation and strict Credo passed.
 
 ## Execution identity and finalization
 
-Execution-tree SHA-256: `e8d63bac478740195fe52803209707552fd36595bb4b0ee0aa851a83dc545dd7`. This hashes sorted path/digest records under `lib/`, `test/`, `scripts/`, `.github/workflows/`, plus `mix.exs`, `mix.lock`, `.formatter.exs` and `.hone-gates.json`; living evidence prose is excluded.
+Execution-tree SHA-256: `7ca75b88bf60909cfa7750e6585aed804dc3bd23bdc676fd2d0546cde9e0f45e`. This hashes sorted path/digest records under `lib/`, `test/`, `scripts/`, `.github/workflows/`, plus `mix.exs`, `mix.lock`, `.formatter.exs` and `.hone-gates.json`; living evidence prose is excluded.
 
-Base commit `ff478c46b6d4d2e16bd127fbf7e9c0161a72605e` plus this execution identity identifies both provider and consumer verification. All changes remain uncommitted for Foundry. GitHub Actions was not monitored; these are local verification results.
+Base commit `169b741f93616d095352c429c3f57ab151deeba5` plus this execution identity identifies both provider and consumer verification. All changes remain uncommitted for Foundry. GitHub Actions was not monitored; these are local verification results.

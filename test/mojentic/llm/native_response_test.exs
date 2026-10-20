@@ -1,5 +1,8 @@
 defmodule Mojentic.LLM.NativeResponseTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
+
+  import Mox
+  setup :verify_on_exit!
   alias Mojentic.LLM.{Broker, GatewayResponse, Message, ToolCall}
   alias Mojentic.LLM.Tools.{ParallelToolRunner, RunContext, ToolCallExecution}
 
@@ -28,11 +31,13 @@ defmodule Mojentic.LLM.NativeResponseTest do
         }
       }
 
-    def run(_, _),
-      do:
-        (receive do
-           :release -> {:ok, "done"}
-         end)
+    def run(_, %{"owner" => owner}) do
+      send(owner, {:tool_started, self()})
+
+      receive do
+        :release -> {:ok, "done"}
+      end
+    end
   end
 
   defmodule Gateway do
@@ -250,17 +255,48 @@ defmodule Mojentic.LLM.NativeResponseTest do
   test "timeout retains call identity and emits its completion callback" do
     owner = self()
     context = RunContext.new(on_call_complete: &send(owner, {:outcome, &1}))
-    runner = ParallelToolRunner.new(timeout: 5)
+    runner = ParallelToolRunner.new(timeout: 5000)
+    supervisor = start_supervised!(Task.Supervisor)
+    previous = Application.get_env(:mojentic, :internal_task_stream)
+    Application.put_env(:mojentic, :internal_task_stream, Mojentic.TaskStreamMock)
+
+    on_exit(fn ->
+      if previous,
+        do: Application.put_env(:mojentic, :internal_task_stream, previous),
+        else: Application.delete_env(:mojentic, :internal_task_stream)
+    end)
+
+    expect(Mojentic.TaskStreamMock, :async_stream, fn calls, invoke, options ->
+      assert options == [
+               max_concurrency: 4,
+               timeout: 5000,
+               ordered: true,
+               on_timeout: :kill_task
+             ]
+
+      Stream.map(calls, fn call ->
+        task = Task.Supervisor.async_nolink(supervisor, fn -> invoke.(call) end)
+        worker = task.pid
+        assert_receive {:tool_started, ^worker}
+        monitor = Process.monitor(worker)
+
+        # Deliver the timeout explicitly once the real tool worker is blocked.
+        assert nil == Task.shutdown(task, :brutal_kill)
+        assert_receive {:DOWN, ^monitor, :process, ^worker, :killed}
+        {:exit, :timeout}
+      end)
+    end)
 
     [outcome] =
       ParallelToolRunner.run_with(
         runner,
-        [ToolCallExecution.new("timed-id", "wait", %{})],
+        [ToolCallExecution.new("timed-id", "wait", %{"owner" => owner})],
         [Wait],
         context
       )
 
     assert %{id: "timed-id", name: "wait", ok?: false, error: {:task_exit, :timeout}} = outcome
     assert_received {:outcome, ^outcome}
+    refute_received {:outcome, _}
   end
 end

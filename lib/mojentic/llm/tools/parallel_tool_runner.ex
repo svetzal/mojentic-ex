@@ -58,7 +58,7 @@ defmodule Mojentic.LLM.Tools.ParallelToolRunner do
 
   defp do_run(%__MODULE__{} = runner, calls, tools, ctx) do
     calls
-    |> Task.async_stream(
+    |> Mojentic.TaskStream.async_stream(
       fn call -> run_one(call, tools, ctx) end,
       max_concurrency: runner.max_concurrency,
       timeout: runner.timeout,

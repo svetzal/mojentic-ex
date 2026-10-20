@@ -3,9 +3,9 @@
 ## Current offline readiness assessment
 
 This assessment covers RELEASE-3.0.0 parts 1–5 on base commit
-`ff478c46b6d4d2e16bd127fbf7e9c0161a72605e` plus the uncommitted temporal-coupling
-correction, including all preserved work from
-`43b959700536e5c36bb747e9c85beea5dc44e7e2`. Current manifest identities and
+`169b741f93616d095352c429c3f57ab151deeba5` plus the uncommitted deterministic
+native-tool timeout correction. A read-only remote check and local refs confirm
+that the worktree starts at current `main`. Current manifest identities and
 source/packaged verification results are recorded in
 [offline verification](audit/offline-verification.md).
 
@@ -22,6 +22,19 @@ configuration seam. Its production default calls the same BEAM clocks and sleepe
 the suite installs a fixed clock and explicitly advances a shared counter when
 needed. Existing per-request clock options retain precedence. Public APIs,
 dependencies, runtime pins, versions and CI wiring are unchanged.
+The remaining native-tool timeout test now injects the internal scheduling
+boundary `Mojentic.TaskStream`; production delegates unchanged to
+`Task.async_stream/3`. The public `ParallelToolRunner.run_with/4` case waits for
+its real tool worker to start, explicitly kills it, verifies the monitored
+`:killed` exit, and delivers `{:exit, :timeout}` without running a timer. It
+asserts retained call identity and exactly one completion callback. The case is
+included in the same source and fresh Hex readiness contract set. The suite-wide
+audit also removed two 200ms silence windows in the recursive agent's emitter
+tests. Those tests now wait for emitter processing, trace delivery and actual
+callback exits before checking the mailbox. Remaining receive/await bounds cap
+failures, and zero-time probes operate on controlled pending work or queued
+messages.
+
 Foundry owns Git finalization; changes remain uncommitted.
 
 The binding root contracts were read and their SHA-256 identities verified:
@@ -48,10 +61,10 @@ ExUnit cases and in-process Req adapter mechanism. Its companion
 `readiness_v1.manifest.sha256` identifies all selected cases, fixtures, support,
 production modules, package inputs and verification scripts. Both commands check
 that same manifest before running those same test files. Current manifest SHA-256:
-`7cfad313c26222618e3a4c9c659992ec8be05c999fef0e0d928602fec9e568db`.
+`cb7d11ed019ff4918c7c76e3a16d345914cbeae1eaee5d1cfeb988c336bb5502`.
 
 The current first-token manifest SHA-256 is
-`5e99b073daa017daf5020ffc2a64094a3ee6457e71f5531fe7c904f717549ef3`.
+`ea8fa8a4fc37427e9b5f1306447c3788d40a032fb997eb59fd4d9460726dd220`.
 
 Both source and payload verification use the following commands:
 
