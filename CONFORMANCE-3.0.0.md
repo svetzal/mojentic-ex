@@ -61,10 +61,10 @@ ExUnit cases and in-process Req adapter mechanism. Its companion
 `readiness_v1.manifest.sha256` identifies all selected cases, fixtures, support,
 production modules, package inputs and verification scripts. Both commands check
 that same manifest before running those same test files. Current manifest SHA-256:
-`deaa3ca0fbf515eb2fdf643a943a6e548ee2854fb17287c30eecf70a74b5ed5d`.
+`07e1af47f8366e6ea1e095987281f2bce89f58ef00fd265b19bb0974dc8741be`.
 
 The current first-token manifest SHA-256 is
-`ea8fa8a4fc37427e9b5f1306447c3788d40a032fb997eb59fd4d9460726dd220`.
+`f1a1b6f793757c3a7bb5cc806f8364552b2c4a2b847912c47c8d4deffd5d369c`.
 
 Both source and payload verification use the following commands:
 

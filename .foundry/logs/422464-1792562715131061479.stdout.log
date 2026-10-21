@@ -1,0 +1,30 @@
+==> castore
+Compiling 1 file (.ex)
+Generated castore app
+==> mint
+Compiling 1 file (.erl)
+Compiling 21 files (.ex)
+Generated mint app
+==> mint_web_socket
+Compiling 7 files (.ex)
+Generated mint_web_socket app
+==> tokenizers
+Compiling 18 files (.ex)
+
+02:05:21.575 [debug] Copying NIF from cache and extracting to /home/svetzal/Work/Projects/Personal/mojentic-unify/mojentic-ex/_build/dev/lib/tokenizers/priv/native/libex_tokenizers-v0.5.1-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz
+Generated tokenizers app
+==> finch
+Compiling 23 files (.ex)
+Generated finch app
+==> req
+Compiling 24 files (.ex)
+Generated req app
+==> igniter
+Compiling 62 files (.ex)
+Generated igniter app
+==> usage_rules
+Compiling 6 files (.ex)
+Generated usage_rules app
+==> mojentic
+Compiling 5 files (.ex)
+Generated mojentic app
