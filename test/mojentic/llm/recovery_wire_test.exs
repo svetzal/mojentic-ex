@@ -2561,6 +2561,11 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       blocked = fn _ ->
         send(owner, {:worker, self()})
 
+        # Acknowledge the test's handshake so its monitor is ordered before cancellation.
+        receive do
+          {:monitor_worker, handshake} -> send(owner, {:worker_monitored, handshake, self()})
+        end
+
         receive do
           :unused -> :ok
         end
@@ -2583,6 +2588,10 @@ defmodule Mojentic.LLM.RecoveryWireTest do
       assert_receive {:transport_request, request}, 2000
       assert_receive {:worker, worker}, 2000
       monitor = Process.monitor(worker)
+      handshake = make_ref()
+      send(worker, {:monitor_worker, handshake})
+      assert_receive {:worker_monitored, ^handshake, ^worker}, 2000
+      refute_received {:DOWN, ^monitor, :process, ^worker, _}
       send(task.pid, {:cancel, cancel})
       assert {:error, error} = Task.await(task, 2000)
       assert error.resend_permission == :cancelled
