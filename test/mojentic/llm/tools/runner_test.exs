@@ -6,6 +6,10 @@ defmodule Mojentic.LLM.Tools.RunnerTest do
   alias Mojentic.LLM.Tools.SerialToolRunner
   alias Mojentic.LLM.Tools.ToolCallExecution
 
+  # Receive timeouts are failure bounds, not synchronization: a loaded async
+  # suite can take longer than the 100ms default to start a supervised worker.
+  @failure_bound 1_000
+
   # ---------------------------------------------------------------------------
   # Helper tools for the runner tests.
   # ---------------------------------------------------------------------------
@@ -149,16 +153,16 @@ defmodule Mojentic.LLM.Tools.RunnerTest do
           ParallelToolRunner.run_with(runner, calls, [ControlledTool])
         end)
 
-      assert_receive {:tool_started, first, first_worker}
-      assert_receive {:tool_started, second, second_worker}
+      assert_receive {:tool_started, first, first_worker}, @failure_bound
+      assert_receive {:tool_started, second, second_worker}, @failure_bound
       assert Enum.sort([first, second]) == ["1", "2"]
       refute_received {:tool_started, _, _}
       send(first_worker, :release)
-      assert_receive {:tool_finished, ^first}
-      assert_receive {:tool_started, "3", third_worker}
+      assert_receive {:tool_finished, ^first}, @failure_bound
+      assert_receive {:tool_started, "3", third_worker}, @failure_bound
       refute_received {:tool_started, "4", _}
       send(second_worker, :release)
-      assert_receive {:tool_started, "4", fourth_worker}
+      assert_receive {:tool_started, "4", fourth_worker}, @failure_bound
       send(third_worker, :release)
       send(fourth_worker, :release)
 
@@ -189,15 +193,15 @@ defmodule Mojentic.LLM.Tools.RunnerTest do
 
       workers =
         for _ <- 1..3 do
-          assert_receive {:tool_started, id, worker}
+          assert_receive {:tool_started, id, worker}, @failure_bound
           {id, worker}
         end
         |> Map.new()
 
       for id <- ["c", "b", "a"] do
         send(Map.fetch!(workers, id), :release)
-        assert_receive {:tool_finished, ^id}
-        assert_receive {:outcome_completed, ^id}
+        assert_receive {:tool_finished, ^id}, @failure_bound
+        assert_receive {:outcome_completed, ^id}, @failure_bound
       end
 
       outcomes = Task.await(task)

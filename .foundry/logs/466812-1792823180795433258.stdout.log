@@ -1,0 +1,311 @@
+
+02:26:22.091 [info] The function passed as a handler with ID {nil, :offline_connections, #Reference<0.794501791.82313217.180442>} is a local function.
+This means that it is either an anonymous function or a capture of a function without a module specified. That may cause a performance penalty when calling that handler. For more details see the note in `telemetry:attach/4` documentation.
+
+https://hexdocs.pm/telemetry/telemetry.html#attach/4
+Running ExUnit with seed: 105394, max_cases: 16
+
+.........
+Finished in 0.1 seconds (0.1s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 323316, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 324492, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 325679, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 326789, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 327933, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 329024, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 330160, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 331201, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 332527, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 333876, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 335243, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 336348, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 337656, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 338995, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 340367, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 341554, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 342655, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 343719, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 345143, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 346344, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 347497, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 348796, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 349961, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 351200, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 352365, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 353477, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 354776, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 355918, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 357065, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 358077, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 359085, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 360137, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 361381, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 362354, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 363450, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 364632, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 366140, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 367494, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 368993, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 370929, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 372058, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 373217, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 374294, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 375508, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 376656, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 377813, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 378853, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 379889, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 381029, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
+Running ExUnit with seed: 382438, max_cases: 16
+
+.........
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
+9 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
