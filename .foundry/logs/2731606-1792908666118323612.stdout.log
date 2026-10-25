@@ -1,0 +1,17 @@
+==> rustler_precompiled
+Compiling 4 files (.ex)
+Generated rustler_precompiled app
+==> tokenizers
+Compiling 19 files (.ex)
+
+02:11:09.175 [debug] Downloading NIF from https://github.com/elixir-nx/tokenizers/releases/download/v0.5.2/libex_tokenizers-v0.5.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz
+
+02:11:10.866 [debug] NIF cached at /home/svetzal/Work/Projects/Personal/mojentic-unify/mojentic-ex/.foundry/runtime/cache/rustler_precompiled/precompiled_nifs/libex_tokenizers-v0.5.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz and extracted to /home/svetzal/Work/Projects/Personal/mojentic-unify/mojentic-ex/_build/dev/lib/tokenizers/priv/native/libex_tokenizers-v0.5.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz
+Generated tokenizers app
+==> tiktoken
+Compiling 8 files (.ex)
+
+02:11:11.115 [debug] Copying NIF from cache and extracting to /home/svetzal/Work/Projects/Personal/mojentic-unify/mojentic-ex/_build/dev/lib/tiktoken/priv/native/libtiktoken-v0.4.2-nif-2.15-x86_64-unknown-linux-gnu.so.tar.gz
+Generated tiktoken app
+==> mojentic
+Generated mojentic app
