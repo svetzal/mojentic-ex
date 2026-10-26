@@ -1,0 +1,54 @@
+context-window-v1
+2796f3c73a2b52995e3298a62cecf3e5ee586c76
+84b5bf89961b1361a9cea78f7fd072dcdfd58831d7877cb2e5b01eb4a3eff28e  lib/mojentic/llm/gateway.ex
+f12942919a1815acf8bd8b7951a38ba8b12e16563ee25150e79878b59a150836  lib/mojentic/llm/model_context_window.ex
+ce6d72ff11b1a500f5f9634a2d6853b382fb957b0218a90f9ebee5733431b80d  lib/mojentic/llm/completion_config.ex
+780cad057878d7d2221fbd117182fc50f46c8fc123bc21b185fa9c96e7dcb969  lib/mojentic/llm/gateways/openai.ex
+da0badcca78bcfc2dcebde4ab830f58bde35ecc5075b8a4161dfd176f2620ab8  lib/mojentic/llm/gateways/openai_model_registry.ex
+4fe21b95aa072a6ca60a6605bec88c93fbea4e96234afd7f491b809fa246b692  lib/mojentic/llm/gateways/ollama.ex
+02fad11d1d7d8efa060122d05d8789629bcefdc5f8fd727c41948e4320313460  lib/mojentic/llm/gateways/omlx.ex
+67f074df233256f98452ef34bd9736a3c998f9dc2ae9ce9977ea720af31abda5  lib/mojentic/http/req_client.ex
+a6f4752db0cfc23d3399b55941789b0ebb376066efcddee1bbb0d597162d1043  mix.lock
+9327502962112a020bafb46c6a677366df732f5a29cd44c92f17e8f632281395  test/contracts/context_window_v1.json
+6f02088311f50707b9c12154d888f844928c23d359043cb2e5d5654bf7e5eaea  test/contracts/request_fidelity_v1.json
+4cbf4f981a95a498bf55928e241d8087e8f42070b4beb359097830adb7e7d50c  test/mojentic/llm/context_window_wire_test.exs
+a93bffd57ccf5c2b5cf86f62b2534a6e17dad66d3e1653130b7056c2810175f9  test/mojentic/llm/model_context_window_test.exs
+a72faf49e891a3950ed1a1f3d57464d094059fa7389ddc63ae429105c87478ad  test/support/context_window_contract.ex
+7e8b727b562073113076168e89ed01260756f4deb29e1519c409c69e2211e58d  test/support/scripted_transport.ex
+608d402d5139e12ef3ce8173ef7d461bfd09eaa53d47fbfe9586f18b524c54dc  test/test_helper.exs
+5e8536028177b20e152dde73dda94f1f5bada980673d05d667c294421d145183  test/mojentic/http/req_client_test.exs
+
+02:21:07.910 [info] The function passed as a handler with ID {nil, :offline_connections, #Reference<0.4088808294.2138308612.252641>} is a local function.
+This means that it is either an anonymous function or a capture of a function without a module specified. That may cause a performance penalty when calling that handler. For more details see the note in `telemetry:attach/4` documentation.
+
+https://hexdocs.pm/telemetry/telemetry.html#attach/4
+Running ExUnit with seed: 920656, max_cases: 16
+
+.......................................................................................................
+02:21:09.310 [warning] retry: got exception, will retry in 0ms, 3 attempts left
+
+02:21:09.314 [warning] ** (Req.TransportError) socket closed
+
+02:21:09.314 [warning] retry: got exception, will retry in 0ms, 2 attempts left
+
+02:21:09.314 [warning] ** (Req.TransportError) socket closed
+
+02:21:09.314 [warning] retry: got exception, will retry in 0ms, 1 attempt left
+.
+02:21:09.314 [warning] ** (Req.TransportError) socket closed
+....................................................
+02:21:09.350 [warning] retry: got exception, will retry in 0ms, 3 attempts left
+
+02:21:09.350 [warning] ** (Req.TransportError) socket closed
+
+02:21:09.350 [warning] retry: got exception, will retry in 0ms, 2 attempts left
+
+02:21:09.350 [warning] ** (Req.TransportError) socket closed
+
+02:21:09.350 [warning] retry: got exception, will retry in 0ms, 1 attempt left
+
+02:21:09.350 [warning] ** (Req.TransportError) socket closed
+........................................................................
+Finished in 1.4 seconds (1.3s async, 0.1s sync)
+228 tests, 0 failures
+Offline transport verification: zero Finch connection attempts

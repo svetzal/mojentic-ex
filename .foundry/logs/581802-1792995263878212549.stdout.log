@@ -1,0 +1,62 @@
+ex-stream-first-token-v1; mapped ts-stream-first-token-v1/v2 cases
+2796f3c73a2b52995e3298a62cecf3e5ee586c76
+lib/mojentic/clock.ex: OK
+lib/mojentic/http/received_evidence.ex: OK
+lib/mojentic/http/req_client.ex: OK
+lib/mojentic/http/wire_trace.ex: OK
+lib/mojentic/llm/broker.ex: OK
+lib/mojentic/llm/chat_session.ex: OK
+lib/mojentic/llm/gateways/ollama.ex: OK
+lib/mojentic/llm/gateways/omlx.ex: OK
+lib/mojentic/llm/gateways/openai.ex: OK
+lib/mojentic/llm/gateways/openai_legacy_stream.ex: OK
+lib/mojentic/llm/stream_recovery.ex: OK
+lib/mojentic/llm/stream_timing.ex: OK
+lib/mojentic/task_stream.ex: OK
+mix.exs: OK
+mix.lock: OK
+scripts/verify-first-token-contract: OK
+scripts/verify-packaged-first-token: OK
+test/contracts/DECISIONS.md: OK
+test/contracts/stream_first_token_v1.json: OK
+test/mojentic/llm/first_token_wire_test.exs: OK
+test/mojentic/llm/offline_transport_test.exs: OK
+test/mojentic/llm/recovery_wire_test.exs: OK
+test/support/clock.ex: OK
+test/support/counting_tool.ex: OK
+test/support/first_token_contract.ex: OK
+test/support/scripted_transport.ex: OK
+test/support/stub_tokenizer.ex: OK
+test/test_helper.exs: OK
+2840dab52af9db8c24bae0d7bf87db3e8b5f34e74f85ee73c14916c027ec3be2  test/contracts/stream_first_token_v1.json
+94d4b78c2d81ec2dbd038cde47fa6a81f01e33b96861e1d3d94e294ab5c6a7ce  test/support/first_token_contract.ex
+ef22d1114a74a91fbff7b588e0484110b2ece93a1e57144c2ce062e4ffaee2bf  test/mojentic/llm/first_token_wire_test.exs
+2d019b968bf1a0ab0fe22966ea84da0a850b3e610b488185f61399063d895859  lib/mojentic/llm/stream_timing.ex
+b37d0b6be780a5e85aeb9a5e2ddb4e0aab5b4a3a08baed01e77adf0f8cfcb53b  lib/mojentic/llm/monotonic_clock.ex
+e6d038a33928a6436b5398a6a6d251502334c5f2287eeca135779dd259b0dbbc  lib/mojentic/llm/stream_recovery.ex
+2027ca4b43e19313bb3c40be55e91e72622f15b6870a72794a6863db17b33d01  lib/mojentic/llm/completion_error.ex
+03a70ac5417e6769ba58958c596b1004c8cea7ae1eae3e719211b1f04db64ca1  lib/mojentic/llm/broker.ex
+ef732a7d9a7ba1e7b184258ce4249566a0d4187e2bb60f997a8bb5daab27dc8d  lib/mojentic/llm/chat_session.ex
+780cad057878d7d2221fbd117182fc50f46c8fc123bc21b185fa9c96e7dcb969  lib/mojentic/llm/gateways/openai.ex
+4fe21b95aa072a6ca60a6605bec88c93fbea4e96234afd7f491b809fa246b692  lib/mojentic/llm/gateways/ollama.ex
+02fad11d1d7d8efa060122d05d8789629bcefdc5f8fd727c41948e4320313460  lib/mojentic/llm/gateways/omlx.ex
+70f985636c0675fce8015d2dc60ff3e52591bf7a86c739b721432e775e34a265  lib/mojentic/llm/gateways/openai_legacy_stream.ex
+67f074df233256f98452ef34bd9736a3c998f9dc2ae9ce9977ea720af31abda5  lib/mojentic/http/req_client.ex
+bfc36df1978b99125a671456d0eb7d263260b38cf94f37e7b38b0241933cce24  lib/mojentic/http/wire_trace.ex
+05ec61d00bcd1bb3e240bcc55605dcd45d53dfd0efcb38b5bfd728ec752d7b6d  lib/mojentic/http/received_evidence.ex
+7e8b727b562073113076168e89ed01260756f4deb29e1519c409c69e2211e58d  test/support/scripted_transport.ex
+d77cb743856a8b46ced5c96658a7945fb497440c164c2b2ede88c25b284f08b6  test/support/stream_evidence.ex
+608d402d5139e12ef3ce8173ef7d461bfd09eaa53d47fbfe9586f18b524c54dc  test/test_helper.exs
+a6f4752db0cfc23d3399b55941789b0ebb376066efcddee1bbb0d597162d1043  mix.lock
+352f7ba64642d6a0796ff9c8ddaf756dc4427196e8e6b579cb939fdf6cf01a3a  scripts/verify-packaged-first-token
+
+02:14:25.202 [info] The function passed as a handler with ID {nil, :offline_connections, #Reference<0.4229050143.1332215809.261065>} is a local function.
+This means that it is either an anonymous function or a capture of a function without a module specified. That may cause a performance penalty when calling that handler. For more details see the note in `telemetry:attach/4` documentation.
+
+https://hexdocs.pm/telemetry/telemetry.html#attach/4
+Running ExUnit with seed: 219197, max_cases: 16
+
+................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................................
+Finished in 44.5 seconds (0.00s async, 44.5s sync)
+864 tests, 0 failures
+Offline transport verification: zero Finch connection attempts
