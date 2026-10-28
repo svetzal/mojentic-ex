@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Upgraded the dev/test-only `sobelow` security analyzer from 0.16.0 to 0.17.0.
+
 ## [3.0.0] - 2026-10-18
 
 ### Added — completion recovery and readiness verification
