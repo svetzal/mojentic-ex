@@ -1,0 +1,15 @@
+Checking Sobelow version...
+
+WARNING: Sobelow cannot find the router. If this is a Phoenix application
+please use the `--router` flag to specify the router's location.
+
+##############################################
+#                                            #
+#          Running Sobelow - v0.17.0         #
+#  Created by Griffin Byatt - @griffinbyatt  #
+#     NCC Group - https://nccgroup.trust     #
+#                                            #
+##############################################
+
+... SCAN COMPLETE ...
+
