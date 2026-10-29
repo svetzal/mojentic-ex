@@ -151,9 +151,9 @@ repository or running-service boundary changed.
 
 | Executable manifest | SHA-256 |
 | --- | --- |
-| `test/contracts/context_window_v1.manifest.sha256` | `44564595954a1e9814ef85cef7a1d8f077861c784b42fe77f1f11e38eedbbaaf` |
-| `test/contracts/readiness_v1.manifest.sha256` | `b7cae77a8f3c6d6dd88e0747c2eeb7069dc7fa0758e26f8b1acf3e24da9a6f05` |
-| `test/contracts/stream_first_token_v1.manifest.sha256` | `b9246a052995d6e45c20cd3dfaa57bb234feb3d1e5fbef78e3dc26a0a9939258` |
+| `test/contracts/context_window_v1.manifest.sha256` | `fff35371bb01430253f97c77d32ef1b03f4201ceb91e3655a0c7235e5e595871` |
+| `test/contracts/readiness_v1.manifest.sha256` | `7c05cc0ea07856722851478a811a66e336c3098e0cd5127a992e94141f129a1d` |
+| `test/contracts/stream_first_token_v1.manifest.sha256` | `2c3387ff3321e3ca901684410d58766d1b8d33a0c2fdc706ec57a743dc891538` |
 
 ## Final local verification
 
@@ -201,7 +201,7 @@ The fresh consumer verified the extracted provider inputs and copied consumer
 contract inputs, compiled the provider from the payload and verified its loaded
 ReqClient path. Both source and fresh payload consumers passed **ex-readiness-v1**
 with manifest SHA-256
-`b7cae77a8f3c6d6dd88e0747c2eeb7069dc7fa0758e26f8b1acf3e24da9a6f05`.
+`7c05cc0ea07856722851478a811a66e336c3098e0cd5127a992e94141f129a1d`.
 No package was published.
 
 Dialyzer passed with zero errors; strict Credo found no issues. Dependency audit
