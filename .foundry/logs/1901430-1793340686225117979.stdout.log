@@ -1,0 +1,30 @@
+ex-stream-first-token-v1; mapped ts-stream-first-token-v1/v2 cases
+300e77c002676416cc476ea95c2098772c15ef6b
+lib/mojentic/clock.ex: OK
+lib/mojentic/http/received_evidence.ex: OK
+lib/mojentic/http/req_client.ex: OK
+lib/mojentic/http/wire_trace.ex: OK
+lib/mojentic/llm/broker.ex: OK
+lib/mojentic/llm/chat_session.ex: OK
+lib/mojentic/llm/gateways/ollama.ex: OK
+lib/mojentic/llm/gateways/omlx.ex: OK
+lib/mojentic/llm/gateways/openai.ex: OK
+lib/mojentic/llm/gateways/openai_legacy_stream.ex: OK
+lib/mojentic/llm/stream_recovery.ex: OK
+lib/mojentic/llm/stream_timing.ex: OK
+lib/mojentic/task_stream.ex: OK
+mix.exs: OK
+mix.lock: FAILED
+scripts/verify-first-token-contract: OK
+scripts/verify-packaged-first-token: OK
+test/contracts/DECISIONS.md: OK
+test/contracts/stream_first_token_v1.json: OK
+test/mojentic/llm/first_token_wire_test.exs: OK
+test/mojentic/llm/offline_transport_test.exs: OK
+test/mojentic/llm/recovery_wire_test.exs: OK
+test/support/clock.ex: OK
+test/support/counting_tool.ex: OK
+test/support/first_token_contract.ex: OK
+test/support/scripted_transport.ex: OK
+test/support/stub_tokenizer.ex: OK
+test/test_helper.exs: OK
