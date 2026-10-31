@@ -1,0 +1,27 @@
+==> sourceror
+Compiling 20 files (.ex)
+Generated sourceror app
+==> ex_ast
+Compiling 37 files (.ex)
+Generated ex_ast app
+==> spitfire
+Compiling 2 files (.erl)
+Compiling 5 files (.ex)
+Generated spitfire app
+==> rewrite
+Compiling 13 files (.ex)
+Generated rewrite app
+==> finch
+Compiling 23 files (.ex)
+Generated finch app
+==> req
+Compiling 24 files (.ex)
+Generated req app
+==> igniter
+Compiling 62 files (.ex)
+Generated igniter app
+==> usage_rules
+Compiling 8 files (.ex)
+Generated usage_rules app
+==> mojentic
+Generated mojentic app
