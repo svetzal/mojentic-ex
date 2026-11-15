@@ -1,0 +1,16 @@
+[32mDOS.Regex: Potential Resource Risk in Dynamic Regex Compilation - Low Confidence[0m
+File: lib/mojentic/llm/tools/file_manager.ex
+Line: 119
+Function: find_files_containing:117
+Variable: pattern
+
+-----------------------------------------------
+
+[32mDOS.Regex: Potential Resource Risk in Dynamic Regex Compilation - Low Confidence[0m
+File: lib/mojentic/llm/tools/file_manager.ex
+Line: 171
+Function: find_lines_matching:169
+Variable: pattern
+
+-----------------------------------------------
+
