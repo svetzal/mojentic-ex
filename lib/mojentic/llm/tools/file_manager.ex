@@ -114,6 +114,8 @@ defmodule Mojentic.LLM.Tools.FilesystemGateway do
   """
   @spec find_files_containing(t(), String.t(), String.t()) ::
           {:ok, list(String.t())} | {:error, String.t()}
+  # The regex pattern is caller-supplied by design (Stacey's owner decision, 2026-11-21).
+  # sobelow_skip ["DOS.Regex"]
   def find_files_containing(%__MODULE__{base_path: base_path} = fs, path, pattern) do
     with {:ok, resolved_path} <- resolve_path(fs, path),
          {:ok, regex} <- Regex.compile(pattern) do
@@ -166,6 +168,8 @@ defmodule Mojentic.LLM.Tools.FilesystemGateway do
   """
   @spec find_lines_matching(t(), String.t(), String.t(), String.t()) ::
           {:ok, list(map())} | {:error, String.t()}
+  # The regex pattern is caller-supplied by design (Stacey's owner decision, 2026-11-21).
+  # sobelow_skip ["DOS.Regex"]
   def find_lines_matching(fs, path, file_name, pattern) do
     with {:ok, resolved_path} <- resolve_path(fs, path),
          {:ok, regex} <- Regex.compile(pattern) do
