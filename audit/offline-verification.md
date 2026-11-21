@@ -151,9 +151,9 @@ repository or running-service boundary changed.
 
 | Executable manifest | SHA-256 |
 | --- | --- |
-| `test/contracts/context_window_v1.manifest.sha256` | `b0ebc0f84fddeee2bcc2fe402f0d774b7a01eadf49bbe9af03bc31ee9d3011f2` |
+| `test/contracts/context_window_v1.manifest.sha256` | `35b5cacddf888e12cd91c26349acfbd04197b8caa1401f6ad040d7f662d5ca02` |
 | `test/contracts/readiness_v1.manifest.sha256` | `ab266052c5bfe6997b9a7b55021c94e41736847b081ca159ef2f14f7999ca82e` |
-| `test/contracts/stream_first_token_v1.manifest.sha256` | `fb94eeab8fbb35e54714d1719888c332f242cea452dc13dcd426f751a95c537f` |
+| `test/contracts/stream_first_token_v1.manifest.sha256` | `76163fc6dac0e7e228decd7dab8540b42464d3c6b06b61da0b7da2be4860e7f9` |
 
 ## Final local verification
 

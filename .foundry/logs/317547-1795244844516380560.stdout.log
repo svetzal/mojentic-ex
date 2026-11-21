@@ -1,0 +1,20 @@
+==> makeup
+Compiling 15 files (.ex)
+Generated makeup app
+==> makeup_elixir
+Compiling 6 files (.ex)
+Compiling lib/makeup/lexers/elixir_lexer.ex (it's taking more than 10s)
+Generated makeup_elixir app
+==> makeup_erlang
+Compiling 4 files (.ex)
+Compiling lib/makeup/lexers/erlang_lexer.ex (it's taking more than 10s)
+Generated makeup_erlang app
+==> ex_doc
+Compiling 31 files (.ex)
+Generated ex_doc app
+==> usage_rules
+Compiling 8 files (.ex)
+Generated usage_rules app
+==> mojentic
+Compiling 1 file (.ex)
+Generated mojentic app
