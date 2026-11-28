@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Upgraded the dev/test-only `sobelow` security analyzer from 0.16.0 to 0.19.0.
+- Upgraded the dev-only `igniter` code-generation tool from 0.8.6 to 0.9.0.
 - Skip Sobelow's `DOS.Regex` check only for `find_files_containing` and
   `find_lines_matching`: caller-supplied regex patterns are intentional, per Stacey's
   2026-11-21 owner decision. Tool behavior is unchanged.

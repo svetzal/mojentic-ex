@@ -91,7 +91,7 @@ defmodule Mojentic.MixProject do
       {:sobelow, "~> 0.19", only: [:dev, :test], runtime: false},
 
       # AI Assistant
-      {:igniter, "~> 0.8", only: [:dev]},
+      {:igniter, "~> 0.9", only: [:dev]},
       {:usage_rules, "~> 1.2", only: [:dev]}
     ]
   end
